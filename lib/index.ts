@@ -1,22 +1,22 @@
 interface ValidationErrorProps {
   pointer: string;
-  message: string;
   value: any;
   code: string;
 }
 
-interface Result {
-  valid: boolean;
-  errors: ValidationError[];
+interface ValidatorFunction {
+  (schema: CompiledSchema, data, pointer): ValidationError[] | void;
 }
 
-interface ValidatorFunction {
-  (schema, data, pointer): Result;
+interface CompiledSchema {
+  validator: ValidatorFunction;
+  pointer: string;
+  [key: string]: any;
 }
 
 interface Validator {
-  (data: any): Result;
-  compiledSchema: object;
+  (data: any): ValidationError[] | void;
+  compiledSchema: CompiledSchema;
 }
 
 interface Keyword {
@@ -24,7 +24,7 @@ interface Keyword {
   schemaType: string;
 }
 
-class ValidationError extends Error {
+export class ValidationError extends Error {
   name: string;
   pointer: string;
   message: string;
@@ -33,38 +33,166 @@ class ValidationError extends Error {
 
   constructor(message: string, options: ValidationErrorProps) {
     super(message);
-    this.name = "ValidationError";
+    this.name = 'ValidationError';
     this.pointer = options.pointer;
-    this.message = options.message;
+    this.message = message;
     this.value = options.value;
     this.code = options.code;
   }
 }
 
-const defaultValidator = (schema, data, pointer) => {
-  return {
-    valid: true,
-    errors: []
-  };
-};
+const defaultValidator = (schema, data, pointer) => {};
+
+function validateKeywords(schema, data, pointer) {
+  const errors = [];
+
+  if ('keywords' in schema) {
+    for (let keyword in schema.keywords) {
+      const keywordValidator: ValidatorFunction = schema.keywords[keyword];
+      const keywordErrors = keywordValidator(schema, data, pointer);
+      if (keywordErrors) {
+        errors.push(...keywordErrors);
+      }
+    }
+  }
+
+  if (errors.length > 0) {
+    return errors;
+  }
+}
 
 const Types: Record<string, ValidatorFunction> = {
-  object: defaultValidator,
-  array: defaultValidator,
-  string: defaultValidator,
-  number: defaultValidator,
-  integer: defaultValidator,
-  boolean: defaultValidator,
-  null: defaultValidator
+  object(schema, data, pointer) {
+    if (typeof data !== 'object') {
+      return [
+        new ValidationError('Data is not an object', {
+          pointer,
+          value: data,
+          code: 'NOT_AN_OBJECT',
+        }),
+      ];
+    }
+  },
+  array(schema, data, pointer) {
+    if (!Array.isArray(data)) {
+      return [
+        new ValidationError('Data is not an array', {
+          pointer,
+          value: data,
+          code: 'NOT_AN_ARRAY',
+        }),
+      ];
+    }
+  },
+  string(schema, data, pointer) {
+    if (typeof data !== 'string') {
+      return [
+        new ValidationError('Data is not a string', {
+          pointer,
+          value: data,
+          code: 'NOT_A_STRING',
+        }),
+      ];
+    }
+  },
+  number(schema, data, pointer) {
+    if (typeof data !== 'number') {
+      return [
+        new ValidationError('Data is not a number', {
+          pointer,
+          value: data,
+          code: 'NOT_A_NUMBER',
+        }),
+      ];
+    }
+  },
+  integer(schema, data, pointer) {
+    if (typeof data !== 'number' || !Number.isInteger(data)) {
+      return [
+        new ValidationError('Data is not an integer', {
+          pointer,
+          value: data,
+          code: 'NOT_AN_INTEGER',
+        }),
+      ];
+    }
+  },
+  boolean(schema, data, pointer) {
+    if (typeof data !== 'boolean') {
+      return [
+        new ValidationError('Data is not a boolean', {
+          pointer,
+          value: data,
+          code: 'NOT_A_BOOLEAN',
+        }),
+      ];
+    }
+  },
+  null(schema, data, pointer) {
+    if (data !== null) {
+      return [
+        new ValidationError('Data is not null', {
+          pointer,
+          value: data,
+          code: 'NOT_NULL',
+        }),
+      ];
+    }
+  },
 };
 
 const keywords: Record<string, ValidatorFunction> = {
   // Object
-  required: defaultValidator,
-  properties: defaultValidator,
+  required(schema, data, pointer) {
+    const errors = [];
+    for (let i = 0; i < schema.required.length; i++) {
+      const key = schema.required[i];
+      if (!data.hasOwnProperty(key)) {
+        errors.push(
+          new ValidationError('Missing required property', {
+            pointer: `${pointer}/${key}`,
+            value: data,
+            code: 'MISSING_REQUIRED_PROPERTY',
+          })
+        );
+      }
+    }
+
+    if (errors.length > 0) {
+      return errors;
+    }
+  },
+  properties(schema, data, pointer) {
+    const errors = [];
+    for (let key in schema.properties) {
+      const { validator } = schema.properties[key];
+      const validatorErrors = validator(schema.properties[key], data[key], `${pointer}/${key}`);
+
+      if (validatorErrors) {
+        errors.push(...validatorErrors);
+      }
+    }
+
+    if (errors.length > 0) {
+      return errors;
+    }
+  },
 
   // Array
-  items: defaultValidator,
+  items(schema, data, pointer) {
+    const errors = [];
+    for (let i = 0; i < data.length; i++) {
+      const { validator } = schema.items;
+      const validatorErrors = validator(schema.items, data[i], `${pointer}/${i}`);
+      if (validatorErrors) {
+        errors.push(...validatorErrors);
+      }
+    }
+
+    if (errors.length > 0) {
+      return errors;
+    }
+  },
 
   // String
   minLength: defaultValidator,
@@ -78,7 +206,7 @@ const keywords: Record<string, ValidatorFunction> = {
   maximum: defaultValidator,
 
   // All
-  nullable: defaultValidator
+  nullable: defaultValidator,
 };
 
 class FJV {
@@ -88,38 +216,38 @@ class FJV {
 
   constructor() {
     // Types
-    this.addType("object", Types.object);
-    this.addType("array", Types.array);
-    this.addType("string", Types.string);
-    this.addType("number", Types.number);
-    this.addType("integer", Types.integer);
-    this.addType("boolean", Types.boolean);
-    this.addType("null", Types.null);
+    this.addType('object', Types.object);
+    this.addType('array', Types.array);
+    this.addType('string', Types.string);
+    this.addType('number', Types.number);
+    this.addType('integer', Types.integer);
+    this.addType('boolean', Types.boolean);
+    this.addType('null', Types.null);
 
     // Object
-    this.addKeyword("required", keywords.required, "object");
-    this.addKeyword("properties", keywords.properties, "object");
+    this.addKeyword('required', keywords.required, 'object');
+    this.addKeyword('properties', keywords.properties, 'object');
 
     // Array
-    this.addKeyword("items", keywords.items, "array");
+    this.addKeyword('items', keywords.items, 'array');
 
     // String
-    this.addKeyword("minLength", keywords.minLength, "string");
-    this.addKeyword("maxLength", keywords.maxLength, "string");
-    this.addKeyword("pattern", keywords.pattern, "string");
-    this.addKeyword("format", keywords.format, "string");
-    this.addKeyword("enum", keywords.enum, "string");
+    this.addKeyword('minLength', keywords.minLength, 'string');
+    this.addKeyword('maxLength', keywords.maxLength, 'string');
+    this.addKeyword('pattern', keywords.pattern, 'string');
+    this.addKeyword('format', keywords.format, 'string');
+    this.addKeyword('enum', keywords.enum, 'string');
 
     // Number
-    this.addKeyword("minimum", keywords.minimum, "number");
-    this.addKeyword("maximum", keywords.maximum, "number");
+    this.addKeyword('minimum', keywords.minimum, 'number');
+    this.addKeyword('maximum', keywords.maximum, 'number');
 
     // Integer
-    this.addKeyword("minimum", keywords.minimum, "integer");
-    this.addKeyword("maximum", keywords.maximum, "integer");
+    this.addKeyword('minimum', keywords.minimum, 'integer');
+    this.addKeyword('maximum', keywords.maximum, 'integer');
 
     // All
-    this.addKeyword("nullable", keywords.nullable, "any");
+    this.addKeyword('nullable', keywords.nullable, 'any');
   }
 
   addType(name: string, validator: ValidatorFunction) {
@@ -130,24 +258,15 @@ class FJV {
     this.formats.set(name, validator);
   }
 
-  addKeyword(
-    name: string,
-    validator: ValidatorFunction,
-    schemaType: string = "any"
-  ) {
+  addKeyword(name: string, validator: ValidatorFunction, schemaType: string = 'any') {
     this.keywords.set(name, { validator, schemaType });
   }
 
   compile(schema: any): Validator {
-    const compiledSchema = this.compileSchema(schema, "#");
+    const compiledSchema = this.compileSchema(schema, '#');
 
     function validate(data: any) {
-      let result = compiledSchema.validator(compiledSchema, data, "#");
-      return result;
-      return {
-        valid: true,
-        errors: []
-      };
+      return compiledSchema.validator(compiledSchema, data, '#');
     }
 
     validate.compiledSchema = compiledSchema;
@@ -156,59 +275,110 @@ class FJV {
   }
 
   compileSchema(schema: any, pointer): any {
-    if (typeof schema !== "object") {
-      throw new ValidationError("Schema is not an object", {
+    if (typeof schema !== 'object') {
+      throw new ValidationError('Schema is not an object', {
         pointer,
-        message: "Schema is not an object",
         value: schema,
-        code: "SCHEMA_NOT_OBJECT"
+        code: 'SCHEMA_NOT_OBJECT',
       });
     }
 
     if (!schema.type) {
-      throw new ValidationError("Schema is missing type", {
+      throw new ValidationError('Schema is missing type', {
         pointer,
-        message: "Schema is missing type",
         value: schema,
-        code: "SCHEMA_MISSING_TYPE"
+        code: 'SCHEMA_MISSING_TYPE',
       });
     }
 
     if (!this.types.has(schema.type)) {
-      throw new ValidationError("Schema type is not supported", {
+      throw new ValidationError('Schema type is not supported', {
         pointer,
-        message: "Schema type is not supported",
         value: schema,
-        code: "SCHEMA_TYPE_NOT_SUPPORTED"
+        code: 'SCHEMA_TYPE_NOT_SUPPORTED',
       });
     }
 
     // Compile schema type
-    const compiledSchema = {
-      ...schema,
-      validator: this.types.get(schema.type),
-      pointer
+    const schemaValidator = this.types.get(schema.type);
+    const validator: ValidatorFunction = (schema: any, data: any, pointer: string) => {
+      if (typeof data === 'undefined') {
+        if (pointer === '#') {
+          return [
+            new ValidationError('Data is undefined', {
+              pointer,
+              value: data,
+              code: 'DATA_UNDEFINED',
+            }),
+          ];
+        }
+
+        return;
+      }
+
+      const errors = schemaValidator(schema, data, pointer);
+      if (errors) {
+        return errors;
+      }
+
+      const keywordErrors = validateKeywords(schema, data, pointer);
+
+      if (keywordErrors) {
+        return keywordErrors;
+      }
+
+      if (pointer === '#') {
+        return true;
+      }
     };
 
-    // Compile keywords
-    for (const [keyword, { validator, schemaType }] of this.keywords) {
-      if (
-        keyword in schema &&
-        (schemaType === schema.type || schemaType === "any")
-      ) {
-        compiledSchema.keywords = compiledSchema.keywords || {};
-        compiledSchema.keywords[keyword] = validator;
+    const compiledSchema = {
+      ...schema,
+      validator,
+      pointer,
+    };
+
+    // Recursively compile sub schemas
+    for (let key in schema) {
+      // Skip type as it is already compiled
+      if (key === 'type') {
+        continue;
+      }
+
+      if (this.keywords.has(key)) {
+        const keyword = this.keywords.get(key);
+        if (keyword.schemaType === 'any' || keyword.schemaType === schema.type) {
+          compiledSchema.keywords = compiledSchema.keywords || {};
+          compiledSchema.keywords[key] = keyword.validator;
+        }
+      }
+
+      if (Array.isArray(schema[key])) {
+        compiledSchema[key] = schema[key].map((subSchema, index) => {
+          if (typeof subSchema === 'object' && 'type' in subSchema) {
+            return this.compileSchema(subSchema, `${pointer}/${key}/${index}`);
+          }
+          return subSchema;
+        });
+        continue;
+      }
+
+      if (typeof schema[key] === 'object') {
+        if ('type' in schema[key]) {
+          compiledSchema[key] = this.compileSchema(schema[key], `${pointer}/${key}`);
+          continue;
+        }
+
+        for (let subKey in schema[key]) {
+          compiledSchema[key] = compiledSchema[key] || {};
+          compiledSchema[key][subKey] = this.compileSchema(schema[key][subKey], `${pointer}/${subKey}`);
+        }
+
+        continue;
       }
     }
 
     return compiledSchema;
-  }
-
-  validate(schema: any, data: any, pointer = "#"): Result {
-    return {
-      valid: true,
-      errors: []
-    };
   }
 }
 
