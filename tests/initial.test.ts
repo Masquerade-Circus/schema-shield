@@ -1,41 +1,38 @@
-import { describe, it } from 'mocha';
+import { describe, it } from "mocha";
 
-import FJV from '../lib';
-import expect from 'expect';
+import FJV from "../lib";
+import expect from "expect";
 
-describe.only('Fjv', () => {
-  it('Should create a fjv instance', () => {
+describe("Fjv", () => {
+  it("Should create a fjv instance", () => {
     let schema = {
-      type: 'object',
+      type: "object",
       properties: {
         foo: {
-          type: 'string',
+          type: "string"
         },
         bar: {
-          type: 'integer',
+          type: "integer"
         },
         array: {
-          type: 'array',
+          type: "array",
           items: {
-            type: 'string',
-          },
-        },
+            type: "string"
+          }
+        }
       },
-      required: ['foo', 'bar', 'array'],
+      required: ["foo", "bar", "array"]
     };
 
     let data = {
-      foo: 'hello',
+      foo: "hello",
       bar: 42,
-      array: ['hello', 'world'],
+      array: ["hello", "world"]
     };
 
     let fjv = new FJV();
     let validate = fjv.compile(schema);
 
-    console.log(JSON.stringify(validate.compiledSchema, (key, value) => (typeof value === 'function' ? `func ${value.name}` : value), 2));
-
-    console.log(validate(data));
-    expect(validate(data)).toEqual({ valid: true, errors: [] });
+    expect(validate(data)).toEqual({ valid: true, errors: null });
   });
 });
