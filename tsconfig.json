@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "jsx": "preserve",
+    "target": "ES2021",
+    "moduleResolution": "nodenext",
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true,
+    "allowJs": true,
+    "esModuleInterop": true
+  },
+  "include": ["lib/**/*"],
+  "exclude": ["**/*.spec.ts", "node_modules/**/*", "docs/**/*"],
+  "ts-node": {
+    "transpileOnly": true
+  }
+}

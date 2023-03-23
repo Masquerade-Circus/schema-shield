@@ -1,0 +1,24 @@
+{
+  "name": "fjv",
+  "version": "1.0.0",
+  "description": "",
+  "main": "fjv.js",
+  "scripts": {
+    "test": "mocha --recursive --no-timeouts --exit --require ts-node/register --enable-source-maps tests/**/*.test.ts",
+    "dev:test": "nodemon -e ts,js -w ./tests -w ./lib --exec 'npm run test'",
+    "build": "node build.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "esbuild": "^0.17.12",
+    "expect": "^29.5.0",
+    "json-schema-test-suite": "github:json-schema-org/JSON-Schema-Test-Suite",
+    "mocha": "^10.2.0",
+    "nodemon": "^2.0.22",
+    "terser": "^5.16.6",
+    "ts-node": "^10.9.1",
+    "tsc": "^2.0.4",
+    "tsc-prog": "^2.2.1"
+  }
+}
