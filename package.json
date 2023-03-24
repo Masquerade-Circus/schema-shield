@@ -6,7 +6,7 @@
   "scripts": {
     "test": "mocha --bail --recursive --no-timeouts --exit --require ts-node/register --enable-source-maps tests/**/*.test.ts",
     "dev:test": "nodemon -e ts,js -w ./tests -w ./lib --exec npm run test",
-    "build": "node build.js"
+    "build": "node source.js"
   },
   "author": "",
   "license": "ISC",

@@ -1,18 +1,49 @@
-import {
-  CompiledSchema,
-  FormatFunction,
-  Result,
-  ValidationError,
-  Validator,
-  ValidatorFunction,
-  isObject
-} from "./utils";
+import { ValidationError, isObject } from "./utils";
 
 import { Formats } from "./formats";
 import { Types } from "./types";
 import { keywords } from "./keywords";
 
-class SchemaShield {
+export interface ValidationErrorProps {
+  pointer: string;
+  value: any;
+  code: string;
+}
+
+export interface Result {
+  valid: boolean;
+  errors: ValidationError[];
+  data: any;
+}
+
+export interface ValidatorFunction {
+  (
+    schema: CompiledSchema,
+    data: any,
+    pointer: string,
+    schemaShieldInstance: SchemaShield
+  ): Result;
+}
+
+export interface FormatFunction {
+  (data: any): boolean;
+}
+
+export interface CompiledSchema {
+  pointer: string;
+  validator?: ValidatorFunction;
+  type?: string;
+  validators?: ValidatorFunction[];
+  keywords?: Record<string, ValidatorFunction>;
+  [key: string]: any;
+}
+
+export interface Validator {
+  (data: any): Result;
+  compiledSchema: CompiledSchema;
+}
+
+export class SchemaShield {
   types = new Map<string, ValidatorFunction>();
   formats = new Map<string, FormatFunction>();
   keywords = new Map<string, ValidatorFunction>();
@@ -275,5 +306,3 @@ class SchemaShield {
     };
   }
 }
-
-export default SchemaShield;

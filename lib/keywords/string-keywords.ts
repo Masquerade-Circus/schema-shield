@@ -1,4 +1,6 @@
-import { ValidationError, ValidatorFunction, deepEqual } from "../utils"
+import { ValidationError, deepEqual } from "../utils";
+
+import { ValidatorFunction } from "../index";
 
 export const StringKeywords: Record<string, ValidatorFunction> = {
   minLength(schema, data, pointer) {

@@ -1,10 +1,10 @@
 import { describe, it } from "mocha";
 
-import SchemaShield from "../lib";
+import {SchemaShield} from "../lib";
 import expect from "expect";
 import { stringifySchema } from "./test-utils";
 
-const jsonTests = require("./draft4/format.json");
+const jsonTests = require("./format-tests/format.json");
 
 const logData = false;
 const logSchema = false;

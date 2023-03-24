@@ -1,4 +1,5 @@
-import { ValidationError, ValidatorFunction } from "../utils";
+import { ValidationError } from "../utils";
+import { ValidatorFunction } from "../index";
 
 export const NumberKeywords: Record<string, ValidatorFunction> = {
   minimum(schema, data, pointer) {

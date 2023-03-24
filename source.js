@@ -1,9 +1,9 @@
 /* eslint-disable no-console */
-/* eslint-disable max-len */
 const esbuild = require("esbuild");
 const terser = require("terser");
 const fs = require("fs");
 const zlib = require("zlib");
+const { hrtime } = require("process");
 
 function convertToUMD(text, globalName) {
   // HACK: convert to UMD - only supports cjs and global var
@@ -25,10 +25,13 @@ function convertToUMD(text, globalName) {
     return `var ${varName}=${name}`;
   });
 
-  code = `(()=>{${code};typeof module!=='undefined'?module.exports=${varName}:self.${globalName}=${varName}})()`;
+  if (code.includes("__EXPORTS__")) {
+    code = `(()=>{${code};typeof module!=='undefined'?module.exports=${varName}:self.${globalName}=${varName}})()`;
+  }
   return code;
 }
 
+// eslint-disable-next-line sonarjs/cognitive-complexity
 async function build({
   globalName,
   entryPoint,
@@ -36,8 +39,8 @@ async function build({
   clean = false,
   emitDeclarations = false,
   libCheck = false,
-  minify = true,
-  minifyAs = "cjs",
+  minify = "cjs",
+  embedSourceMap = false,
   external = []
 }) {
   try {
@@ -48,10 +51,8 @@ async function build({
     let outfile = outfileName.split("/").pop();
 
     // If clean is true, delete the outdir
-    if (clean) {
-      if (fs.existsSync(outdir)) {
-        fs.rmdirSync(outdir, { recursive: true });
-      }
+    if (clean && fs.existsSync(outdir)) {
+      fs.rmSync(outdir, { recursive: true });
     }
 
     // Ensure outdir exists recursively, if not create it
@@ -117,10 +118,10 @@ async function build({
       esmContent.indexOf("__filename") !== -1
     ) {
       esmContent =
-        `import { fileURLToPath } from 'url';\nconst __filename = fileURLToPath(import.meta.url);\nconst __dirname = path.dirname(__filename);\n` +
+        `import { fileURLToPath } from 'url';const __filename = fileURLToPath(import.meta.url);const __dirname = path.dirname(__filename);` +
         esmContent;
       if (esmContent.indexOf("import path from") === -1) {
-        esmContent = `import path from 'path';\n` + esmContent;
+        esmContent = `import path from 'path';` + esmContent;
       }
     }
 
@@ -129,8 +130,7 @@ async function build({
 
     let result2;
     if (minify) {
-      let codeToMinify =
-        minifyAs === "esm" ? esm : (minifyAs = "cjs" ? cjs : null);
+      let codeToMinify = minify === "esm" ? esm : cjs;
       if (codeToMinify) {
         let code = convertToUMD(codeToMinify.outputFiles[1].text, globalName);
         result2 = await terser.minify(code, {
@@ -148,11 +148,15 @@ async function build({
 
         let mapBase64 = Buffer.from(result2.map.toString()).toString("base64");
         let map = `//# sourceMappingURL=data:application/json;charset=utf-8;base64,${mapBase64}`;
-        fs.writeFileSync(
-          `${outfileName}.min.js`,
-          result2.code + `//# sourceMappingURL=${outfile}.min.js.map`
-        );
-        fs.writeFileSync(`${outfileName}.min.js.map`, map);
+        if (embedSourceMap) {
+          fs.writeFileSync(`${outfileName}.min.js`, result2.code + map);
+        } else {
+          fs.writeFileSync(
+            `${outfileName}.min.js`,
+            result2.code + `//# sourceMappingURL=${outfile}.min.js.map`
+          );
+          fs.writeFileSync(`${outfileName}.min.js.map`, map);
+        }
       }
     }
 
@@ -179,12 +183,27 @@ async function build({
 }
 
 (async () => {
+  let isDev = process.env.NODE_ENV === "development";
+  let libCheck = !isDev;
+  let emitDeclarations = !isDev;
+  let clean = !isDev;
+
+  let buildStart = hrtime();
+
   await build({
     globalName: "SchemaShield",
     entryPoint: "./lib/index.ts",
     outfileName: "./dist/index",
-    clean: true,
-    libCheck: true,
-    emitDeclarations: true
+    clean,
+    minify: "esm",
+    libCheck,
+    emitDeclarations
   });
+
+  const buildEnd = hrtime(buildStart);
+
+  // Log the build time in seconds with two decimal places
+  console.log(
+    `Build time: ${(buildEnd[0] + buildEnd[1] / 1e9).toFixed(2)} seconds`
+  );
 })();

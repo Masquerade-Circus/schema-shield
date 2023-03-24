@@ -1,43 +1,4 @@
-import SchemaShield from "./index";
-
-export interface ValidationErrorProps {
-  pointer: string;
-  value: any;
-  code: string;
-}
-
-export interface Result {
-  valid: boolean;
-  errors: ValidationError[];
-  data: any;
-}
-
-export interface ValidatorFunction {
-  (
-    schema: CompiledSchema,
-    data: any,
-    pointer: string,
-    schemaShieldInstance: SchemaShield
-  ): Result;
-}
-
-export interface FormatFunction {
-  (data: any): boolean;
-}
-
-export interface CompiledSchema {
-  pointer: string;
-  validator?: ValidatorFunction;
-  type?: string;
-  validators?: ValidatorFunction[];
-  keywords?: Record<string, ValidatorFunction>;
-  [key: string]: any;
-}
-
-export interface Validator {
-  (data: any): Result;
-  compiledSchema: CompiledSchema;
-}
+import { SchemaShield, ValidationErrorProps } from "./index";
 
 export class ValidationError extends Error {
   name: string;

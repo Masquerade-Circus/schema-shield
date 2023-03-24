@@ -1,6 +1,6 @@
 import { describe, it } from "mocha";
 
-import SchemaShield from "../lib";
+import {SchemaShield} from "../lib";
 import expect from "expect";
 import fs from "fs";
 import { stringifySchema } from "./test-utils";

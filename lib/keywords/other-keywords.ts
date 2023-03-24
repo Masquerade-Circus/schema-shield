@@ -1,9 +1,5 @@
-import {
-  CompiledSchema,
-  ValidationError,
-  ValidatorFunction,
-  isObject
-} from "../utils";
+import { CompiledSchema, ValidatorFunction } from "../index";
+import { ValidationError, isObject } from "../utils";
 
 export const OtherKeywords: Record<string, ValidatorFunction> = {
   nullable(schema, data, pointer) {
