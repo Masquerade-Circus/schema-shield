@@ -27,7 +27,7 @@ export interface Validator {
     (data: any): Result;
     compiledSchema: CompiledSchema;
 }
-declare class SchemaShield {
+export declare class SchemaShield {
     types: Map<string, ValidatorFunction>;
     formats: Map<string, FormatFunction>;
     keywords: Map<string, ValidatorFunction>;
@@ -42,5 +42,4 @@ declare class SchemaShield {
     private validateTypes;
     private validateKeywords;
 }
-export default SchemaShield;
 //# sourceMappingURL=index.d.ts.map

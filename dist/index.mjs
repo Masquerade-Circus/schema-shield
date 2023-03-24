@@ -1262,7 +1262,6 @@ var SchemaShield = class {
     };
   }
 };
-var lib_default = SchemaShield;
 export {
-  lib_default as default
+  SchemaShield
 };

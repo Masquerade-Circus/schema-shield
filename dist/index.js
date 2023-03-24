@@ -19,7 +19,7 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // lib/index.ts
 var lib_exports = {};
 __export(lib_exports, {
-  default: () => lib_default
+  SchemaShield: () => SchemaShield
 });
 module.exports = __toCommonJS(lib_exports);
 
@@ -1287,4 +1287,3 @@ var SchemaShield = class {
     };
   }
 };
-var lib_default = SchemaShield;
