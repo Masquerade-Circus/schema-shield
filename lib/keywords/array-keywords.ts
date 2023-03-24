@@ -6,7 +6,7 @@ import {
 } from "../utils";
 
 export const ArrayKeywords: Record<string, ValidatorFunction> = {
-  items(schema, data, pointer, fastSchemaInstance) {
+  items(schema, data, pointer, schemaShieldInstance) {
     if (!Array.isArray(data)) {
       return { valid: true, errors: [], data };
     }
@@ -23,7 +23,7 @@ export const ArrayKeywords: Record<string, ValidatorFunction> = {
           schema.items[i],
           finalData[i],
           `${pointer}/${i}`,
-          fastSchemaInstance
+          schemaShieldInstance
         );
 
         finalData[i] = validatorResult.data;
@@ -43,7 +43,7 @@ export const ArrayKeywords: Record<string, ValidatorFunction> = {
           schema.items,
           finalData[i],
           `${pointer}/${i}`,
-          fastSchemaInstance
+          schemaShieldInstance
         );
 
         finalData[i] = validatorErrors.data;
@@ -93,7 +93,7 @@ export const ArrayKeywords: Record<string, ValidatorFunction> = {
     };
   },
 
-  additionalItems(schema, data, pointer, fastSchemaInstance) {
+  additionalItems(schema, data, pointer, schemaShieldInstance) {
     if (!Array.isArray(data) || !schema.items || !Array.isArray(schema.items)) {
       return { valid: true, errors: [], data };
     }
@@ -125,7 +125,7 @@ export const ArrayKeywords: Record<string, ValidatorFunction> = {
           schema.additionalItems,
           finalData[i],
           `${pointer}/${i}`,
-          fastSchemaInstance
+          schemaShieldInstance
         );
         if (!validatorResult.valid) {
           errors.push(...validatorResult.errors);

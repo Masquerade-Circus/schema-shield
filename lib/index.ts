@@ -11,7 +11,7 @@ import { Formats } from "./formats";
 import { Types } from "./types";
 import { keywords } from "./keywords";
 
-class FastSchema {
+class SchemaShield {
   types = new Map<string, ValidatorFunction>();
   formats = new Map<string, FormatFunction>();
   keywords = new Map<string, ValidatorFunction>();
@@ -44,10 +44,10 @@ class FastSchema {
 
   compile(schema: any): Validator {
     const compiledSchema = this.compileSchema(schema, "#");
-    const fastSchema = this;
+    const schemaShield = this;
 
     function validate(data: any) {
-      return compiledSchema.validator(compiledSchema, data, "#", fastSchema);
+      return compiledSchema.validator(compiledSchema, data, "#", schemaShield);
     }
 
     validate.compiledSchema = compiledSchema;
@@ -275,4 +275,4 @@ class FastSchema {
   }
 }
 
-export default FastSchema;
+export default SchemaShield;

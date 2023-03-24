@@ -1,7 +1,7 @@
 {
-  "name": "fast-schema",
+  "name": "schema-shield",
   "version": "0.0.1",
-  "description": "",
+  "description": "A fast library that protects your JSON schema from invalid data.",
   "main": "index.js",
   "scripts": {
     "test": "mocha --bail --recursive --no-timeouts --exit --require ts-node/register --enable-source-maps tests/**/*.test.ts",

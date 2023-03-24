@@ -1,4 +1,4 @@
-import FastSchema from "./index";
+import SchemaShield from "./index";
 
 export interface ValidationErrorProps {
   pointer: string;
@@ -17,7 +17,7 @@ export interface ValidatorFunction {
     schema: CompiledSchema,
     data: any,
     pointer: string,
-    fastSchemaInstance: FastSchema
+    schemaShieldInstance: SchemaShield
   ): Result;
 }
 

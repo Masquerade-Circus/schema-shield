@@ -1,6 +1,6 @@
 import { describe, it } from "mocha";
 
-import FastSchema from "../lib";
+import SchemaShield from "../lib";
 import expect from "expect";
 import fs from "fs";
 import { stringifySchema } from "./test-utils";
@@ -86,7 +86,7 @@ const jsonTestsToSkip = {
 const logData = false;
 const logSchema = false;
 
-const fastSchema = new FastSchema();
+const schemaShield = new SchemaShield();
 
 for (let testGroup in jsonTests) {
   if (
@@ -125,7 +125,7 @@ for (let testGroup in jsonTests) {
       if (validate) {
         return { validate };
       }
-      validate = fastSchema.compile(schema);
+      validate = schemaShield.compile(schema);
       if (logSchema) {
         console.log(JSON.stringify(schema, null, 2));
         console.log(stringifySchema(validate));

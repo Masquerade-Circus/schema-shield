@@ -1,6 +1,6 @@
 import { describe, it } from "mocha";
 
-import FastSchema from "../lib";
+import SchemaShield from "../lib";
 import expect from "expect";
 import { stringifySchema } from "./test-utils";
 
@@ -9,7 +9,7 @@ const jsonTests = require("./draft4/format.json");
 const logData = false;
 const logSchema = false;
 
-const fastSchema = new FastSchema();
+const schemaShield = new SchemaShield();
 
 for (let i = 0; i < jsonTests.length; i++) {
   const { description: groupDescription, schema, tests } = jsonTests[i];
@@ -20,7 +20,7 @@ for (let i = 0; i < jsonTests.length; i++) {
     if (validate) {
       return { validate };
     }
-    validate = fastSchema.compile(schema);
+    validate = schemaShield.compile(schema);
     if (logSchema) {
       console.log(JSON.stringify(schema, null, 2));
       console.log(stringifySchema(validate));

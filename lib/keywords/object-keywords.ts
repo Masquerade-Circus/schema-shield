@@ -33,7 +33,7 @@ export const ObjectKeywords: Record<string, ValidatorFunction> = {
     return { valid: errors.length === 0, errors, data };
   },
 
-  properties(schema, data, pointer, fastSchemaInstance) {
+  properties(schema, data, pointer, schemaShieldInstance) {
     if (!isObject(data)) {
       return { valid: true, errors: [], data };
     }
@@ -58,7 +58,7 @@ export const ObjectKeywords: Record<string, ValidatorFunction> = {
         schema.properties[key],
         finalData[key],
         `${pointer}/${key}`,
-        fastSchemaInstance
+        schemaShieldInstance
       );
 
       finalData[key] = validatorResult.data;
@@ -107,7 +107,7 @@ export const ObjectKeywords: Record<string, ValidatorFunction> = {
     };
   },
 
-  additionalProperties(schema, data, pointer, fastSchemaInstance) {
+  additionalProperties(schema, data, pointer, schemaShieldInstance) {
     if (!isObject(data)) {
       return { valid: true, errors: [], data };
     }
@@ -152,7 +152,7 @@ export const ObjectKeywords: Record<string, ValidatorFunction> = {
         schema.additionalProperties,
         finalData[key],
         `${pointer}/${key}`,
-        fastSchemaInstance
+        schemaShieldInstance
       );
 
       finalData[key] = validatorResult.data;
@@ -165,7 +165,7 @@ export const ObjectKeywords: Record<string, ValidatorFunction> = {
     return { valid: errors.length === 0, errors, data: finalData };
   },
 
-  patternProperties(schema, data, pointer, fastSchemaInstance) {
+  patternProperties(schema, data, pointer, schemaShieldInstance) {
     if (!isObject(data)) {
       return { valid: true, errors: [], data };
     }
@@ -184,7 +184,7 @@ export const ObjectKeywords: Record<string, ValidatorFunction> = {
             schema.patternProperties[pattern],
             finalData[key],
             `${pointer}/${key}`,
-            fastSchemaInstance
+            schemaShieldInstance
           );
 
           finalData[key] = validatorResult.data;

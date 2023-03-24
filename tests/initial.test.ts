@@ -1,10 +1,10 @@
 import { describe, it } from "mocha";
 
-import FastSchema from "../lib";
+import SchemaShield from "../lib";
 import expect from "expect";
 
-describe("FastSchema", () => {
-  it("Should create a FastSchema instance", () => {
+describe("SchemaShield", () => {
+  it("Should create a SchemaShield instance", () => {
     let schema = {
       type: "object",
       properties: {
@@ -34,8 +34,8 @@ describe("FastSchema", () => {
       array: ["hello", "world"]
     };
 
-    let fastSchema = new FastSchema();
-    let validate = fastSchema.compile(schema);
+    let schemaShield = new SchemaShield();
+    let validate = schemaShield.compile(schema);
 
     expect(validate(data)).toEqual({
       data: { ...data, hello: "world" },

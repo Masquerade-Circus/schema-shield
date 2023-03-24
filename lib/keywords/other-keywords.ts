@@ -24,7 +24,7 @@ export const OtherKeywords: Record<string, ValidatorFunction> = {
     return { valid: true, errors: [], data };
   },
 
-  oneOf(schema, data, pointer, fastSchemaInstance) {
+  oneOf(schema, data, pointer, schemaShieldInstance) {
     const errors = [];
     let validCount = 0;
     let finalData = data;
@@ -38,7 +38,7 @@ export const OtherKeywords: Record<string, ValidatorFunction> = {
         schema.oneOf[i],
         finalData,
         pointer,
-        fastSchemaInstance
+        schemaShieldInstance
       );
       if (validationResult.valid) {
         validCount++;
@@ -65,7 +65,7 @@ export const OtherKeywords: Record<string, ValidatorFunction> = {
     };
   },
 
-  allOf(schema, data, pointer, fastSchemaInstance) {
+  allOf(schema, data, pointer, schemaShieldInstance) {
     const errors = [];
     let finalData = data;
     for (let i = 0; i < schema.allOf.length; i++) {
@@ -78,7 +78,7 @@ export const OtherKeywords: Record<string, ValidatorFunction> = {
         schema.allOf[i],
         finalData,
         pointer,
-        fastSchemaInstance
+        schemaShieldInstance
       );
       if (!validatorResult.valid) {
         errors.push(...validatorResult.errors);
@@ -89,7 +89,7 @@ export const OtherKeywords: Record<string, ValidatorFunction> = {
     return { valid: errors.length === 0, errors, data: finalData };
   },
 
-  anyOf(schema, data, pointer, fastSchemaInstance) {
+  anyOf(schema, data, pointer, schemaShieldInstance) {
     let finalData = data;
 
     for (let i = 0; i < schema.anyOf.length; i++) {
@@ -101,7 +101,7 @@ export const OtherKeywords: Record<string, ValidatorFunction> = {
         schema.anyOf[i],
         finalData,
         pointer,
-        fastSchemaInstance
+        schemaShieldInstance
       );
       finalData = validationResult.data;
       if (validationResult.valid) {
@@ -122,7 +122,7 @@ export const OtherKeywords: Record<string, ValidatorFunction> = {
     };
   },
 
-  dependencies(schema, data, pointer, fastSchemaInstance) {
+  dependencies(schema, data, pointer, schemaShieldInstance) {
     if (!isObject(data)) {
       return { valid: true, errors: [], data };
     }
@@ -159,7 +159,7 @@ export const OtherKeywords: Record<string, ValidatorFunction> = {
         dependency,
         finalData,
         pointer,
-        fastSchemaInstance
+        schemaShieldInstance
       );
       if (!validatorResult.valid) {
         errors.push(...validatorResult.errors);
