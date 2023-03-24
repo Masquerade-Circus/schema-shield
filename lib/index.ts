@@ -179,22 +179,26 @@ export class SchemaShield {
         }
         return subSchema;
       });
-    } else if (isObject(schema[key])) {
-      if (this.isSchemaLike(schema[key])) {
+      return;
+    }
+
+    if (isObject(schema[key])) {
+      if (this.isSchemaLike(schema[key]) && key !== "properties") {
         compiledSchema[key] = this.compileSchema(
           schema[key],
           `${pointer}/${key}`
         );
-      } else {
-        for (let subKey in schema[key]) {
-          if (this.isSchemaLike(schema[key][subKey])) {
-            compiledSchema[key] = compiledSchema[key] || {};
+        return;
+      }
 
-            compiledSchema[key][subKey] = this.compileSchema(
-              schema[key][subKey],
-              `${pointer}/${key}/${subKey}`
-            );
-          }
+      for (let subKey in schema[key]) {
+        if (this.isSchemaLike(schema[key][subKey])) {
+          compiledSchema[key] = compiledSchema[key] || {};
+
+          compiledSchema[key][subKey] = this.compileSchema(
+            schema[key][subKey],
+            `${pointer}/${key}/${subKey}`
+          );
         }
       }
     }

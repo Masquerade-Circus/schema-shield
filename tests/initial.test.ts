@@ -45,7 +45,7 @@ describe("SchemaShield", () => {
     });
   });
 
-  it.skip("should compile a draft4 schema", () => {
+  it("should compile a draft4 schema", () => {
     let schemaShield = new SchemaShield();
     let validate = schemaShield.compile(draft4Schema);
     expect(validate).toBeDefined();
