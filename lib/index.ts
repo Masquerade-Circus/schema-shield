@@ -1,7 +1,7 @@
 import {
   CompiledSchema,
   FormatFunction,
-  Keyword,
+  Result,
   ValidationError,
   Validator,
   ValidatorFunction
@@ -44,20 +44,10 @@ class FastSchema {
 
   compile(schema: any): Validator {
     const compiledSchema = this.compileSchema(schema, "#");
+    const fastSchema = this;
 
     function validate(data: any) {
-      const errors = compiledSchema.validator(compiledSchema, data, "#");
-      if (errors) {
-        return {
-          valid: false,
-          errors
-        };
-      }
-
-      return {
-        valid: true,
-        errors: null
-      };
+      return compiledSchema.validator(compiledSchema, data, "#", fastSchema);
     }
 
     validate.compiledSchema = compiledSchema;
@@ -65,7 +55,10 @@ class FastSchema {
     return validate;
   }
 
-  private compileSchema(schema: Partial<CompiledSchema>, pointer): any {
+  private compileSchema(
+    schema: Partial<CompiledSchema>,
+    pointer
+  ): CompiledSchema {
     if (typeof schema !== "object" || schema === null) {
       throw new ValidationError("Schema is not an object", {
         pointer,
@@ -97,27 +90,28 @@ class FastSchema {
     ) => {
       if (typeof data === "undefined") {
         if (pointer === "#") {
-          return [
-            new ValidationError("Data is undefined", {
-              pointer,
-              value: data,
-              code: "DATA_UNDEFINED"
-            })
-          ];
+          return {
+            valid: false,
+            errors: [
+              new ValidationError("Data is undefined", {
+                pointer,
+                value: data,
+                code: "DATA_UNDEFINED"
+              })
+            ],
+            data
+          };
         }
-
-        return;
       }
 
-      const typeErrors = this.validateTypes(schema, data, pointer);
-      if (typeErrors) {
-        return typeErrors;
+      let finalData = data;
+      const typeErrorsResult = this.validateTypes(schema, finalData, pointer);
+      if (typeErrorsResult.valid === false) {
+        return typeErrorsResult;
       }
+      finalData = typeErrorsResult.data;
 
-      const keywordErrors = this.validateKeywords(schema, data, pointer);
-      if (keywordErrors) {
-        return keywordErrors;
-      }
+      return this.validateKeywords(schema, finalData, pointer);
     };
 
     compiledSchema.validator = validator;
@@ -218,46 +212,66 @@ class FastSchema {
     }
   }
 
-  private validateKeywords(schema: CompiledSchema, data, pointer) {
+  private validateTypes(schema: CompiledSchema, data, pointer): Result {
+    if (
+      typeof data === "undefined" ||
+      !Array.isArray(schema.validators) ||
+      schema.validators.length === 0
+    ) {
+      return {
+        valid: true,
+        errors: [],
+        data
+      };
+    }
+
+    let errors = [];
+    let finalData = data;
+
+    for (let schemaValidator of schema.validators) {
+      const schemaResult = schemaValidator(schema, data, pointer, this);
+
+      finalData = schemaResult.data;
+
+      if (schemaResult.valid) {
+        return schemaResult;
+      }
+
+      errors = schemaResult.errors;
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      data: finalData
+    };
+  }
+
+  private validateKeywords(schema: CompiledSchema, data, pointer): Result {
     const errors = [];
+    let finalData = data;
 
     if ("keywords" in schema) {
       for (let keyword in schema.keywords) {
         const keywordValidator: ValidatorFunction = schema.keywords[keyword];
-        const keywordErrors = keywordValidator(schema, data, pointer, this);
-        if (keywordErrors) {
-          errors.push(...keywordErrors);
-        }
-      }
-    }
-
-    if (errors.length > 0) {
-      return errors;
-    }
-  }
-
-  private validateTypes(schema: CompiledSchema, data, pointer) {
-    if (Array.isArray(schema.validators) && schema.validators.length > 0) {
-      let errors = [];
-      for (let schemaValidator of schema.validators) {
-        const schemaValidatorErrors = schemaValidator(
+        const keywordResult = keywordValidator(
           schema,
-          data,
+          finalData,
           pointer,
           this
         );
-        if (!schemaValidatorErrors) {
-          errors = [];
-          break;
+        finalData = keywordResult.data;
+        if (!keywordResult.valid) {
+          errors.push(...keywordResult.errors);
         }
-
-        errors = schemaValidatorErrors;
-      }
-
-      if (errors.length > 0) {
-        return errors;
       }
     }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      data: finalData
+    };
   }
 }
 

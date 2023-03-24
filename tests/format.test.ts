@@ -39,7 +39,8 @@ for (let i = 0; i < jsonTests.length; i++) {
         }
         expect(validate(data)).toEqual({
           valid,
-          errors: valid ? null : expect.any(Array)
+          errors: valid ? [] : expect.any(Array),
+          data: valid ? data : expect.anything()
         });
       });
     }

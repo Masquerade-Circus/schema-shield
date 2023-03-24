@@ -21,14 +21,13 @@ const jsonTests = files.reduce((acc, file) => {
 }, {});
 
 const jsonTestsToSkip = {
-  // // Failed tests
-  default: true,
-  definitions: true,
-  id: true,
-  "infinite-loop-detection": true,
-  not: true,
-  ref: true,
-  refRemote: true,
+  // Failed tests
+  definitions: "Not implemented",
+  id: "Not implemented",
+  "infinite-loop-detection": "Not implemented",
+  not: "Not implemented",
+  ref: "Not implemented",
+  refRemote: "Not implemented",
   // Passed tests
   // Object
   properties: false,
@@ -36,7 +35,7 @@ const jsonTestsToSkip = {
   minProperties: false,
   additionalProperties: false,
   patternProperties: false,
-  // Array
+  // // Array
   items: {
     skip: false,
     "a schema given for items": {
@@ -53,7 +52,7 @@ const jsonTestsToSkip = {
   minItems: false,
   uniqueItems: false,
   additionalItems: false,
-  // String
+  // // String
   format: false,
   maxLength: {
     skip: false,
@@ -69,31 +68,47 @@ const jsonTestsToSkip = {
     }
   },
   pattern: false,
-  // Number & Integer
+  // // Number & Integer
   maximum: false,
   minimum: false,
   multipleOf: false,
-  // All
+  // // All
   required: false,
   type: false,
   enum: false,
   oneOf: false,
   anyOf: false,
   allOf: false,
-  dependencies: false
+  dependencies: false,
+  default: false
 };
 
-const logData = true;
-const logSchema = true;
+const logData = false;
+const logSchema = false;
 
 const fastSchema = new FastSchema();
 
 for (let testGroup in jsonTests) {
   if (
+    typeof jsonTestsToSkip[testGroup] === "string" ||
     jsonTestsToSkip[testGroup] === true ||
     jsonTestsToSkip[testGroup]?.skip ||
     testGroup in jsonTestsToSkip === false
   ) {
+    let message = `Skipping test group "${testGroup}" because`;
+    if (testGroup in jsonTestsToSkip === false) {
+      message += " it is not in jsonTestsToSkip";
+    } else if (jsonTestsToSkip[testGroup] === true) {
+      message += " it is marked as true in jsonTestsToSkip";
+    } else if (typeof jsonTestsToSkip[testGroup] === "string") {
+      message += ` it is marked as "${jsonTestsToSkip[testGroup]}" in jsonTestsToSkip`;
+    } else if (jsonTestsToSkip[testGroup]?.skip) {
+      message += " it is marked as skip in jsonTestsToSkip";
+    }
+
+    describe.skip(message, () => {
+      it("should be skipped", () => {});
+    });
     continue;
   }
 
@@ -119,8 +134,9 @@ for (let testGroup in jsonTests) {
     }
 
     if (jsonTestsToSkip[testGroup][groupDescription] === true) {
-      console.log("Skipping test group", groupDescription);
-      describe.skip(groupDescription, () => {});
+      describe.skip(`Skipping test group  "${testGroup}/${groupDescription}" because it is marked as true in jsonTestsToSkip`, () => {
+        it("should be skipped", () => {});
+      });
       continue;
     }
 
@@ -131,7 +147,9 @@ for (let testGroup in jsonTests) {
         "because",
         jsonTestsToSkip[testGroup][groupDescription]
       );
-      describe.skip(groupDescription, () => {});
+      describe.skip(`Skipping test group "${testGroup}/${groupDescription}" because it is marked as "${jsonTestsToSkip[testGroup][groupDescription]}" in jsonTestsToSkip`, () => {
+        it("should be skipped", () => {});
+      });
       continue;
     }
 
@@ -144,14 +162,7 @@ for (let testGroup in jsonTests) {
           typeof jsonTestsToSkip[testGroup][groupDescription] === "object" &&
           jsonTestsToSkip[testGroup][groupDescription][description]
         ) {
-          console.log(
-            "Skipping test",
-            groupDescription,
-            description,
-            "because",
-            jsonTestsToSkip[testGroup][groupDescription][description]
-          );
-          it.skip(description, () => {});
+          it.skip(`Skipping test "${description}" because it is marked as "${jsonTestsToSkip[testGroup][groupDescription][description]}" in jsonTestsToSkip`, () => {});
           continue;
         }
 
@@ -160,10 +171,15 @@ for (let testGroup in jsonTests) {
           if (logData) {
             console.log("data", data);
           }
-          expect(validate(data)).toEqual({
-            valid,
-            errors: valid ? null : expect.any(Array)
-          });
+
+          const result = validate(data);
+
+          expect(result).toEqual(
+            expect.objectContaining({
+              valid,
+              errors: valid ? [] : expect.any(Array)
+            })
+          );
         });
       }
     });

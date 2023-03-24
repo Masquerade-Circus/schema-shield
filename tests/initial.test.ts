@@ -19,6 +19,10 @@ describe("FastSchema", () => {
           items: {
             type: "string"
           }
+        },
+        hello: {
+          type: "string",
+          default: "world"
         }
       },
       required: ["foo", "bar", "array"]
@@ -33,6 +37,10 @@ describe("FastSchema", () => {
     let fastSchema = new FastSchema();
     let validate = fastSchema.compile(schema);
 
-    expect(validate(data)).toEqual({ valid: true, errors: null });
+    expect(validate(data)).toEqual({
+      data: { ...data, hello: "world" },
+      errors: [],
+      valid: true
+    });
   });
 });

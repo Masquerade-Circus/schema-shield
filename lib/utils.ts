@@ -6,13 +6,19 @@ export interface ValidationErrorProps {
   code: string;
 }
 
+export interface Result {
+  valid: boolean;
+  errors: ValidationError[];
+  data: any;
+}
+
 export interface ValidatorFunction {
   (
     schema: CompiledSchema,
     data: any,
     pointer: string,
     fastSchemaInstance: FastSchema
-  ): ValidationError[] | void;
+  ): Result;
 }
 
 export interface FormatFunction {
@@ -29,13 +35,8 @@ export interface CompiledSchema {
 }
 
 export interface Validator {
-  (data: any): { valid: boolean; errors: ValidationError[] | void };
+  (data: any): Result;
   compiledSchema: CompiledSchema;
-}
-
-export interface Keyword {
-  validator: ValidatorFunction;
-  schemaType: string;
 }
 
 export class ValidationError extends Error {
