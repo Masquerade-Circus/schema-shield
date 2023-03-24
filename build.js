@@ -180,7 +180,7 @@ async function build({
 
 (async () => {
   await build({
-    globalName: "FJV",
+    globalName: "FastSchema",
     entryPoint: "./lib/index.ts",
     outfileName: "./dist/index",
     clean: true,

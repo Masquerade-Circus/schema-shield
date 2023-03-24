@@ -1,8 +1,8 @@
 {
-  "name": "fjv",
-  "version": "1.0.0",
+  "name": "FastSchema",
+  "version": "0.0.1",
   "description": "",
-  "main": "fjv.js",
+  "main": "index.js",
   "scripts": {
     "test": "mocha --bail --recursive --no-timeouts --exit --require ts-node/register --enable-source-maps tests/**/*.test.ts",
     "dev:test": "nodemon -e ts,js -w ./tests -w ./lib --exec npm run test",

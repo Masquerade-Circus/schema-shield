@@ -1,10 +1,10 @@
 import { describe, it } from "mocha";
 
-import FJV from "../lib";
+import FastSchema from "../lib";
 import expect from "expect";
 
-describe("Fjv", () => {
-  it("Should create a fjv instance", () => {
+describe("FastSchema", () => {
+  it("Should create a FastSchema instance", () => {
     let schema = {
       type: "object",
       properties: {
@@ -30,8 +30,8 @@ describe("Fjv", () => {
       array: ["hello", "world"]
     };
 
-    let fjv = new FJV();
-    let validate = fjv.compile(schema);
+    let fastSchema = new FastSchema();
+    let validate = fastSchema.compile(schema);
 
     expect(validate(data)).toEqual({ valid: true, errors: null });
   });

@@ -1,9 +1,15 @@
-import { CompiledSchema, Keyword, ValidationError, Validator, ValidatorFunction } from './utils';
-import { keywords, validateKeywords } from './keywords';
+import {
+  CompiledSchema,
+  Keyword,
+  ValidationError,
+  Validator,
+  ValidatorFunction
+} from "./utils";
+import { keywords, validateKeywords } from "./keywords";
 
-import { Types } from './types';
+import { Types } from "./types";
 
-class FJV {
+class FastSchema {
   types = new Map<string, ValidatorFunction>();
   formats = new Map<string, ValidatorFunction>();
   keywords = new Map<string, Keyword>();
@@ -26,25 +32,29 @@ class FJV {
     this.formats.set(name, validator);
   }
 
-  addKeyword(name: string, validator: ValidatorFunction, schemaType: string = 'any') {
+  addKeyword(
+    name: string,
+    validator: ValidatorFunction,
+    schemaType: string = "any"
+  ) {
     this.keywords.set(name, { validator, schemaType });
   }
 
   compile(schema: any): Validator {
-    const compiledSchema = this.compileSchema(schema, '#');
+    const compiledSchema = this.compileSchema(schema, "#");
 
     function validate(data: any) {
-      const errors = compiledSchema.validator(compiledSchema, data, '#');
+      const errors = compiledSchema.validator(compiledSchema, data, "#");
       if (errors) {
         return {
           valid: false,
-          errors,
+          errors
         };
       }
 
       return {
         valid: true,
-        errors: null,
+        errors: null
       };
     }
 
@@ -54,11 +64,11 @@ class FJV {
   }
 
   compileSchema(schema: Partial<CompiledSchema>, pointer): any {
-    if (typeof schema !== 'object' || schema === null) {
-      throw new ValidationError('Schema is not an object', {
+    if (typeof schema !== "object" || schema === null) {
+      throw new ValidationError("Schema is not an object", {
         pointer,
         value: schema,
-        code: 'SCHEMA_NOT_OBJECT',
+        code: "SCHEMA_NOT_OBJECT"
       });
     }
 
@@ -66,25 +76,33 @@ class FJV {
       ...schema,
       pointer,
       types: [],
-      validators: [],
+      validators: []
     };
 
-    if ('type' in compiledSchema) {
-      compiledSchema.types = Array.isArray(compiledSchema.type) ? compiledSchema.type : compiledSchema.type.split(',').map((t) => t.trim());
+    if ("type" in compiledSchema) {
+      compiledSchema.types = Array.isArray(compiledSchema.type)
+        ? compiledSchema.type
+        : compiledSchema.type.split(",").map((t) => t.trim());
 
-      compiledSchema.validators = compiledSchema.types.filter((type) => this.types.has(type)).map((type) => this.types.get(type));
+      compiledSchema.validators = compiledSchema.types
+        .filter((type) => this.types.has(type))
+        .map((type) => this.types.get(type));
     }
 
     // Compile schema type
-    const validator: ValidatorFunction = (schema: any, data: any, pointer: string) => {
-      if (typeof data === 'undefined') {
-        if (pointer === '#') {
+    const validator: ValidatorFunction = (
+      schema: any,
+      data: any,
+      pointer: string
+    ) => {
+      if (typeof data === "undefined") {
+        if (pointer === "#") {
           return [
-            new ValidationError('Data is undefined', {
+            new ValidationError("Data is undefined", {
               pointer,
               value: data,
-              code: 'DATA_UNDEFINED',
-            }),
+              code: "DATA_UNDEFINED"
+            })
           ];
         }
 
@@ -119,7 +137,7 @@ class FJV {
     // Recursively compile sub schemas
     for (let key in schema) {
       // Skip type as it is already compiled
-      if (key === 'type') {
+      if (key === "type") {
         continue;
       }
 
@@ -134,7 +152,7 @@ class FJV {
         continue;
       }
 
-      if (typeof schema[key] === 'object') {
+      if (typeof schema[key] === "object") {
         this.handleObjectSchema(key, schema, pointer, compiledSchema);
         continue;
       }
@@ -143,10 +161,15 @@ class FJV {
     return compiledSchema;
   }
 
-  private handleArraySchema(key: string, schema: any, pointer: string, compiledSchema: any) {
+  private handleArraySchema(
+    key: string,
+    schema: any,
+    pointer: string,
+    compiledSchema: any
+  ) {
     compiledSchema[key] = schema[key].map((subSchema, index) => {
-      if (typeof subSchema === 'object' && subSchema !== null) {
-        if ('type' in subSchema) {
+      if (typeof subSchema === "object" && subSchema !== null) {
+        if ("type" in subSchema) {
           return this.compileSchema(subSchema, `${pointer}/${key}/${index}`);
         }
 
@@ -160,9 +183,17 @@ class FJV {
     });
   }
 
-  private handleObjectSchema(key: string, schema: any, pointer: string, compiledSchema: any) {
-    if ('type' in schema[key]) {
-      compiledSchema[key] = this.compileSchema(schema[key], `${pointer}/${key}`);
+  private handleObjectSchema(
+    key: string,
+    schema: any,
+    pointer: string,
+    compiledSchema: any
+  ) {
+    if ("type" in schema[key]) {
+      compiledSchema[key] = this.compileSchema(
+        schema[key],
+        `${pointer}/${key}`
+      );
       return;
     }
 
@@ -170,19 +201,28 @@ class FJV {
       compiledSchema[key] = compiledSchema[key] || {};
 
       if (this.keywords.has(subKey)) {
-        compiledSchema[key][subKey] = this.compileSchema(schema[key][subKey], `${pointer}/${subKey}`);
+        compiledSchema[key][subKey] = this.compileSchema(
+          schema[key][subKey],
+          `${pointer}/${subKey}`
+        );
         continue;
       }
 
-      if (typeof schema[key][subKey] === 'object') {
-        if ('type' in schema[key][subKey]) {
-          compiledSchema[key][subKey] = this.compileSchema(schema[key][subKey], `${pointer}/${key}/${subKey}`);
+      if (typeof schema[key][subKey] === "object") {
+        if ("type" in schema[key][subKey]) {
+          compiledSchema[key][subKey] = this.compileSchema(
+            schema[key][subKey],
+            `${pointer}/${key}/${subKey}`
+          );
           continue;
         }
 
         for (let subSubKey in schema[key][subKey]) {
           if (this.keywords.has(subSubKey)) {
-            compiledSchema[key][subKey] = this.compileSchema(schema[key][subKey], `${pointer}/${key}/${subKey}`);
+            compiledSchema[key][subKey] = this.compileSchema(
+              schema[key][subKey],
+              `${pointer}/${key}/${subKey}`
+            );
             continue;
           }
         }
@@ -191,4 +231,4 @@ class FJV {
   }
 }
 
-export default FJV;
+export default FastSchema;
