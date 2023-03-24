@@ -1,6 +1,7 @@
 import { describe, it } from "mocha";
 
 import { SchemaShield } from "../lib";
+import draft4Schema from "./draft4-schema.json";
 import expect from "expect";
 
 describe("SchemaShield", () => {
@@ -42,5 +43,11 @@ describe("SchemaShield", () => {
       errors: [],
       valid: true
     });
+  });
+
+  it.skip("should compile a draft4 schema", () => {
+    let schemaShield = new SchemaShield();
+    let validate = schemaShield.compile(draft4Schema);
+    expect(validate).toBeDefined();
   });
 });

@@ -76,11 +76,10 @@ export class SchemaShield {
 
   compile(schema: any): Validator {
     const compiledSchema = this.compileSchema(schema, "#");
-    const schemaShield = this;
 
-    function validate(data: any) {
-      return compiledSchema.validator(compiledSchema, data, "#", schemaShield);
-    }
+    const validate: Validator = (data: any) => {
+      return compiledSchema.validator(compiledSchema, data, "#", this);
+    };
 
     validate.compiledSchema = compiledSchema;
 
@@ -161,83 +160,40 @@ export class SchemaShield {
         compiledSchema.keywords[key] = validator;
       }
 
-      if (Array.isArray(schema[key])) {
-        this.handleArraySchema(key, schema, pointer, compiledSchema);
-        continue;
-      }
-
-      if (isObject(schema[key])) {
-        this.handleObjectSchema(key, schema, pointer, compiledSchema);
-        continue;
-      }
+      this.handleSubSchema(key, schema, pointer, compiledSchema);
     }
 
     return compiledSchema;
   }
 
-  private handleArraySchema(
+  private handleSubSchema(
     key: string,
     schema: any,
     pointer: string,
     compiledSchema: any
   ) {
-    compiledSchema[key] = schema[key].map((subSchema, index) => {
-      if (typeof subSchema === "object" && subSchema !== null) {
-        if ("type" in subSchema) {
+    if (Array.isArray(schema[key])) {
+      compiledSchema[key] = schema[key].map((subSchema, index) => {
+        if (this.isSchemaLike(subSchema)) {
           return this.compileSchema(subSchema, `${pointer}/${key}/${index}`);
         }
-
-        for (let subKey in subSchema) {
-          if (this.keywords.has(subKey)) {
-            return this.compileSchema(subSchema, `${pointer}/${key}/${index}`);
-          }
-        }
-      }
-      return subSchema;
-    });
-  }
-
-  private handleObjectSchema(
-    key: string,
-    schema: any,
-    pointer: string,
-    compiledSchema: any
-  ) {
-    if ("type" in schema[key]) {
-      compiledSchema[key] = this.compileSchema(
-        schema[key],
-        `${pointer}/${key}`
-      );
-      return;
-    }
-
-    for (let subKey in schema[key]) {
-      compiledSchema[key] = compiledSchema[key] || {};
-
-      if (this.keywords.has(subKey)) {
-        compiledSchema[key][subKey] = this.compileSchema(
-          schema[key][subKey],
-          `${pointer}/${subKey}`
+        return subSchema;
+      });
+    } else if (isObject(schema[key])) {
+      if (this.isSchemaLike(schema[key])) {
+        compiledSchema[key] = this.compileSchema(
+          schema[key],
+          `${pointer}/${key}`
         );
-        continue;
-      }
+      } else {
+        for (let subKey in schema[key]) {
+          if (this.isSchemaLike(schema[key][subKey])) {
+            compiledSchema[key] = compiledSchema[key] || {};
 
-      if (typeof schema[key][subKey] === "object") {
-        if ("type" in schema[key][subKey]) {
-          compiledSchema[key][subKey] = this.compileSchema(
-            schema[key][subKey],
-            `${pointer}/${key}/${subKey}`
-          );
-          continue;
-        }
-
-        for (let subSubKey in schema[key][subKey]) {
-          if (this.keywords.has(subSubKey)) {
             compiledSchema[key][subKey] = this.compileSchema(
               schema[key][subKey],
               `${pointer}/${key}/${subKey}`
             );
-            continue;
           }
         }
       }
@@ -304,5 +260,22 @@ export class SchemaShield {
       errors,
       data: finalData
     };
+  }
+
+  private isSchemaOrKeywordPresent(subSchema: any): boolean {
+    if ("type" in subSchema) {
+      return true;
+    }
+
+    for (let subKey in subSchema) {
+      if (this.keywords.has(subKey)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private isSchemaLike(subSchema: any): boolean {
+    return isObject(subSchema) && this.isSchemaOrKeywordPresent(subSchema);
   }
 }
