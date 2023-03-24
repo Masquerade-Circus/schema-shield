@@ -21,7 +21,6 @@ const jsonTestsToSkip = {
   format: true,
   default: true,
   definitions: true,
-  dependencies: true,
   id: true,
   'infinite-loop-detection': true,
   not: true,
@@ -76,6 +75,7 @@ const jsonTestsToSkip = {
   oneOf: false,
   anyOf: false,
   allOf: false,
+  dependencies: false,
 };
 
 const logData = true;

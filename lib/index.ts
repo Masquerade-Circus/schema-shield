@@ -9,38 +9,13 @@ class FJV {
   keywords = new Map<string, Keyword>();
 
   constructor() {
-    this.addType('object', Types.object);
-    this.addType('array', Types.array);
-    this.addType('string', Types.string);
-    this.addType('number', Types.number);
-    this.addType('integer', Types.integer);
-    this.addType('boolean', Types.boolean);
-    this.addType('null', Types.null);
+    for (const type in Types) {
+      this.addType(type, Types[type]);
+    }
 
-    this.addKeyword('required', keywords.required);
-    this.addKeyword('properties', keywords.properties);
-    this.addKeyword('minProperties', keywords.minProperties);
-    this.addKeyword('maxProperties', keywords.maxProperties);
-    this.addKeyword('additionalProperties', keywords.additionalProperties);
-    this.addKeyword('patternProperties', keywords.patternProperties);
-    this.addKeyword('items', keywords.items);
-    this.addKeyword('minItems', keywords.minItems);
-    this.addKeyword('maxItems', keywords.maxItems);
-    this.addKeyword('additionalItems', keywords.additionalItems);
-    this.addKeyword('uniqueItems', keywords.uniqueItems);
-    this.addKeyword('minLength', keywords.minLength);
-    this.addKeyword('maxLength', keywords.maxLength);
-    this.addKeyword('pattern', keywords.pattern);
-    this.addKeyword('format', keywords.format);
-    this.addKeyword('enum', keywords.enum);
-    this.addKeyword('minimum', keywords.minimum);
-    this.addKeyword('maximum', keywords.maximum);
-    this.addKeyword('multipleOf', keywords.multipleOf);
-    this.addKeyword('nullable', keywords.nullable);
-    this.addKeyword('oneOf', keywords.oneOf);
-    this.addKeyword('allOf', keywords.allOf);
-    this.addKeyword('anyOf', keywords.anyOf);
-    this.addKeyword('dependencies', keywords.dependencies);
+    for (const keyword in keywords) {
+      this.addKeyword(keyword, keywords[keyword]);
+    }
   }
 
   addType(name: string, validator: ValidatorFunction) {
@@ -79,14 +54,7 @@ class FJV {
   }
 
   compileSchema(schema: Partial<CompiledSchema>, pointer): any {
-    const compiledSchema = {
-      ...schema,
-      pointer,
-      types: [],
-      validators: [],
-    };
-
-    if (typeof compiledSchema !== 'object') {
+    if (typeof schema !== 'object' || schema === null) {
       throw new ValidationError('Schema is not an object', {
         pointer,
         value: schema,
@@ -94,30 +62,17 @@ class FJV {
       });
     }
 
+    const compiledSchema = {
+      ...schema,
+      pointer,
+      types: [],
+      validators: [],
+    };
+
     if ('type' in compiledSchema) {
-      if (Array.isArray(compiledSchema.type)) {
-        compiledSchema.types = compiledSchema.type;
-      } else if (typeof compiledSchema.type === 'string') {
-        compiledSchema.types = compiledSchema.type.split(',').map((t) => t.trim());
-      } else {
-        throw new ValidationError(`Schema type "${compiledSchema.type}" must be a string or an array`, {
-          pointer,
-          value: schema,
-          code: 'SCHEMA_TYPE_NOT_STRING',
-        });
-      }
+      compiledSchema.types = Array.isArray(compiledSchema.type) ? compiledSchema.type : compiledSchema.type.split(',').map((t) => t.trim());
 
-      for (let type of compiledSchema.types) {
-        if (!this.types.has(type)) {
-          throw new ValidationError(`Schema type "${type}" is not supported`, {
-            pointer,
-            value: schema,
-            code: 'SCHEMA_TYPE_NOT_SUPPORTED',
-          });
-        }
-
-        compiledSchema.validators.push(this.types.get(type));
-      }
+      compiledSchema.validators = compiledSchema.types.filter((type) => this.types.has(type)).map((type) => this.types.get(type));
     }
 
     // Compile schema type
