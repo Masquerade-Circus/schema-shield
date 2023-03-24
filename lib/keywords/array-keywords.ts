@@ -15,6 +15,19 @@ export const ArrayKeywords: Record<string, ValidatorFunction> = {
     let finalData = [...data];
     if (Array.isArray(schema.items)) {
       for (let i = 0; i < schema.items.length; i++) {
+        if (typeof schema.items[i] === "boolean") {
+          if (schema.items[i] === false && typeof data[i] !== "undefined") {
+            errors.push(
+              new ValidationError("Array item is not allowed", {
+                pointer: `${pointer}/${i}`,
+                value: data[i],
+                code: "ARRAY_ITEM_NOT_ALLOWED"
+              })
+            );
+          }
+          continue;
+        }
+
         const { validator } = schema.items[i] as CompiledSchema;
         if (!validator) {
           continue;
@@ -31,6 +44,16 @@ export const ArrayKeywords: Record<string, ValidatorFunction> = {
         if (!validatorResult.valid) {
           errors.push(...validatorResult.errors);
         }
+      }
+    } else if (typeof schema.items === "boolean") {
+      if (schema.items === false && data.length > 0) {
+        errors.push(
+          new ValidationError("Array is not allowed", {
+            pointer,
+            value: data,
+            code: "ARRAY_NOT_ALLOWED"
+          })
+        );
       }
     } else {
       const { validator } = schema.items as CompiledSchema;

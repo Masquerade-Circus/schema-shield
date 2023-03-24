@@ -42,10 +42,26 @@ export const ObjectKeywords: Record<string, ValidatorFunction> = {
     let finalData = { ...data };
     for (let key in schema.properties) {
       if (!data.hasOwnProperty(key) || typeof data[key] === "undefined") {
-        if ("default" in schema.properties[key] === false) {
-          continue;
+        if (
+          isObject(schema.properties[key]) &&
+          "default" in schema.properties[key]
+        ) {
+          finalData[key] = schema.properties[key].default;
         }
-        finalData[key] = schema.properties[key].default;
+
+        continue;
+      }
+
+      if (typeof schema.properties[key] === "boolean") {
+        if (schema.properties[key] === false) {
+          errors.push(
+            new ValidationError("Property is not allowed", {
+              pointer: `${pointer}/${key}`,
+              value: data[key],
+              code: "PROPERTY_NOT_ALLOWED"
+            })
+          );
+        }
         continue;
       }
 
@@ -173,6 +189,23 @@ export const ObjectKeywords: Record<string, ValidatorFunction> = {
     const errors = [];
     let finalData = { ...data };
     for (let pattern in schema.patternProperties) {
+      if (typeof schema.patternProperties[pattern] === "boolean") {
+        if (schema.patternProperties[pattern] === false) {
+          for (let key in finalData) {
+            if (new RegExp(pattern).test(key)) {
+              errors.push(
+                new ValidationError("Property is not allowed", {
+                  pointer: `${pointer}/${key}`,
+                  value: data[key],
+                  code: "PROPERTY_NOT_ALLOWED"
+                })
+              );
+            }
+          }
+        }
+        continue;
+      }
+
       const { validator } = schema.patternProperties[pattern] as CompiledSchema;
       if (!validator) {
         continue;

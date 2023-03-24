@@ -29,23 +29,36 @@ export const OtherKeywords: Record<string, ValidatorFunction> = {
     let validCount = 0;
     let finalData = data;
     for (let i = 0; i < schema.oneOf.length; i++) {
-      const { validator } = schema.oneOf[i] as CompiledSchema;
-      if (!validator) {
-        validCount++;
-        continue;
-      }
-      const validationResult = validator(
-        schema.oneOf[i],
-        finalData,
-        pointer,
-        schemaShieldInstance
-      );
-      if (validationResult.valid) {
-        validCount++;
+      if (isObject(schema.oneOf[i])) {
+        const { validator } = schema.oneOf[i] as CompiledSchema;
+        if (!validator) {
+          validCount++;
+          continue;
+        }
+        const validationResult = validator(
+          schema.oneOf[i],
+          finalData,
+          pointer,
+          schemaShieldInstance
+        );
+        if (validationResult.valid) {
+          validCount++;
+        } else {
+          errors.push(...validationResult.errors);
+        }
+        finalData = validationResult.data;
       } else {
-        errors.push(...validationResult.errors);
+        if (typeof schema.oneOf[i] === "boolean") {
+          if (Boolean(data) === schema.oneOf[i]) {
+            validCount++;
+          }
+          continue;
+        }
+
+        if (data === schema.oneOf[i]) {
+          validCount++;
+        }
       }
-      finalData = validationResult.data;
     }
 
     if (validCount === 1) {
@@ -69,21 +82,48 @@ export const OtherKeywords: Record<string, ValidatorFunction> = {
     const errors = [];
     let finalData = data;
     for (let i = 0; i < schema.allOf.length; i++) {
-      const { validator } = schema.allOf[i] as CompiledSchema;
-      if (!validator) {
-        continue;
-      }
+      if (isObject(schema.allOf[i])) {
+        const { validator } = schema.allOf[i] as CompiledSchema;
+        if (!validator) {
+          continue;
+        }
 
-      const validatorResult = validator(
-        schema.allOf[i],
-        finalData,
-        pointer,
-        schemaShieldInstance
-      );
-      if (!validatorResult.valid) {
-        errors.push(...validatorResult.errors);
+        const validatorResult = validator(
+          schema.allOf[i],
+          finalData,
+          pointer,
+          schemaShieldInstance
+        );
+
+        if (!validatorResult.valid) {
+          errors.push(...validatorResult.errors);
+        }
+
+        finalData = validatorResult.data;
+      } else {
+        if (typeof schema.allOf[i] === "boolean") {
+          if (Boolean(data) !== schema.allOf[i]) {
+            errors.push(
+              new ValidationError(`Value must match all schemas in allOf`, {
+                pointer,
+                value: data,
+                code: "VALUE_DOES_NOT_MATCH_ALL_OF"
+              })
+            );
+          }
+          continue;
+        }
+
+        if (data !== schema.allOf[i]) {
+          errors.push(
+            new ValidationError(`Value must match all schemas in allOf`, {
+              pointer,
+              value: data,
+              code: "VALUE_DOES_NOT_MATCH_ALL_OF"
+            })
+          );
+        }
       }
-      finalData = validatorResult.data;
     }
 
     return { valid: errors.length === 0, errors, data: finalData };
@@ -93,19 +133,31 @@ export const OtherKeywords: Record<string, ValidatorFunction> = {
     let finalData = data;
 
     for (let i = 0; i < schema.anyOf.length; i++) {
-      const { validator } = schema.anyOf[i] as CompiledSchema;
-      if (!validator) {
-        return { valid: true, errors: [], data };
-      }
-      const validationResult = validator(
-        schema.anyOf[i],
-        finalData,
-        pointer,
-        schemaShieldInstance
-      );
-      finalData = validationResult.data;
-      if (validationResult.valid) {
-        return { valid: true, errors: [], data: finalData };
+      if (isObject(schema.anyOf[i])) {
+        const { validator } = schema.anyOf[i] as CompiledSchema;
+        if (!validator) {
+          return { valid: true, errors: [], data };
+        }
+        const validationResult = validator(
+          schema.anyOf[i],
+          finalData,
+          pointer,
+          schemaShieldInstance
+        );
+        finalData = validationResult.data;
+        if (validationResult.valid) {
+          return { valid: true, errors: [], data: finalData };
+        }
+      } else {
+        if (typeof schema.anyOf[i] === "boolean") {
+          if (Boolean(data) === schema.anyOf[i]) {
+            return { valid: true, errors: [], data: finalData };
+          }
+        }
+
+        if (data === schema.anyOf[i]) {
+          return { valid: true, errors: [], data: finalData };
+        }
       }
     }
 
@@ -147,6 +199,34 @@ export const OtherKeywords: Record<string, ValidatorFunction> = {
             );
           }
         }
+        continue;
+      }
+
+      if (typeof dependency === "boolean") {
+        if (dependency) {
+          continue;
+        }
+        errors.push(
+          new ValidationError(`Dependency ${key} is missing`, {
+            pointer,
+            value: data,
+            code: "DEPENDENCY_MISSING"
+          })
+        );
+        continue;
+      }
+
+      if (typeof dependency === "string") {
+        if (dependency in data) {
+          continue;
+        }
+        errors.push(
+          new ValidationError(`Dependency ${dependency} is missing`, {
+            pointer,
+            value: data,
+            code: "DEPENDENCY_MISSING"
+          })
+        );
         continue;
       }
 

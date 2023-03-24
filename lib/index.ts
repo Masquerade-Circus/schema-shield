@@ -4,7 +4,8 @@ import {
   Result,
   ValidationError,
   Validator,
-  ValidatorFunction
+  ValidatorFunction,
+  isObject
 } from "./utils";
 
 import { Formats } from "./formats";
@@ -134,7 +135,7 @@ class SchemaShield {
         continue;
       }
 
-      if (typeof schema[key] === "object") {
+      if (isObject(schema[key])) {
         this.handleObjectSchema(key, schema, pointer, compiledSchema);
         continue;
       }
