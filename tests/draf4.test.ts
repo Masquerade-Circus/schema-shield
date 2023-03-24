@@ -22,7 +22,6 @@ const jsonTests = files.reduce((acc, file) => {
 
 const jsonTestsToSkip = {
   // // Failed tests
-  format: true,
   default: true,
   definitions: true,
   id: true,
@@ -55,6 +54,7 @@ const jsonTestsToSkip = {
   uniqueItems: false,
   additionalItems: false,
   // String
+  format: false,
   maxLength: {
     skip: false,
     "maxLength validation": {

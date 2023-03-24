@@ -1,18 +1,20 @@
 import {
   CompiledSchema,
+  FormatFunction,
   Keyword,
   ValidationError,
   Validator,
   ValidatorFunction
 } from "./utils";
-import { keywords, validateKeywords } from "./keywords";
 
+import { Formats } from "./formats";
 import { Types } from "./types";
+import { keywords } from "./keywords";
 
 class FastSchema {
   types = new Map<string, ValidatorFunction>();
-  formats = new Map<string, ValidatorFunction>();
-  keywords = new Map<string, Keyword>();
+  formats = new Map<string, FormatFunction>();
+  keywords = new Map<string, ValidatorFunction>();
 
   constructor() {
     for (const type in Types) {
@@ -22,22 +24,22 @@ class FastSchema {
     for (const keyword in keywords) {
       this.addKeyword(keyword, keywords[keyword]);
     }
+
+    for (const format in Formats) {
+      this.addFormat(format, Formats[format]);
+    }
   }
 
   addType(name: string, validator: ValidatorFunction) {
     this.types.set(name, validator);
   }
 
-  addFormat(name: string, validator: ValidatorFunction) {
+  addFormat(name: string, validator: FormatFunction) {
     this.formats.set(name, validator);
   }
 
-  addKeyword(
-    name: string,
-    validator: ValidatorFunction,
-    schemaType: string = "any"
-  ) {
-    this.keywords.set(name, { validator, schemaType });
+  addKeyword(name: string, validator: ValidatorFunction) {
+    this.keywords.set(name, validator);
   }
 
   compile(schema: any): Validator {
@@ -63,7 +65,7 @@ class FastSchema {
     return validate;
   }
 
-  compileSchema(schema: Partial<CompiledSchema>, pointer): any {
+  private compileSchema(schema: Partial<CompiledSchema>, pointer): any {
     if (typeof schema !== "object" || schema === null) {
       throw new ValidationError("Schema is not an object", {
         pointer,
@@ -74,17 +76,15 @@ class FastSchema {
 
     const compiledSchema = {
       ...schema,
-      pointer,
-      types: [],
-      validators: []
+      pointer
     };
 
     if ("type" in compiledSchema) {
-      compiledSchema.types = Array.isArray(compiledSchema.type)
+      const types = Array.isArray(compiledSchema.type)
         ? compiledSchema.type
         : compiledSchema.type.split(",").map((t) => t.trim());
 
-      compiledSchema.validators = compiledSchema.types
+      compiledSchema.validators = types
         .filter((type) => this.types.has(type))
         .map((type) => this.types.get(type));
     }
@@ -109,24 +109,12 @@ class FastSchema {
         return;
       }
 
-      if (compiledSchema.validators.length > 0) {
-        let errors = [];
-        for (let schemaValidator of compiledSchema.validators) {
-          const schemaValidatorErrors = schemaValidator(schema, data, pointer);
-          if (!schemaValidatorErrors) {
-            errors = [];
-            break;
-          }
-
-          errors = schemaValidatorErrors;
-        }
-
-        if (errors.length > 0) {
-          return errors;
-        }
+      const typeErrors = this.validateTypes(schema, data, pointer);
+      if (typeErrors) {
+        return typeErrors;
       }
 
-      const keywordErrors = validateKeywords(schema, data, pointer);
+      const keywordErrors = this.validateKeywords(schema, data, pointer);
       if (keywordErrors) {
         return keywordErrors;
       }
@@ -142,9 +130,9 @@ class FastSchema {
       }
 
       if (this.keywords.has(key)) {
-        const keyword = this.keywords.get(key);
+        const validator = this.keywords.get(key);
         compiledSchema.keywords = compiledSchema.keywords || {};
-        compiledSchema.keywords[key] = keyword.validator;
+        compiledSchema.keywords[key] = validator;
       }
 
       if (Array.isArray(schema[key])) {
@@ -226,6 +214,48 @@ class FastSchema {
             continue;
           }
         }
+      }
+    }
+  }
+
+  private validateKeywords(schema: CompiledSchema, data, pointer) {
+    const errors = [];
+
+    if ("keywords" in schema) {
+      for (let keyword in schema.keywords) {
+        const keywordValidator: ValidatorFunction = schema.keywords[keyword];
+        const keywordErrors = keywordValidator(schema, data, pointer, this);
+        if (keywordErrors) {
+          errors.push(...keywordErrors);
+        }
+      }
+    }
+
+    if (errors.length > 0) {
+      return errors;
+    }
+  }
+
+  private validateTypes(schema: CompiledSchema, data, pointer) {
+    if (Array.isArray(schema.validators) && schema.validators.length > 0) {
+      let errors = [];
+      for (let schemaValidator of schema.validators) {
+        const schemaValidatorErrors = schemaValidator(
+          schema,
+          data,
+          pointer,
+          this
+        );
+        if (!schemaValidatorErrors) {
+          errors = [];
+          break;
+        }
+
+        errors = schemaValidatorErrors;
+      }
+
+      if (errors.length > 0) {
+        return errors;
       }
     }
   }

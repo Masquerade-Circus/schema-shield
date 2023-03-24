@@ -1,3 +1,5 @@
+import FastSchema from "./index";
+
 export interface ValidationErrorProps {
   pointer: string;
   value: any;
@@ -5,17 +7,24 @@ export interface ValidationErrorProps {
 }
 
 export interface ValidatorFunction {
-  (schema: CompiledSchema, data, pointer): ValidationError[] | void;
+  (
+    schema: CompiledSchema,
+    data: any,
+    pointer: string,
+    fastSchemaInstance: FastSchema
+  ): ValidationError[] | void;
+}
+
+export interface FormatFunction {
+  (data: any): boolean;
 }
 
 export interface CompiledSchema {
-  validator: ValidatorFunction;
   pointer: string;
+  validator?: ValidatorFunction;
   type?: string;
-  types: string[];
+  validators?: ValidatorFunction[];
   keywords?: Record<string, ValidatorFunction>;
-  properties?: Record<string, CompiledSchema>;
-  items?: CompiledSchema;
   [key: string]: any;
 }
 
@@ -36,9 +45,16 @@ export class ValidationError extends Error {
   value: any;
   code: string;
 
-  constructor(message: string, options: ValidationErrorProps) {
+  constructor(
+    message: string,
+    options: ValidationErrorProps = {
+      pointer: "",
+      value: null,
+      code: ""
+    }
+  ) {
     super(message);
-    this.name = 'ValidationError';
+    this.name = "ValidationError";
     this.pointer = options.pointer;
     this.message = message;
     this.value = options.value;
@@ -48,15 +64,18 @@ export class ValidationError extends Error {
 
 export const defaultValidator = (schema, data, pointer) => {
   return [
-    new ValidationError('No validator for this schema', {
+    new ValidationError("No validator for this schema", {
       pointer,
       value: data,
-      code: 'NO_VALIDATOR',
-    }),
+      code: "NO_VALIDATOR"
+    })
   ];
 };
 
-export function deepEqual(obj: Array<any> | Record<string, any>, other: Array<any> | Record<string, any>) {
+export function deepEqual(
+  obj: Array<any> | Record<string, any>,
+  other: Array<any> | Record<string, any>
+) {
   if (Array.isArray(obj) && Array.isArray(other)) {
     if (obj.length !== other.length) {
       return false;
@@ -71,7 +90,7 @@ export function deepEqual(obj: Array<any> | Record<string, any>, other: Array<an
     return true;
   }
 
-  if (typeof obj === 'object' && typeof other === 'object') {
+  if (typeof obj === "object" && typeof other === "object") {
     if (obj === null || other === null) {
       return obj === other;
     }
@@ -94,5 +113,5 @@ export function deepEqual(obj: Array<any> | Record<string, any>, other: Array<an
 }
 
 export function isObject(data) {
-  return typeof data === 'object' && data !== null && !Array.isArray(data);
+  return typeof data === "object" && data !== null && !Array.isArray(data);
 }

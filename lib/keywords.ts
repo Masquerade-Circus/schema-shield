@@ -1,22 +1,10 @@
-import { CompiledSchema, ValidationError, ValidatorFunction, deepEqual, defaultValidator, isObject } from './utils';
-
-export function validateKeywords(schema: CompiledSchema, data, pointer) {
-  const errors = [];
-
-  if ('keywords' in schema) {
-    for (let keyword in schema.keywords) {
-      const keywordValidator: ValidatorFunction = schema.keywords[keyword];
-      const keywordErrors = keywordValidator(schema, data, pointer);
-      if (keywordErrors) {
-        errors.push(...keywordErrors);
-      }
-    }
-  }
-
-  if (errors.length > 0) {
-    return errors;
-  }
-}
+import {
+  ValidationError,
+  ValidatorFunction,
+  deepEqual,
+  defaultValidator,
+  isObject
+} from "./utils";
 
 export const keywords: Record<string, ValidatorFunction> = {
   // Object
@@ -30,10 +18,10 @@ export const keywords: Record<string, ValidatorFunction> = {
       const key = schema.required[i];
       if (!data.hasOwnProperty(key)) {
         errors.push(
-          new ValidationError('Missing required property', {
+          new ValidationError("Missing required property", {
             pointer: `${pointer}/${key}`,
             value: data,
-            code: 'MISSING_REQUIRED_PROPERTY',
+            code: "MISSING_REQUIRED_PROPERTY"
           })
         );
       }
@@ -43,6 +31,7 @@ export const keywords: Record<string, ValidatorFunction> = {
       return errors;
     }
   },
+
   properties(schema, data, pointer) {
     if (!isObject(data)) {
       return;
@@ -59,7 +48,11 @@ export const keywords: Record<string, ValidatorFunction> = {
         continue;
       }
 
-      const validatorErrors = validator(schema.properties[key], data[key], `${pointer}/${key}`);
+      const validatorErrors = validator(
+        schema.properties[key],
+        data[key],
+        `${pointer}/${key}`
+      );
 
       if (validatorErrors) {
         errors.push(...validatorErrors);
@@ -74,11 +67,11 @@ export const keywords: Record<string, ValidatorFunction> = {
   maxProperties(schema, data, pointer) {
     if (isObject(data) && Object.keys(data).length > schema.maxProperties) {
       return [
-        new ValidationError('Object has too many properties', {
+        new ValidationError("Object has too many properties", {
           pointer,
           value: data,
-          code: 'OBJECT_TOO_MANY_PROPERTIES',
-        }),
+          code: "OBJECT_TOO_MANY_PROPERTIES"
+        })
       ];
     }
   },
@@ -86,11 +79,11 @@ export const keywords: Record<string, ValidatorFunction> = {
   minProperties(schema, data, pointer) {
     if (isObject(data) && Object.keys(data).length < schema.minProperties) {
       return [
-        new ValidationError('Object has too few properties', {
+        new ValidationError("Object has too few properties", {
           pointer,
           value: data,
-          code: 'OBJECT_TOO_FEW_PROPERTIES',
-        }),
+          code: "OBJECT_TOO_FEW_PROPERTIES"
+        })
       ];
     }
   },
@@ -121,10 +114,10 @@ export const keywords: Record<string, ValidatorFunction> = {
 
       if (schema.additionalProperties === false) {
         errors.push(
-          new ValidationError('Additional property not allowed', {
+          new ValidationError("Additional property not allowed", {
             pointer: `${pointer}/${key}`,
             value: data,
-            code: 'ADDITIONAL_PROPERTY_NOT_ALLOWED',
+            code: "ADDITIONAL_PROPERTY_NOT_ALLOWED"
           })
         );
         continue;
@@ -135,7 +128,11 @@ export const keywords: Record<string, ValidatorFunction> = {
         continue;
       }
 
-      const validatorErrors = validator(schema.additionalProperties, data[key], `${pointer}/${key}`);
+      const validatorErrors = validator(
+        schema.additionalProperties,
+        data[key],
+        `${pointer}/${key}`
+      );
 
       if (validatorErrors) {
         errors.push(...validatorErrors);
@@ -161,7 +158,11 @@ export const keywords: Record<string, ValidatorFunction> = {
 
       for (let key in data) {
         if (new RegExp(pattern).test(key)) {
-          const validatorErrors = validator(schema.patternProperties[pattern], data[key], `${pointer}/${key}`);
+          const validatorErrors = validator(
+            schema.patternProperties[pattern],
+            data[key],
+            `${pointer}/${key}`
+          );
 
           if (validatorErrors) {
             errors.push(...validatorErrors);
@@ -189,7 +190,11 @@ export const keywords: Record<string, ValidatorFunction> = {
         if (!validator) {
           continue;
         }
-        const validatorErrors = validator(schema.items[i], data[i], `${pointer}/${i}`);
+        const validatorErrors = validator(
+          schema.items[i],
+          data[i],
+          `${pointer}/${i}`
+        );
         if (validatorErrors) {
           errors.push(...validatorErrors);
         }
@@ -201,7 +206,11 @@ export const keywords: Record<string, ValidatorFunction> = {
       }
 
       for (let i = 0; i < data.length; i++) {
-        const validatorErrors = validator(schema.items, data[i], `${pointer}/${i}`);
+        const validatorErrors = validator(
+          schema.items,
+          data[i],
+          `${pointer}/${i}`
+        );
         if (validatorErrors) {
           errors.push(...validatorErrors);
         }
@@ -216,11 +225,11 @@ export const keywords: Record<string, ValidatorFunction> = {
   minItems(schema, data, pointer) {
     if (Array.isArray(data) && data.length < schema.minItems) {
       return [
-        new ValidationError('Array is too short', {
+        new ValidationError("Array is too short", {
           pointer,
           value: data,
-          code: 'ARRAY_TOO_SHORT',
-        }),
+          code: "ARRAY_TOO_SHORT"
+        })
       ];
     }
   },
@@ -228,11 +237,11 @@ export const keywords: Record<string, ValidatorFunction> = {
   maxItems(schema, data, pointer) {
     if (Array.isArray(data) && data.length > schema.maxItems) {
       return [
-        new ValidationError('Array is too long', {
+        new ValidationError("Array is too long", {
           pointer,
           value: data,
-          code: 'ARRAY_TOO_LONG',
-        }),
+          code: "ARRAY_TOO_LONG"
+        })
       ];
     }
   },
@@ -244,20 +253,24 @@ export const keywords: Record<string, ValidatorFunction> = {
 
     if (schema.additionalItems === false && data.length > schema.items.length) {
       return [
-        new ValidationError('Array has too many items', {
+        new ValidationError("Array has too many items", {
           pointer,
           value: data,
-          code: 'ARRAY_TOO_MANY_ITEMS',
-        }),
+          code: "ARRAY_TOO_MANY_ITEMS"
+        })
       ];
     }
 
     const errors = [];
 
-    if (typeof schema.additionalItems === 'object') {
+    if (typeof schema.additionalItems === "object") {
       for (let i = schema.items.length; i < data.length; i++) {
         const { validator } = schema.additionalItems;
-        const validatorErrors = validator(schema.additionalItems, data[i], `${pointer}/${i}`);
+        const validatorErrors = validator(
+          schema.additionalItems,
+          data[i],
+          `${pointer}/${i}`
+        );
         if (validatorErrors) {
           errors.push(...validatorErrors);
         }
@@ -277,7 +290,7 @@ export const keywords: Record<string, ValidatorFunction> = {
         let itemStr = item;
 
         // Change string to "string" to avoid false positives
-        if (typeof item === 'string') {
+        if (typeof item === "string") {
           itemStr = `"${item}"`;
 
           // Sort object keys to avoid false positives
@@ -294,11 +307,11 @@ export const keywords: Record<string, ValidatorFunction> = {
 
         if (unique.has(itemStr)) {
           return [
-            new ValidationError('Array items are not unique', {
+            new ValidationError("Array items are not unique", {
               pointer,
               value: data,
-              code: 'ARRAY_ITEMS_NOT_UNIQUE',
-            }),
+              code: "ARRAY_ITEMS_NOT_UNIQUE"
+            })
           ];
         } else {
           unique.add(itemStr);
@@ -311,43 +324,76 @@ export const keywords: Record<string, ValidatorFunction> = {
   minLength(schema, data, pointer) {
     if (data.length < schema.minLength) {
       return [
-        new ValidationError('String is too short', {
+        new ValidationError("String is too short", {
           pointer,
           value: data,
-          code: 'STRING_TOO_SHORT',
-        }),
+          code: "STRING_TOO_SHORT"
+        })
       ];
     }
   },
+
   maxLength(schema, data, pointer) {
-    if (typeof data === 'string' && data.length > schema.maxLength) {
+    if (typeof data === "string" && data.length > schema.maxLength) {
       return [
-        new ValidationError('String is too long', {
+        new ValidationError("String is too long", {
           pointer,
           value: data,
-          code: 'STRING_TOO_LONG',
-        }),
+          code: "STRING_TOO_LONG"
+        })
       ];
     }
   },
+
   pattern(schema, data, pointer) {
-    if (typeof data !== 'string') {
+    if (typeof data !== "string") {
       return;
     }
 
-    const patternRegexp = typeof schema.pattern === 'string' ? new RegExp(schema.pattern) : schema.pattern;
+    const patternRegexp =
+      typeof schema.pattern === "string"
+        ? new RegExp(schema.pattern)
+        : schema.pattern;
 
     if (!patternRegexp.test(data)) {
       return [
-        new ValidationError('String does not match pattern', {
+        new ValidationError("String does not match pattern", {
           pointer,
           value: data,
-          code: 'STRING_DOES_NOT_MATCH_PATTERN',
-        }),
+          code: "STRING_DOES_NOT_MATCH_PATTERN"
+        })
       ];
     }
   },
-  format: defaultValidator,
+
+  format(schema, data, pointer, formatInstance) {
+    if (typeof data !== "string") {
+      return;
+    }
+
+    const formatValidate = formatInstance.formats.get(schema.format);
+    if (!formatValidate) {
+      return [
+        new ValidationError(`Unknown format ${schema.format}`, {
+          pointer,
+          value: data,
+          code: "UNKNOWN_FORMAT"
+        })
+      ];
+    }
+
+    const valid = formatValidate(data);
+    if (!valid) {
+      return [
+        new ValidationError(`String does not match format ${schema.format}`, {
+          pointer,
+          value: data,
+          code: "STRING_DOES_NOT_MATCH_FORMAT"
+        })
+      ];
+    }
+  },
+
   enum(schema, data, pointer) {
     // Simple equality check
     for (let i = 0; i < schema.enum.length; i++) {
@@ -368,9 +414,9 @@ export const keywords: Record<string, ValidatorFunction> = {
     }
 
     // If is an object check for a deep equality
-    if (typeof data === 'object' && data !== null) {
+    if (typeof data === "object" && data !== null) {
       for (let i = 0; i < schema.enum.length; i++) {
-        if (typeof schema.enum[i] === 'object' && schema.enum[i] !== null) {
+        if (typeof schema.enum[i] === "object" && schema.enum[i] !== null) {
           if (deepEqual(schema.enum[i], data)) {
             return;
           }
@@ -379,52 +425,57 @@ export const keywords: Record<string, ValidatorFunction> = {
     }
 
     return [
-      new ValidationError(`Value must be one of ${schema.enum.join(', ')}`, {
+      new ValidationError(`Value must be one of ${schema.enum.join(", ")}`, {
         pointer,
         value: data,
-        code: 'VALUE_NOT_IN_ENUM',
-      }),
+        code: "VALUE_NOT_IN_ENUM"
+      })
     ];
   },
 
   // Number / Integer
   minimum(schema, data, pointer) {
-    if (typeof data !== 'number') {
+    if (typeof data !== "number") {
       return;
     }
 
-    const min = schema.exclusiveMinimum ? schema.minimum + 1e-15 : schema.minimum;
+    const min = schema.exclusiveMinimum
+      ? schema.minimum + 1e-15
+      : schema.minimum;
 
     if (data < min) {
       return [
-        new ValidationError('Number is too small', {
+        new ValidationError("Number is too small", {
           pointer,
           value: data,
-          code: 'NUMBER_TOO_SMALL',
-        }),
+          code: "NUMBER_TOO_SMALL"
+        })
       ];
     }
   },
+
   maximum(schema, data, pointer) {
-    if (typeof data !== 'number') {
+    if (typeof data !== "number") {
       return;
     }
 
-    const max = schema.exclusiveMaximum ? schema.maximum - 1e-15 : schema.maximum;
+    const max = schema.exclusiveMaximum
+      ? schema.maximum - 1e-15
+      : schema.maximum;
 
     if (data > max) {
       return [
-        new ValidationError('Number is too large', {
+        new ValidationError("Number is too large", {
           pointer,
           value: data,
-          code: 'NUMBER_TOO_LARGE',
-        }),
+          code: "NUMBER_TOO_LARGE"
+        })
       ];
     }
   },
 
   multipleOf(schema, data, pointer) {
-    if (typeof data !== 'number') {
+    if (typeof data !== "number") {
       return;
     }
 
@@ -432,11 +483,11 @@ export const keywords: Record<string, ValidatorFunction> = {
     const areMultiples = Math.abs(quotient - Math.round(quotient)) < 1e-15;
     if (!areMultiples) {
       return [
-        new ValidationError('Number is not a multiple of', {
+        new ValidationError("Number is not a multiple of", {
           pointer,
           value: data,
-          code: 'NUMBER_NOT_MULTIPLE_OF',
-        }),
+          code: "NUMBER_NOT_MULTIPLE_OF"
+        })
       ];
     }
   },
@@ -445,11 +496,11 @@ export const keywords: Record<string, ValidatorFunction> = {
   nullable(schema, data, pointer) {
     if (data !== null) {
       return [
-        new ValidationError('Value must be null to be empty', {
+        new ValidationError("Value must be null to be empty", {
           pointer,
           value: data,
-          code: 'VALUE_NOT_NULL',
-        }),
+          code: "VALUE_NOT_NULL"
+        })
       ];
     }
   },
@@ -479,8 +530,8 @@ export const keywords: Record<string, ValidatorFunction> = {
       new ValidationError(`Value must match exactly one schema in oneOf`, {
         pointer,
         value: data,
-        code: 'VALUE_DOES_NOT_MATCH_ONE_OF',
-      }),
+        code: "VALUE_DOES_NOT_MATCH_ONE_OF"
+      })
     ];
   },
 
@@ -518,8 +569,8 @@ export const keywords: Record<string, ValidatorFunction> = {
       new ValidationError(`Value must match at least one schema in anyOf`, {
         pointer,
         value: data,
-        code: 'VALUE_DOES_NOT_MATCH_ANY_OF',
-      }),
+        code: "VALUE_DOES_NOT_MATCH_ANY_OF"
+      })
     ];
   },
 
@@ -542,7 +593,7 @@ export const keywords: Record<string, ValidatorFunction> = {
               new ValidationError(`Dependency ${dependency[i]} is missing`, {
                 pointer,
                 value: data,
-                code: 'DEPENDENCY_MISSING',
+                code: "DEPENDENCY_MISSING"
               })
             );
           }
@@ -564,5 +615,5 @@ export const keywords: Record<string, ValidatorFunction> = {
     if (errors.length > 0) {
       return errors;
     }
-  },
+  }
 };
