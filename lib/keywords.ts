@@ -1,4 +1,4 @@
-import { CompiledSchema, ValidationError, ValidatorFunction, deepEqual, defaultValidator } from './utils';
+import { CompiledSchema, ValidationError, ValidatorFunction, deepEqual, defaultValidator, isObject } from './utils';
 
 export function validateKeywords(schema: CompiledSchema, data, pointer) {
   const errors = [];
@@ -21,7 +21,7 @@ export function validateKeywords(schema: CompiledSchema, data, pointer) {
 export const keywords: Record<string, ValidatorFunction> = {
   // Object
   required(schema, data, pointer) {
-    if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+    if (!isObject(data)) {
       return;
     }
     const errors = [];
@@ -44,7 +44,7 @@ export const keywords: Record<string, ValidatorFunction> = {
     }
   },
   properties(schema, data, pointer) {
-    if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+    if (!isObject(data)) {
       return;
     }
 
@@ -72,7 +72,7 @@ export const keywords: Record<string, ValidatorFunction> = {
   },
 
   maxProperties(schema, data, pointer) {
-    if (typeof data === 'object' && data !== null && !Array.isArray(data) && Object.keys(data).length > schema.maxProperties) {
+    if (isObject(data) && Object.keys(data).length > schema.maxProperties) {
       return [
         new ValidationError('Object has too many properties', {
           pointer,
@@ -84,7 +84,7 @@ export const keywords: Record<string, ValidatorFunction> = {
   },
 
   minProperties(schema, data, pointer) {
-    if (typeof data === 'object' && data !== null && !Array.isArray(data) && Object.keys(data).length < schema.minProperties) {
+    if (isObject(data) && Object.keys(data).length < schema.minProperties) {
       return [
         new ValidationError('Object has too few properties', {
           pointer,
@@ -96,7 +96,7 @@ export const keywords: Record<string, ValidatorFunction> = {
   },
 
   additionalProperties(schema, data, pointer) {
-    if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+    if (!isObject(data)) {
       return;
     }
 
@@ -148,7 +148,7 @@ export const keywords: Record<string, ValidatorFunction> = {
   },
 
   patternProperties(schema, data, pointer) {
-    if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+    if (!isObject(data)) {
       return;
     }
 
@@ -183,7 +183,18 @@ export const keywords: Record<string, ValidatorFunction> = {
 
     const errors = [];
 
-    if (!Array.isArray(schema.items)) {
+    if (Array.isArray(schema.items)) {
+      for (let i = 0; i < schema.items.length; i++) {
+        const { validator } = schema.items[i];
+        if (!validator) {
+          continue;
+        }
+        const validatorErrors = validator(schema.items[i], data[i], `${pointer}/${i}`);
+        if (validatorErrors) {
+          errors.push(...validatorErrors);
+        }
+      }
+    } else {
       const { validator } = schema.items;
       if (!validator) {
         return;
@@ -194,21 +205,6 @@ export const keywords: Record<string, ValidatorFunction> = {
         if (validatorErrors) {
           errors.push(...validatorErrors);
         }
-      }
-
-      if (errors.length > 0) {
-        return errors;
-      }
-    }
-
-    for (let i = 0; i < schema.items.length; i++) {
-      const { validator } = schema.items[i];
-      if (!validator) {
-        continue;
-      }
-      const validatorErrors = validator(schema.items[i], data[i], `${pointer}/${i}`);
-      if (validatorErrors) {
-        errors.push(...validatorErrors);
       }
     }
 
@@ -275,31 +271,38 @@ export const keywords: Record<string, ValidatorFunction> = {
 
   uniqueItems(schema, data, pointer) {
     if (Array.isArray(data) && schema.uniqueItems) {
-      const unique = new Set(
-        data.map((item) => {
-          if (typeof item !== 'object' || item === null) {
-            if (typeof item === 'string') {
-              return `"${item}"`;
-            }
-            return item;
-          }
+      const unique = new Set();
+
+      for (const item of data) {
+        let itemStr = item;
+
+        // Change string to "string" to avoid false positives
+        if (typeof item === 'string') {
+          itemStr = `"${item}"`;
+
+          // Sort object keys to avoid false positives
+        } else if (isObject(item)) {
           const keys = Object.keys(item).sort();
           const sorted = {};
           for (let i = 0; i < keys.length; i++) {
             sorted[keys[i]] = item[keys[i]];
           }
-          return JSON.stringify(sorted);
-        })
-      );
+          itemStr = JSON.stringify(sorted);
+        } else if (Array.isArray(item)) {
+          itemStr = JSON.stringify(item);
+        }
 
-      if (unique.size !== data.length) {
-        return [
-          new ValidationError('Array items are not unique', {
-            pointer,
-            value: data,
-            code: 'ARRAY_ITEMS_NOT_UNIQUE',
-          }),
-        ];
+        if (unique.has(itemStr)) {
+          return [
+            new ValidationError('Array items are not unique', {
+              pointer,
+              value: data,
+              code: 'ARRAY_ITEMS_NOT_UNIQUE',
+            }),
+          ];
+        } else {
+          unique.add(itemStr);
+        }
       }
     }
   },
@@ -521,7 +524,7 @@ export const keywords: Record<string, ValidatorFunction> = {
   },
 
   dependencies(schema, data, pointer) {
-    if (typeof data !== 'object' || data === null) {
+    if (!isObject(data)) {
       return;
     }
 
