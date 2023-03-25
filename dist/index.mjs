@@ -429,11 +429,15 @@ var ArrayKeywords = {
       return { valid: true, errors: [], data };
     }
     const errors = [];
-    let finalData = [...data];
-    if (Array.isArray(schema.items)) {
-      for (let i = 0; i < schema.items.length; i++) {
-        if (typeof schema.items[i] === "boolean") {
-          if (schema.items[i] === false && typeof data[i] !== "undefined") {
+    const finalData = [...data];
+    const schemaItems = schema.items;
+    const schemaItemsLength = Array.isArray(schemaItems) ? schemaItems.length : 0;
+    const dataLength = data.length;
+    if (Array.isArray(schemaItems)) {
+      const itemsLength = Math.min(schemaItemsLength, dataLength);
+      for (let i = 0; i < itemsLength; i++) {
+        if (typeof schemaItems[i] === "boolean") {
+          if (schemaItems[i] === false && typeof data[i] !== "undefined") {
             errors.push(
               new ValidationError("Array item is not allowed", {
                 pointer: `${pointer}/${i}`,
@@ -444,23 +448,18 @@ var ArrayKeywords = {
           }
           continue;
         }
-        const { validator } = schema.items[i];
+        const { validator } = schemaItems[i];
         if (!validator) {
           continue;
         }
-        const validatorResult = validator(
-          schema.items[i],
-          finalData[i],
-          `${pointer}/${i}`,
-          schemaShieldInstance
-        );
+        const validatorResult = validator(schemaItems[i], finalData[i], `${pointer}/${i}`, schemaShieldInstance);
         finalData[i] = validatorResult.data;
         if (!validatorResult.valid) {
           errors.push(...validatorResult.errors);
         }
       }
-    } else if (typeof schema.items === "boolean") {
-      if (schema.items === false && data.length > 0) {
+    } else if (typeof schemaItems === "boolean") {
+      if (schemaItems === false && dataLength > 0) {
         errors.push(
           new ValidationError("Array is not allowed", {
             pointer,
@@ -470,17 +469,12 @@ var ArrayKeywords = {
         );
       }
     } else {
-      const { validator } = schema.items;
+      const { validator } = schemaItems;
       if (!validator) {
         return { valid: true, errors: [], data };
       }
-      for (let i = 0; i < finalData.length; i++) {
-        const validatorErrors = validator(
-          schema.items,
-          finalData[i],
-          `${pointer}/${i}`,
-          schemaShieldInstance
-        );
+      for (let i = 0; i < dataLength; i++) {
+        const validatorErrors = validator(schemaItems, finalData[i], `${pointer}/${i}`, schemaShieldInstance);
         finalData[i] = validatorErrors.data;
         if (!validatorErrors.valid) {
           errors.push(...validatorErrors.errors);
@@ -546,12 +540,7 @@ var ArrayKeywords = {
     if (typeof schema.additionalItems === "object") {
       for (let i = schema.items.length; i < finalData.length; i++) {
         const { validator } = schema.additionalItems;
-        const validatorResult = validator(
-          schema.additionalItems,
-          finalData[i],
-          `${pointer}/${i}`,
-          schemaShieldInstance
-        );
+        const validatorResult = validator(schema.additionalItems, finalData[i], `${pointer}/${i}`, schemaShieldInstance);
         if (!validatorResult.valid) {
           errors.push(...validatorResult.errors);
         }
@@ -564,20 +553,18 @@ var ArrayKeywords = {
     if (!Array.isArray(data) || !schema.uniqueItems) {
       return { valid: true, errors: [], data };
     }
-    const unique = /* @__PURE__ */ new Set();
+    const unique = /* @__PURE__ */ new Map();
     for (const item of data) {
-      let itemStr = item;
+      let itemStr;
       if (typeof item === "string") {
         itemStr = `"${item}"`;
       } else if (isObject(item)) {
-        const keys = Object.keys(item).sort();
-        const sorted = {};
-        for (let i = 0; i < keys.length; i++) {
-          sorted[keys[i]] = item[keys[i]];
-        }
+        const sorted = Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b)));
         itemStr = JSON.stringify(sorted);
       } else if (Array.isArray(item)) {
         itemStr = JSON.stringify(item);
+      } else {
+        itemStr = item;
       }
       if (unique.has(itemStr)) {
         return {
@@ -592,7 +579,7 @@ var ArrayKeywords = {
           data
         };
       } else {
-        unique.add(itemStr);
+        unique.set(itemStr, true);
       }
     }
     return { valid: true, errors: [], data };
@@ -605,11 +592,10 @@ var NumberKeywords = {
     if (typeof data !== "number") {
       return { valid: true, errors: [], data };
     }
-    if (typeof schema.exclusiveMinimum === "number") {
-      return NumberKeywords.exclusiveMinimum(schema, data, pointer, schemaShieldInstance);
-    }
     let min = schema.minimum;
-    if (typeof schema.exclusiveMinimum === "boolean" && schema.exclusiveMinimum === true) {
+    if (typeof schema.exclusiveMinimum === "number") {
+      min = schema.exclusiveMinimum + 1e-15;
+    } else if (schema.exclusiveMinimum === true) {
       min += 1e-15;
     }
     const valid = data >= min;
@@ -629,11 +615,10 @@ var NumberKeywords = {
     if (typeof data !== "number") {
       return { valid: true, errors: [], data };
     }
-    if (typeof schema.exclusiveMaximum === "number") {
-      return NumberKeywords.exclusiveMaximum(schema, data, pointer, schemaShieldInstance);
-    }
     let max = schema.maximum;
-    if (typeof schema.exclusiveMaximum === "boolean" && schema.exclusiveMaximum === true) {
+    if (typeof schema.exclusiveMaximum === "number") {
+      max = schema.exclusiveMaximum - 1e-15;
+    } else if (schema.exclusiveMaximum === true) {
       max -= 1e-15;
     }
     const valid = data <= max;
@@ -671,10 +656,7 @@ var NumberKeywords = {
     };
   },
   exclusiveMinimum(schema, data, pointer) {
-    if (typeof data !== "number") {
-      return { valid: true, errors: [], data };
-    }
-    if (typeof schema.exclusiveMinimum !== "number") {
+    if (typeof data !== "number" || typeof schema.exclusiveMinimum !== "number" || "minimum" in schema) {
       return { valid: true, errors: [], data };
     }
     const valid = data > schema.exclusiveMinimum + 1e-15;
@@ -691,10 +673,7 @@ var NumberKeywords = {
     };
   },
   exclusiveMaximum(schema, data, pointer) {
-    if (typeof data !== "number") {
-      return { valid: true, errors: [], data };
-    }
-    if (typeof schema.exclusiveMaximum !== "number") {
+    if (typeof data !== "number" || typeof schema.exclusiveMaximum !== "number" || "maximum" in schema) {
       return { valid: true, errors: [], data };
     }
     const valid = data < schema.exclusiveMaximum - 1e-15;
@@ -813,13 +792,14 @@ var ObjectKeywords = {
     }
     const errors = [];
     let finalData = { ...data };
-    for (let key in data) {
+    const keys = Object.keys(data);
+    for (const key of keys) {
       if (schema.properties && schema.properties.hasOwnProperty(key)) {
         continue;
       }
       if (schema.patternProperties) {
         let match = false;
-        for (let pattern in schema.patternProperties) {
+        for (const pattern in schema.patternProperties) {
           if (new RegExp(pattern, "u").test(key)) {
             match = true;
             break;
@@ -857,11 +837,13 @@ var ObjectKeywords = {
     }
     const errors = [];
     let finalData = { ...data };
-    for (let pattern in schema.patternProperties) {
+    const patterns = Object.keys(schema.patternProperties);
+    for (const pattern of patterns) {
+      const regex = new RegExp(pattern, "u");
       if (typeof schema.patternProperties[pattern] === "boolean") {
         if (schema.patternProperties[pattern] === false) {
-          for (let key in finalData) {
-            if (new RegExp(pattern, "u").test(key)) {
+          for (const key in finalData) {
+            if (regex.test(key)) {
               errors.push(
                 new ValidationError("Property is not allowed", {
                   pointer: `${pointer}/${key}`,
@@ -878,8 +860,9 @@ var ObjectKeywords = {
       if (!validator) {
         continue;
       }
-      for (let key in finalData) {
-        if (new RegExp(pattern, "u").test(key)) {
+      const keys = Object.keys(finalData);
+      for (const key of keys) {
+        if (regex.test(key)) {
           const validatorResult = validator(schema.patternProperties[pattern], finalData[key], `${pointer}/${key}`, schemaShieldInstance);
           finalData[key] = validatorResult.data;
           if (!validatorResult.valid) {
@@ -1394,26 +1377,16 @@ var StringKeywords = {
     };
   },
   enum(schema, data, pointer) {
+    const isArray = Array.isArray(data);
+    const isObject2 = typeof data === "object" && data !== null;
     for (let i = 0; i < schema.enum.length; i++) {
-      if (schema.enum[i] === data) {
+      const enumItem = schema.enum[i];
+      if (enumItem === data) {
         return { valid: true, errors: [], data };
       }
-    }
-    if (Array.isArray(data)) {
-      for (let i = 0; i < schema.enum.length; i++) {
-        if (Array.isArray(schema.enum[i])) {
-          if (deepEqual(schema.enum[i], data)) {
-            return { valid: true, errors: [], data };
-          }
-        }
-      }
-    }
-    if (typeof data === "object" && data !== null) {
-      for (let i = 0; i < schema.enum.length; i++) {
-        if (typeof schema.enum[i] === "object" && schema.enum[i] !== null) {
-          if (deepEqual(schema.enum[i], data)) {
-            return { valid: true, errors: [], data };
-          }
+      if (isArray && Array.isArray(enumItem) || isObject2 && typeof enumItem === "object" && enumItem !== null) {
+        if (deepEqual(enumItem, data)) {
+          return { valid: true, errors: [], data };
         }
       }
     }
@@ -1446,15 +1419,15 @@ var SchemaShield = class {
   formats = /* @__PURE__ */ new Map();
   keywords = /* @__PURE__ */ new Map();
   constructor() {
-    for (const type in Types) {
+    Object.keys(Types).forEach((type) => {
       this.addType(type, Types[type]);
-    }
-    for (const keyword in keywords) {
+    });
+    Object.keys(keywords).forEach((keyword) => {
       this.addKeyword(keyword, keywords[keyword]);
-    }
-    for (const format in Formats) {
+    });
+    Object.keys(Formats).forEach((format) => {
       this.addFormat(format, Formats[format]);
-    }
+    });
   }
   addType(name, validator) {
     this.types.set(name, validator);
@@ -1492,7 +1465,7 @@ var SchemaShield = class {
     };
     if ("type" in compiledSchema) {
       const types = Array.isArray(compiledSchema.type) ? compiledSchema.type : compiledSchema.type.split(",").map((t) => t.trim());
-      compiledSchema.validators = types.filter((type) => this.types.has(type)).map((type) => this.types.get(type));
+      compiledSchema.validators = types.map((type) => this.types.get(type)).filter((validator2) => validator2 !== void 0);
     }
     const validator = (schema2, data, pointer2) => {
       if (typeof data === "undefined") {

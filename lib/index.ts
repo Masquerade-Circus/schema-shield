@@ -44,17 +44,17 @@ export class SchemaShield {
   keywords = new Map<string, ValidatorFunction>();
 
   constructor() {
-    for (const type in Types) {
+    Object.keys(Types).forEach((type) => {
       this.addType(type, Types[type]);
-    }
+    });
 
-    for (const keyword in keywords) {
+    Object.keys(keywords).forEach((keyword) => {
       this.addKeyword(keyword, keywords[keyword]);
-    }
+    });
 
-    for (const format in Formats) {
+    Object.keys(Formats).forEach((format) => {
       this.addFormat(format, Formats[format]);
-    }
+    });
   }
 
   addType(name: string, validator: ValidatorFunction) {
@@ -104,7 +104,7 @@ export class SchemaShield {
     if ('type' in compiledSchema) {
       const types = Array.isArray(compiledSchema.type) ? compiledSchema.type : compiledSchema.type.split(',').map((t) => t.trim());
 
-      compiledSchema.validators = types.filter((type) => this.types.has(type)).map((type) => this.types.get(type));
+      compiledSchema.validators = types.map((type) => this.types.get(type)).filter((validator) => validator !== undefined);
     }
 
     // Compile schema type

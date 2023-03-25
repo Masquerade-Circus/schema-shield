@@ -90,3 +90,23 @@ export function getUTF16Length(str) {
   }
   return length;
 }
+
+export function deepClone(obj: any): any {
+  if (Array.isArray(obj)) {
+    const result = [];
+    for (let i = 0; i < obj.length; i++) {
+      result[i] = deepClone(obj[i]);
+    }
+    return result;
+  }
+
+  if (isObject(obj)) {
+    const result = {};
+    for (const key in obj) {
+      result[key] = deepClone(obj[key]);
+    }
+    return result;
+  }
+
+  return obj;
+}

@@ -7,12 +7,10 @@ export const NumberKeywords: Record<string, ValidatorFunction> = {
       return { valid: true, errors: [], data };
     }
 
-    if (typeof schema.exclusiveMinimum === 'number') {
-      return NumberKeywords.exclusiveMinimum(schema, data, pointer, schemaShieldInstance);
-    }
-
     let min = schema.minimum;
-    if (typeof schema.exclusiveMinimum === 'boolean' && schema.exclusiveMinimum === true) {
+    if (typeof schema.exclusiveMinimum === 'number') {
+      min = schema.exclusiveMinimum + 1e-15;
+    } else if (schema.exclusiveMinimum === true) {
       min += 1e-15;
     }
 
@@ -38,12 +36,10 @@ export const NumberKeywords: Record<string, ValidatorFunction> = {
       return { valid: true, errors: [], data };
     }
 
-    if (typeof schema.exclusiveMaximum === 'number') {
-      return NumberKeywords.exclusiveMaximum(schema, data, pointer, schemaShieldInstance);
-    }
-
     let max = schema.maximum;
-    if (typeof schema.exclusiveMaximum === 'boolean' && schema.exclusiveMaximum === true) {
+    if (typeof schema.exclusiveMaximum === 'number') {
+      max = schema.exclusiveMaximum - 1e-15;
+    } else if (schema.exclusiveMaximum === true) {
       max -= 1e-15;
     }
 
@@ -94,11 +90,7 @@ export const NumberKeywords: Record<string, ValidatorFunction> = {
   },
 
   exclusiveMinimum(schema, data, pointer) {
-    if (typeof data !== 'number') {
-      return { valid: true, errors: [], data };
-    }
-
-    if (typeof schema.exclusiveMinimum !== 'number') {
+    if (typeof data !== 'number' || typeof schema.exclusiveMinimum !== 'number' || 'minimum' in schema) {
       return { valid: true, errors: [], data };
     }
 
@@ -120,11 +112,7 @@ export const NumberKeywords: Record<string, ValidatorFunction> = {
   },
 
   exclusiveMaximum(schema, data, pointer) {
-    if (typeof data !== 'number') {
-      return { valid: true, errors: [], data };
-    }
-
-    if (typeof schema.exclusiveMaximum !== 'number') {
+    if (typeof data !== 'number' || typeof schema.exclusiveMaximum !== 'number' || 'maximum' in schema) {
       return { valid: true, errors: [], data };
     }
 

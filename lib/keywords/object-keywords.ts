@@ -118,14 +118,15 @@ export const ObjectKeywords: Record<string, ValidatorFunction> = {
 
     const errors = [];
     let finalData = { ...data };
-    for (let key in data) {
+    const keys = Object.keys(data);
+    for (const key of keys) {
       if (schema.properties && schema.properties.hasOwnProperty(key)) {
         continue;
       }
 
       if (schema.patternProperties) {
         let match = false;
-        for (let pattern in schema.patternProperties) {
+        for (const pattern in schema.patternProperties) {
           if (new RegExp(pattern, 'u').test(key)) {
             match = true;
             break;
@@ -171,11 +172,14 @@ export const ObjectKeywords: Record<string, ValidatorFunction> = {
 
     const errors = [];
     let finalData = { ...data };
-    for (let pattern in schema.patternProperties) {
+    const patterns = Object.keys(schema.patternProperties);
+    for (const pattern of patterns) {
+      const regex = new RegExp(pattern, 'u');
+
       if (typeof schema.patternProperties[pattern] === 'boolean') {
         if (schema.patternProperties[pattern] === false) {
-          for (let key in finalData) {
-            if (new RegExp(pattern, 'u').test(key)) {
+          for (const key in finalData) {
+            if (regex.test(key)) {
               errors.push(
                 new ValidationError('Property is not allowed', {
                   pointer: `${pointer}/${key}`,
@@ -194,8 +198,9 @@ export const ObjectKeywords: Record<string, ValidatorFunction> = {
         continue;
       }
 
-      for (let key in finalData) {
-        if (new RegExp(pattern, 'u').test(key)) {
+      const keys = Object.keys(finalData);
+      for (const key of keys) {
+        if (regex.test(key)) {
           const validatorResult = validator(schema.patternProperties[pattern], finalData[key], `${pointer}/${key}`, schemaShieldInstance);
 
           finalData[key] = validatorResult.data;

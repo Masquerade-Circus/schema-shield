@@ -115,31 +115,22 @@ export const StringKeywords: Record<string, ValidatorFunction> = {
   },
 
   enum(schema, data, pointer) {
-    // Simple equality check
+    // Check if data is an array or an object
+    const isArray = Array.isArray(data);
+    const isObject = typeof data === 'object' && data !== null;
+
     for (let i = 0; i < schema.enum.length; i++) {
-      if (schema.enum[i] === data) {
+      const enumItem = schema.enum[i];
+
+      // Simple equality check
+      if (enumItem === data) {
         return { valid: true, errors: [], data };
       }
-    }
 
-    // If is an array check for a deep equality
-    if (Array.isArray(data)) {
-      for (let i = 0; i < schema.enum.length; i++) {
-        if (Array.isArray(schema.enum[i])) {
-          if (deepEqual(schema.enum[i], data)) {
-            return { valid: true, errors: [], data };
-          }
-        }
-      }
-    }
-
-    // If is an object check for a deep equality
-    if (typeof data === 'object' && data !== null) {
-      for (let i = 0; i < schema.enum.length; i++) {
-        if (typeof schema.enum[i] === 'object' && schema.enum[i] !== null) {
-          if (deepEqual(schema.enum[i], data)) {
-            return { valid: true, errors: [], data };
-          }
+      // If data is an array or an object, check for deep equality
+      if ((isArray && Array.isArray(enumItem)) || (isObject && typeof enumItem === 'object' && enumItem !== null)) {
+        if (deepEqual(enumItem, data)) {
+          return { valid: true, errors: [], data };
         }
       }
     }

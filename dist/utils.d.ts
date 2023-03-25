@@ -12,4 +12,5 @@ export declare function deepEqual(obj: Array<any> | Record<string, any>, other: 
 export declare function isObject(data: any): boolean;
 export declare function areCloseEnough(a: any, b: any, epsilon?: number): boolean;
 export declare function getUTF16Length(str: any): number;
+export declare function deepClone(obj: any): any;
 //# sourceMappingURL=utils.d.ts.map
