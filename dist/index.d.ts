@@ -1,4 +1,4 @@
-import { ValidationError } from "./utils";
+import { ValidationError } from './utils';
 export interface ValidationErrorProps {
     pointer: string;
     value: any;
@@ -37,9 +37,10 @@ export declare class SchemaShield {
     addKeyword(name: string, validator: ValidatorFunction): void;
     compile(schema: any): Validator;
     private compileSchema;
-    private handleArraySchema;
-    private handleObjectSchema;
+    private handleSubSchema;
     private validateTypes;
     private validateKeywords;
+    private isSchemaOrKeywordPresent;
+    private isSchemaLike;
 }
 //# sourceMappingURL=index.d.ts.map

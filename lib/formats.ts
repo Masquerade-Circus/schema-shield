@@ -1,56 +1,105 @@
-import { FormatFunction, ValidationError, ValidatorFunction } from "./utils";
+import isMyIpValid from 'is-my-ip-valid';
+import { FormatFunction } from './index';
+import { ValidationError } from './utils';
 
+// The datetime 1990-02-31T15:59:60.123-08:00 must be rejected.
 const RegExps = {
-  "date-time":
-    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/,
+  'date-time': /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|([+-])(\d{2}):(\d{2}))$/,
   uri: /^[a-zA-Z][a-zA-Z0-9+\-.]*:[^\s]*$/,
   email:
     /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/,
-  ipv4: /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/,
-  ipv6: /^(?:(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|(?=(?:[0-9a-fA-F]{0,4}:){0,7}[0-9a-fA-F]{0,4}(?![:.\w]))(([0-9a-fA-F]{1,4}:){1,7}|:)((:[0-9a-fA-F]{1,4}){1,7}|:))$/,
-  hostname: /^[a-zA-Z0-9][a-zA-Z0-9-]{0,62}(\.[a-zA-Z0-9][a-zA-Z0-9-]{0,62})*$/
+  hostname: /^[a-zA-Z0-9][a-zA-Z0-9-]{0,62}(\.[a-zA-Z0-9][a-zA-Z0-9-]{0,62})*[a-zA-Z0-9]$/,
+  date: /^(\d{4})-(\d{2})-(\d{2})$/,
+  'json-pointer': /^\/(?:[^~]|~0|~1)*$/,
+  'relative-json-pointer': /^([0-9]+)(#|\/(?:[^~]|~0|~1)*)?$/,
 };
 
 function notImplementedFormat(data: any) {
-  throw new ValidationError(
-    `Format "${data}" is not implemented yet. Please open an issue on GitHub.`
-  );
-
+  throw new ValidationError(`Format "${data}" is not implemented yet. Please open an issue on GitHub.`);
   return false;
 }
 
 export const Formats: Record<string, FormatFunction> = {
-  ["date-time"](data) {
-    return RegExps["date-time"].test(data);
+  ['date-time'](data) {
+    const uperCaseData = data.toUpperCase();
+    if (RegExps['date-time'].test(uperCaseData) === false) {
+      return false;
+    }
+
+    const date = new Date(uperCaseData);
+    return !isNaN(date.getTime());
   },
   uri(data) {
     return RegExps.uri.test(data);
   },
   email(data) {
-    return RegExps.email.test(data);
+    if (RegExps.email.test(data) === false) {
+      return false;
+    }
+
+    const [local, domain] = data.split('@');
+
+    if (local.length > 64 || local.indexOf('..') !== -1 || local[0] === '.' || local[local.length - 1] === '.') {
+      return false;
+    }
+
+    if (domain.length > 255 || domain.indexOf('..') !== -1 || domain[0] === '.' || domain[domain.length - 1] === '.') {
+      return false;
+    }
+
+    return true;
   },
-  ipv4(data) {
-    return RegExps.ipv4.test(data);
-  },
-  ipv6(data) {
-    return RegExps.ipv6.test(data);
-  },
+  ipv4: isMyIpValid({ version: 4 }),
+  ipv6: isMyIpValid({ version: 6 }),
+
   hostname(data) {
     return RegExps.hostname.test(data);
   },
+  date(data) {
+    if (typeof data !== 'string') {
+      return false;
+    }
+
+    if (RegExps.date.test(data) === false) {
+      return false;
+    }
+
+    return !isNaN(new Date(data).getTime());
+  },
+  regex(data) {
+    try {
+      new RegExp(data);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  },
+  'json-pointer'(data) {
+    if (data === '') {
+      return true;
+    }
+
+    return RegExps['json-pointer'].test(data);
+  },
+  'relative-json-pointer'(data) {
+    if (data === '') {
+      return true;
+    }
+
+    return RegExps['relative-json-pointer'].test(data);
+  },
+  time(data) {
+    return Formats['date-time'](`1970-01-01T${data}Z`.replace(/ZZ$/, 'Z'));
+  },
 
   // Not supported yet
-  time: notImplementedFormat,
-  date: notImplementedFormat,
+
   duration: notImplementedFormat,
-  "idn-email": notImplementedFormat,
-  "idn-hostname": notImplementedFormat,
+  'idn-email': notImplementedFormat,
+  'idn-hostname': notImplementedFormat,
   uuid: notImplementedFormat,
-  "uri-reference": notImplementedFormat,
+  'uri-reference': notImplementedFormat,
   iri: notImplementedFormat,
-  "iri-reference": notImplementedFormat,
-  "uri-template": notImplementedFormat,
-  "json-pointer": notImplementedFormat,
-  "relative-json-pointer": notImplementedFormat,
-  regex: notImplementedFormat
+  'iri-reference': notImplementedFormat,
+  'uri-template': notImplementedFormat,
 };

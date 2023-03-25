@@ -1,4 +1,4 @@
-import { SchemaShield, ValidationErrorProps } from "./index";
+import { SchemaShield, ValidationErrorProps } from './index';
 
 export class ValidationError extends Error {
   name: string;
@@ -10,13 +10,13 @@ export class ValidationError extends Error {
   constructor(
     message: string,
     options: ValidationErrorProps = {
-      pointer: "",
+      pointer: '',
       value: null,
-      code: ""
+      code: '',
     }
   ) {
     super(message);
-    this.name = "ValidationError";
+    this.name = 'ValidationError';
     this.pointer = options.pointer;
     this.message = message;
     this.value = options.value;
@@ -26,18 +26,15 @@ export class ValidationError extends Error {
 
 export const defaultValidator = (schema, data, pointer) => {
   return [
-    new ValidationError("No validator for this schema", {
+    new ValidationError('No validator for this schema', {
       pointer,
       value: data,
-      code: "NO_VALIDATOR"
-    })
+      code: 'NO_VALIDATOR',
+    }),
   ];
 };
 
-export function deepEqual(
-  obj: Array<any> | Record<string, any>,
-  other: Array<any> | Record<string, any>
-) {
+export function deepEqual(obj: Array<any> | Record<string, any>, other: Array<any> | Record<string, any>) {
   if (Array.isArray(obj) && Array.isArray(other)) {
     if (obj.length !== other.length) {
       return false;
@@ -52,7 +49,7 @@ export function deepEqual(
     return true;
   }
 
-  if (typeof obj === "object" && typeof other === "object") {
+  if (typeof obj === 'object' && typeof other === 'object') {
     if (obj === null || other === null) {
       return obj === other;
     }
@@ -75,5 +72,21 @@ export function deepEqual(
 }
 
 export function isObject(data) {
-  return typeof data === "object" && data !== null && !Array.isArray(data);
+  return typeof data === 'object' && data !== null && !Array.isArray(data);
+}
+
+export function areCloseEnough(a, b, epsilon = 1e-15) {
+  return Math.abs(a - b) <= epsilon * Math.max(Math.abs(a), Math.abs(b));
+}
+
+export function getUTF16Length(str) {
+  let length = 0;
+  for (let i = 0; i < str.length; i++) {
+    const codePoint = str.codePointAt(i);
+    if (codePoint > 0xffff) {
+      i++;
+    }
+    length++;
+  }
+  return length;
 }

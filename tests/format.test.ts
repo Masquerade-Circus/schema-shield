@@ -1,10 +1,10 @@
-import { describe, it } from "mocha";
+import { describe, it } from 'mocha';
 
-import {SchemaShield} from "../lib";
-import expect from "expect";
-import { stringifySchema } from "./test-utils";
+import { SchemaShield } from '../lib';
+import expect from 'expect';
+import { stringifySchema } from './test-utils';
 
-const jsonTests = require("./format-tests/format.json");
+const jsonTests = require('./format.test.json');
 
 const logData = false;
 const logSchema = false;
@@ -35,12 +35,12 @@ for (let i = 0; i < jsonTests.length; i++) {
       it(description, () => {
         const { validate } = setup();
         if (logData) {
-          console.log("data", data);
+          console.log('data', data);
         }
         expect(validate(data)).toEqual({
           valid,
           errors: valid ? [] : expect.any(Array),
-          data: valid ? data : expect.anything()
+          data: valid ? data : expect.anything(),
         });
       });
     }

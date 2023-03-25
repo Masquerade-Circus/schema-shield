@@ -1,5 +1,5 @@
-import { CompiledSchema, ValidatorFunction } from "../index";
-import { ValidationError, isObject } from "../utils";
+import { CompiledSchema, ValidatorFunction } from '../index';
+import { ValidationError, isObject } from '../utils';
 
 export const ObjectKeywords: Record<string, ValidatorFunction> = {
   // Object
@@ -8,7 +8,7 @@ export const ObjectKeywords: Record<string, ValidatorFunction> = {
       return {
         valid: true,
         errors: [],
-        data
+        data,
       };
     }
 
@@ -17,10 +17,10 @@ export const ObjectKeywords: Record<string, ValidatorFunction> = {
       const key = schema.required[i];
       if (!data.hasOwnProperty(key)) {
         errors.push(
-          new ValidationError("Missing required property", {
+          new ValidationError('Missing required property', {
             pointer: `${pointer}/${key}`,
             value: data,
-            code: "MISSING_REQUIRED_PROPERTY"
+            code: 'MISSING_REQUIRED_PROPERTY',
           })
         );
       }
@@ -37,24 +37,21 @@ export const ObjectKeywords: Record<string, ValidatorFunction> = {
     const errors = [];
     let finalData = { ...data };
     for (let key in schema.properties) {
-      if (!data.hasOwnProperty(key) || typeof data[key] === "undefined") {
-        if (
-          isObject(schema.properties[key]) &&
-          "default" in schema.properties[key]
-        ) {
+      if (!data.hasOwnProperty(key) || typeof data[key] === 'undefined') {
+        if (isObject(schema.properties[key]) && 'default' in schema.properties[key]) {
           finalData[key] = schema.properties[key].default;
         }
 
         continue;
       }
 
-      if (typeof schema.properties[key] === "boolean") {
+      if (typeof schema.properties[key] === 'boolean') {
         if (schema.properties[key] === false) {
           errors.push(
-            new ValidationError("Property is not allowed", {
+            new ValidationError('Property is not allowed', {
               pointer: `${pointer}/${key}`,
               value: data[key],
-              code: "PROPERTY_NOT_ALLOWED"
+              code: 'PROPERTY_NOT_ALLOWED',
             })
           );
         }
@@ -66,12 +63,7 @@ export const ObjectKeywords: Record<string, ValidatorFunction> = {
         continue;
       }
 
-      const validatorResult = validator(
-        schema.properties[key],
-        finalData[key],
-        `${pointer}/${key}`,
-        schemaShieldInstance
-      );
+      const validatorResult = validator(schema.properties[key], finalData[key], `${pointer}/${key}`, schemaShieldInstance);
 
       finalData[key] = validatorResult.data;
 
@@ -91,13 +83,13 @@ export const ObjectKeywords: Record<string, ValidatorFunction> = {
     return {
       valid: false,
       errors: [
-        new ValidationError("Object has too many properties", {
+        new ValidationError('Object has too many properties', {
           pointer,
           value: data,
-          code: "OBJECT_TOO_MANY_PROPERTIES"
-        })
+          code: 'OBJECT_TOO_MANY_PROPERTIES',
+        }),
       ],
-      data
+      data,
     };
   },
 
@@ -109,13 +101,13 @@ export const ObjectKeywords: Record<string, ValidatorFunction> = {
     return {
       valid: false,
       errors: [
-        new ValidationError("Object has too few properties", {
+        new ValidationError('Object has too few properties', {
           pointer,
           value: data,
-          code: "OBJECT_TOO_FEW_PROPERTIES"
-        })
+          code: 'OBJECT_TOO_FEW_PROPERTIES',
+        }),
       ],
-      data
+      data,
     };
   },
 
@@ -134,7 +126,7 @@ export const ObjectKeywords: Record<string, ValidatorFunction> = {
       if (schema.patternProperties) {
         let match = false;
         for (let pattern in schema.patternProperties) {
-          if (new RegExp(pattern).test(key)) {
+          if (new RegExp(pattern, 'u').test(key)) {
             match = true;
             break;
           }
@@ -146,10 +138,10 @@ export const ObjectKeywords: Record<string, ValidatorFunction> = {
 
       if (schema.additionalProperties === false) {
         errors.push(
-          new ValidationError("Additional property not allowed", {
+          new ValidationError('Additional property not allowed', {
             pointer: `${pointer}/${key}`,
             value: data,
-            code: "ADDITIONAL_PROPERTY_NOT_ALLOWED"
+            code: 'ADDITIONAL_PROPERTY_NOT_ALLOWED',
           })
         );
         continue;
@@ -160,12 +152,7 @@ export const ObjectKeywords: Record<string, ValidatorFunction> = {
         continue;
       }
 
-      const validatorResult = validator(
-        schema.additionalProperties,
-        finalData[key],
-        `${pointer}/${key}`,
-        schemaShieldInstance
-      );
+      const validatorResult = validator(schema.additionalProperties, finalData[key], `${pointer}/${key}`, schemaShieldInstance);
 
       finalData[key] = validatorResult.data;
 
@@ -185,15 +172,15 @@ export const ObjectKeywords: Record<string, ValidatorFunction> = {
     const errors = [];
     let finalData = { ...data };
     for (let pattern in schema.patternProperties) {
-      if (typeof schema.patternProperties[pattern] === "boolean") {
+      if (typeof schema.patternProperties[pattern] === 'boolean') {
         if (schema.patternProperties[pattern] === false) {
           for (let key in finalData) {
-            if (new RegExp(pattern).test(key)) {
+            if (new RegExp(pattern, 'u').test(key)) {
               errors.push(
-                new ValidationError("Property is not allowed", {
+                new ValidationError('Property is not allowed', {
                   pointer: `${pointer}/${key}`,
                   value: data[key],
-                  code: "PROPERTY_NOT_ALLOWED"
+                  code: 'PROPERTY_NOT_ALLOWED',
                 })
               );
             }
@@ -208,13 +195,8 @@ export const ObjectKeywords: Record<string, ValidatorFunction> = {
       }
 
       for (let key in finalData) {
-        if (new RegExp(pattern).test(key)) {
-          const validatorResult = validator(
-            schema.patternProperties[pattern],
-            finalData[key],
-            `${pointer}/${key}`,
-            schemaShieldInstance
-          );
+        if (new RegExp(pattern, 'u').test(key)) {
+          const validatorResult = validator(schema.patternProperties[pattern], finalData[key], `${pointer}/${key}`, schemaShieldInstance);
 
           finalData[key] = validatorResult.data;
 
@@ -226,5 +208,44 @@ export const ObjectKeywords: Record<string, ValidatorFunction> = {
     }
 
     return { valid: errors.length === 0, errors, data: finalData };
-  }
+  },
+
+  propertyNames(schema, data, pointer, schemaShieldInstance) {
+    if (!isObject(data)) {
+      return { valid: true, errors: [], data };
+    }
+
+    if (typeof schema.propertyNames === 'boolean') {
+      if (schema.propertyNames === false && Object.keys(data).length > 0) {
+        return {
+          valid: false,
+          errors: [
+            new ValidationError('Property names are not allowed', {
+              pointer,
+              value: data,
+              code: 'PROPERTY_NAMES_NOT_ALLOWED',
+            }),
+          ],
+          data,
+        };
+      }
+    }
+
+    const errors = [];
+    let finalData = { ...data };
+    const { validator } = schema.propertyNames as CompiledSchema;
+    if (!validator) {
+      return { valid: true, errors: [], data };
+    }
+
+    for (let key in finalData) {
+      const validatorResult = validator(schema.propertyNames, key, pointer, schemaShieldInstance);
+
+      if (!validatorResult.valid) {
+        errors.push(...validatorResult.errors);
+      }
+    }
+
+    return { valid: errors.length === 0, errors, data: finalData };
+  },
 };

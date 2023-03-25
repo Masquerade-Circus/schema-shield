@@ -1,65 +1,62 @@
-import { ValidationError, deepEqual } from "../utils";
+import { ValidationError, deepEqual } from '../utils';
 
-import { ValidatorFunction } from "../index";
+import { ValidatorFunction } from '../index';
 
 export const StringKeywords: Record<string, ValidatorFunction> = {
   minLength(schema, data, pointer) {
-    if (typeof data !== "string" || data.length >= schema.minLength) {
+    if (typeof data !== 'string' || data.length >= schema.minLength) {
       return { valid: true, errors: [], data };
     }
 
     return {
       valid: false,
       errors: [
-        new ValidationError("String is too short", {
+        new ValidationError('String is too short', {
           pointer,
           value: data,
-          code: "STRING_TOO_SHORT"
-        })
+          code: 'STRING_TOO_SHORT',
+        }),
       ],
-      data
+      data,
     };
   },
 
   maxLength(schema, data, pointer) {
-    if (typeof data !== "string" || data.length <= schema.maxLength) {
+    if (typeof data !== 'string' || data.length <= schema.maxLength) {
       return { valid: true, errors: [], data };
     }
 
     return {
       valid: false,
       errors: [
-        new ValidationError("String is too long", {
+        new ValidationError('String is too long', {
           pointer,
           value: data,
-          code: "STRING_TOO_LONG"
-        })
+          code: 'STRING_TOO_LONG',
+        }),
       ],
-      data
+      data,
     };
   },
 
   pattern(schema, data, pointer) {
-    if (typeof data !== "string") {
+    if (typeof data !== 'string') {
       return { valid: true, errors: [], data };
     }
 
-    const patternRegexp =
-      typeof schema.pattern === "string"
-        ? new RegExp(schema.pattern)
-        : schema.pattern;
+    const patternRegexp = new RegExp(schema.pattern, 'u');
 
     if (patternRegexp instanceof RegExp === false) {
       return {
         valid: false,
         errors: [
-          new ValidationError("Pattern is not a valid regular expression", {
+          new ValidationError('Pattern is not a valid regular expression', {
             pointer,
             value: data,
-            code: "PATTERN_IS_NOT_REGEXP"
-          })
+            code: 'PATTERN_IS_NOT_REGEXP',
+          }),
         ],
-        data
+        data,
       };
     }
 
@@ -70,18 +67,18 @@ export const StringKeywords: Record<string, ValidatorFunction> = {
       errors: valid
         ? []
         : [
-            new ValidationError("String does not match pattern", {
+            new ValidationError('String does not match pattern', {
               pointer,
               value: data,
-              code: "STRING_DOES_NOT_MATCH_PATTERN"
-            })
+              code: 'STRING_DOES_NOT_MATCH_PATTERN',
+            }),
           ],
-      data
+      data,
     };
   },
 
   format(schema, data, pointer, formatInstance) {
-    if (typeof data !== "string") {
+    if (typeof data !== 'string') {
       return { valid: true, errors: [], data };
     }
 
@@ -93,10 +90,10 @@ export const StringKeywords: Record<string, ValidatorFunction> = {
           new ValidationError(`Unknown format ${schema.format}`, {
             pointer,
             value: data,
-            code: "UNKNOWN_FORMAT"
-          })
+            code: 'UNKNOWN_FORMAT',
+          }),
         ],
-        data
+        data,
       };
     }
 
@@ -107,16 +104,13 @@ export const StringKeywords: Record<string, ValidatorFunction> = {
       errors: valid
         ? []
         : [
-            new ValidationError(
-              `String does not match format ${schema.format}`,
-              {
-                pointer,
-                value: data,
-                code: "STRING_DOES_NOT_MATCH_FORMAT"
-              }
-            )
+            new ValidationError(`String does not match format ${schema.format}`, {
+              pointer,
+              value: data,
+              code: 'STRING_DOES_NOT_MATCH_FORMAT',
+            }),
           ],
-      data
+      data,
     };
   },
 
@@ -140,9 +134,9 @@ export const StringKeywords: Record<string, ValidatorFunction> = {
     }
 
     // If is an object check for a deep equality
-    if (typeof data === "object" && data !== null) {
+    if (typeof data === 'object' && data !== null) {
       for (let i = 0; i < schema.enum.length; i++) {
-        if (typeof schema.enum[i] === "object" && schema.enum[i] !== null) {
+        if (typeof schema.enum[i] === 'object' && schema.enum[i] !== null) {
           if (deepEqual(schema.enum[i], data)) {
             return { valid: true, errors: [], data };
           }
@@ -153,13 +147,13 @@ export const StringKeywords: Record<string, ValidatorFunction> = {
     return {
       valid: false,
       errors: [
-        new ValidationError(`Value must be one of ${schema.enum.join(", ")}`, {
+        new ValidationError(`Value must be one of ${schema.enum.join(', ')}`, {
           pointer,
           value: data,
-          code: "VALUE_NOT_IN_ENUM"
-        })
+          code: 'VALUE_NOT_IN_ENUM',
+        }),
       ],
-      data
+      data,
     };
-  }
+  },
 };
