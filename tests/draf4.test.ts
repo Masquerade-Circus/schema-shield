@@ -4,6 +4,7 @@ import { SchemaShield } from '../lib';
 import expect from 'expect';
 import fs from 'fs';
 import { stringifySchema } from './test-utils';
+import { deepClone } from '../lib/utils';
 
 // Read the test/draft4 directory to get all the test files
 const files = fs.readdirSync('./node_modules/json-schema-test-suite/tests/draft4');
@@ -115,6 +116,7 @@ for (let testGroup in jsonTests) {
     const { description: groupDescription, schema, tests } = jsonTests[testGroup][i];
 
     let validate;
+    let clonedSchema = deepClone(schema);
 
     function setup() {
       if (validate) {
@@ -180,6 +182,20 @@ for (let testGroup in jsonTests) {
               },
             });
             throw error;
+          }
+
+          try {
+            expect(clonedSchema).toEqual(schema);
+          } catch (error) {
+            console.log({
+              [testGroup]: {
+                [groupDescription]: {
+                  [description]: 'FAILED',
+                },
+              },
+            });
+            console.log(JSON.stringify(schema, null, 2), JSON.stringify(clonedSchema, null, 2));
+            // throw error;
           }
         });
       }

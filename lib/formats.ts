@@ -5,6 +5,7 @@ import { ValidationError } from './utils';
 // The datetime 1990-02-31T15:59:60.123-08:00 must be rejected.
 const RegExps = {
   'date-time': /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|([+-])(\d{2}):(\d{2}))$/,
+  time: /^(\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|([+-])(\d{2}):(\d{2}))$/,
   uri: /^[a-zA-Z][a-zA-Z0-9+\-.]*:[^\s]*$/,
   email:
     /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/,
@@ -21,19 +22,19 @@ function notImplementedFormat(data: any) {
 
 export const Formats: Record<string, FormatFunction> = {
   ['date-time'](data) {
-    const uperCaseData = data.toUpperCase();
-    if (RegExps['date-time'].test(uperCaseData) === false) {
+    const upperCaseData = data.toUpperCase();
+    if (!RegExps['date-time'].test(upperCaseData)) {
       return false;
     }
 
-    const date = new Date(uperCaseData);
+    const date = new Date(upperCaseData);
     return !isNaN(date.getTime());
   },
   uri(data) {
     return RegExps.uri.test(data);
   },
   email(data) {
-    if (RegExps.email.test(data) === false) {
+    if (!RegExps.email.test(data)) {
       return false;
     }
 
@@ -89,7 +90,7 @@ export const Formats: Record<string, FormatFunction> = {
     return RegExps['relative-json-pointer'].test(data);
   },
   time(data) {
-    return Formats['date-time'](`1970-01-01T${data}Z`.replace(/ZZ$/, 'Z'));
+    return RegExps.time.test(data);
   },
 
   // Not supported yet
