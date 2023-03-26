@@ -1,11 +1,10 @@
-import { ValidationErrorProps } from './index';
 export declare class ValidationError extends Error {
     name: string;
     pointer: string;
     message: string;
     value: any;
     code: string;
-    constructor(message: string, options?: ValidationErrorProps);
+    constructor(message: string, pointer?: string);
 }
 export declare const defaultValidator: (schema: any, data: any, pointer: any) => ValidationError[];
 export declare function deepEqual(obj: Array<any> | Record<string, any>, other: Array<any> | Record<string, any>): boolean;

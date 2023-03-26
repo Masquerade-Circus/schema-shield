@@ -1,12 +1,7 @@
 import { ValidationError } from './utils';
-export interface ValidationErrorProps {
-    pointer: string;
-    value: any;
-    code: string;
-}
 export interface Result {
     valid: boolean;
-    errors: ValidationError[];
+    error: ValidationError | null;
     data: any;
 }
 export interface ValidatorFunction {
@@ -25,9 +20,9 @@ export interface Validator {
     compiledSchema: CompiledSchema;
 }
 export declare class SchemaShield {
-    types: Map<string, ValidatorFunction>;
-    formats: Map<string, FormatFunction>;
-    keywords: Map<string, ValidatorFunction>;
+    types: Map<string, false | ValidatorFunction>;
+    formats: Map<string, false | FormatFunction>;
+    keywords: Map<string, false | ValidatorFunction>;
     constructor();
     addType(name: string, validator: ValidatorFunction): void;
     addFormat(name: string, validator: FormatFunction): void;

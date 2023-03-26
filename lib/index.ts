@@ -4,15 +4,9 @@ import { Formats } from './formats';
 import { Types } from './types';
 import { keywords } from './keywords';
 
-export interface ValidationErrorProps {
-  pointer: string;
-  value: any;
-  code: string;
-}
-
 export interface Result {
   valid: boolean;
-  errors: ValidationError[];
+  error: ValidationError | null;
   data: any;
 }
 
@@ -36,22 +30,24 @@ export interface Validator {
 }
 
 export class SchemaShield {
-  types = new Map<string, ValidatorFunction>();
-  formats = new Map<string, FormatFunction>();
-  keywords = new Map<string, ValidatorFunction>();
+  types = new Map<string, ValidatorFunction | false>();
+  formats = new Map<string, FormatFunction | false>();
+  keywords = new Map<string, ValidatorFunction | false>();
 
   constructor() {
-    Object.keys(Types).forEach((type) => {
+    for (const type of Object.keys(Types)) {
       this.addType(type, Types[type]);
-    });
+    }
 
-    Object.keys(keywords).forEach((keyword) => {
+    for (const keyword of Object.keys(keywords)) {
       this.addKeyword(keyword, keywords[keyword]);
-    });
+    }
 
-    Object.keys(Formats).forEach((format) => {
-      this.addFormat(format, Formats[format]);
-    });
+    for (const format of Object.keys(Formats)) {
+      if (Formats[format]) {
+        this.addFormat(format, Formats[format] as FormatFunction);
+      }
+    }
   }
 
   addType(name: string, validator: ValidatorFunction) {
@@ -97,7 +93,7 @@ export class SchemaShield {
     if ('type' in schema) {
       const types = Array.isArray(schema.type) ? schema.type : schema.type.split(',').map((t) => t.trim());
 
-      compiledSchema.types = types.map((type) => this.types.get(type)).filter((validator) => validator !== undefined);
+      compiledSchema.types = types.map((type) => this.types.get(type)).filter((validator) => Boolean(validator));
     }
 
     for (let key in schema) {
@@ -105,9 +101,10 @@ export class SchemaShield {
         continue;
       }
 
-      if (this.keywords.has(key)) {
+      let keywordValidator = this.keywords.get(key);
+      if (keywordValidator) {
         compiledSchema.validators = compiledSchema.validators || [];
-        compiledSchema.validators.push(this.keywords.get(key));
+        compiledSchema.validators.push(keywordValidator);
       }
 
       if (this.isSchemaLike(schema[key])) {
@@ -133,18 +130,23 @@ export class SchemaShield {
   }
 
   validate(schema: CompiledSchema, data: any): Result {
-    let errors: ValidationError[] = [];
-
     if (schema.types) {
+      let typeValid = false;
       for (let type of schema.types) {
         const result = type(schema, data, schema.pointer, this);
 
         if (result.valid) {
-          errors = [];
+          typeValid = true;
           break;
         }
+      }
 
-        errors.push(...result.errors);
+      if (!typeValid) {
+        return {
+          valid: false,
+          error: new ValidationError(`Invalid type`, schema.pointer),
+          data,
+        };
       }
     }
 
@@ -159,8 +161,8 @@ export class SchemaShield {
     }
 
     return {
-      valid: errors.length === 0,
-      errors,
+      valid: true,
+      error: null,
       data,
     };
   }

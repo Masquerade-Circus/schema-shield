@@ -4,27 +4,36 @@ import { ValidationError, isObject } from '../utils';
 export const ArrayKeywords: Record<string, ValidatorFunction> = {
   items(schema, data, pointer, schemaShieldInstance) {
     if (!Array.isArray(data)) {
-      return { valid: true, errors: [], data };
+      return { valid: true, error: null, data };
     }
 
-    const errors = [];
-    const finalData = [...data];
     const schemaItems = schema.items;
-    const schemaItemsLength = Array.isArray(schemaItems) ? schemaItems.length : 0;
     const dataLength = data.length;
 
+    if (typeof schemaItems === 'boolean') {
+      if (schemaItems === false && dataLength > 0) {
+        return {
+          valid: false,
+          error: new ValidationError('Array is not allowed', pointer),
+          data,
+        };
+      }
+
+      return { valid: true, error: null, data };
+    }
+
     if (Array.isArray(schemaItems)) {
+      const schemaItemsLength = schemaItems.length;
+      const finalData = [...data];
       const itemsLength = Math.min(schemaItemsLength, dataLength);
       for (let i = 0; i < itemsLength; i++) {
         if (typeof schemaItems[i] === 'boolean') {
-          if (schemaItems[i] === false && typeof data[i] !== 'undefined') {
-            errors.push(
-              new ValidationError('Array item is not allowed', {
-                pointer: `${pointer}/${i}`,
-                value: data[i],
-                code: 'ARRAY_ITEM_NOT_ALLOWED',
-              })
-            );
+          if (schemaItems[i] === false && typeof finalData[i] !== 'undefined') {
+            return {
+              valid: false,
+              error: new ValidationError('Array item is not allowed', `${pointer}/${i}`),
+              data: finalData,
+            };
           }
           continue;
         }
@@ -34,149 +43,116 @@ export const ArrayKeywords: Record<string, ValidatorFunction> = {
         finalData[i] = validatorResult.data;
 
         if (!validatorResult.valid) {
-          errors.push(...validatorResult.errors);
+          return { valid: false, error: validatorResult.error, data: finalData };
         }
       }
-    } else if (typeof schemaItems === 'boolean') {
-      if (schemaItems === false && dataLength > 0) {
-        errors.push(
-          new ValidationError('Array is not allowed', {
-            pointer,
-            value: data,
-            code: 'ARRAY_NOT_ALLOWED',
-          })
-        );
-      }
-    } else if (schemaShieldInstance.isCompiledSchema(schemaItems)) {
-      for (let i = 0; i < dataLength; i++) {
-        const validatorErrors = schemaShieldInstance.validate(schemaItems, finalData[i]);
 
-        finalData[i] = validatorErrors.data;
+      return { valid: true, error: null, data: finalData };
+    }
+
+    if (schemaShieldInstance.isCompiledSchema(schemaItems)) {
+      for (let i = 0; i < dataLength; i++) {
+        const validatorErrors = schemaShieldInstance.validate(schemaItems, data[i]);
+
+        data[i] = validatorErrors.data;
 
         if (!validatorErrors.valid) {
-          errors.push(...validatorErrors.errors);
+          return { valid: false, error: validatorErrors.error, data };
         }
       }
     }
 
-    return { valid: errors.length === 0, errors, data: finalData };
+    return { valid: true, error: null, data };
   },
 
   minItems(schema, data, pointer) {
     if (!Array.isArray(data) || data.length >= schema.minItems) {
-      return { valid: true, errors: [], data };
+      return { valid: true, error: null, data };
     }
 
     return {
       valid: false,
-      errors: [
-        new ValidationError('Array is too short', {
-          pointer,
-          value: data,
-          code: 'ARRAY_TOO_SHORT',
-        }),
-      ],
+      error: new ValidationError('Array is too short', pointer),
       data,
     };
   },
 
   maxItems(schema, data, pointer) {
     if (!Array.isArray(data) || data.length <= schema.maxItems) {
-      return { valid: true, errors: [], data };
+      return { valid: true, error: null, data };
     }
 
     return {
       valid: false,
-      errors: [
-        new ValidationError('Array is too long', {
-          pointer,
-          value: data,
-          code: 'ARRAY_TOO_LONG',
-        }),
-      ],
+      error: new ValidationError('Array is too long', pointer),
       data,
     };
   },
 
   additionalItems(schema, data, pointer, schemaShieldInstance) {
     if (!Array.isArray(data) || !schema.items || !Array.isArray(schema.items)) {
-      return { valid: true, errors: [], data };
+      return { valid: true, error: null, data };
     }
 
     if (schema.additionalItems === false) {
       if (data.length > schema.items.length) {
         return {
           valid: false,
-          errors: [
-            new ValidationError('Array has too many items', {
-              pointer,
-              value: data,
-              code: 'ARRAY_TOO_MANY_ITEMS',
-            }),
-          ],
+          error: new ValidationError('Array has too many items', pointer),
           data,
         };
       }
 
-      return { valid: true, errors: [], data };
+      return { valid: true, error: null, data };
     }
 
-    const errors = [];
-    let finalData = [...data];
     if (schemaShieldInstance.isCompiledSchema(schema.additionalItems)) {
+      const finalData = [...data];
       for (let i = schema.items.length; i < finalData.length; i++) {
         const validatorResult = schemaShieldInstance.validate(schema.additionalItems, finalData[i]);
         if (!validatorResult.valid) {
-          errors.push(...validatorResult.errors);
+          return { valid: false, error: validatorResult.error, data: finalData };
         }
         finalData[i] = validatorResult.data;
       }
+      return { valid: true, error: null, data: finalData };
     }
 
-    return { valid: errors.length === 0, errors, data: finalData };
+    return { valid: true, error: null, data };
   },
 
   uniqueItems(schema, data, pointer) {
     if (!Array.isArray(data) || !schema.uniqueItems) {
-      return { valid: true, errors: [], data };
+      return { valid: true, error: null, data };
     }
 
-    const unique = new Map();
+    const unique = new Set();
 
     for (const item of data) {
       let itemStr;
 
       // Change string to "string" to avoid false positives
       if (typeof item === 'string') {
-        itemStr = `"${item}"`;
+        itemStr = `s:${item}`;
 
         // Sort object keys to avoid false positives
       } else if (isObject(item)) {
-        const sorted = Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b)));
-        itemStr = JSON.stringify(sorted);
-      } else if (Array.isArray(item)) {
-        itemStr = JSON.stringify(item);
+        itemStr = `o:${JSON.stringify(Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))))}`;
       } else {
-        itemStr = item;
+        itemStr = JSON.stringify(item);
       }
 
       if (unique.has(itemStr)) {
         return {
           valid: false,
-          errors: [
-            new ValidationError('Array items are not unique', {
-              pointer,
-              value: data,
-              code: 'ARRAY_ITEMS_NOT_UNIQUE',
-            }),
-          ],
+          error: new ValidationError('Array items are not unique', pointer),
           data,
         };
       } else {
-        unique.set(itemStr, true);
+        unique.add(itemStr);
       }
     }
 
-    return { valid: true, errors: [], data };
+    return { valid: true, error: null, data };
   },
 };

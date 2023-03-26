@@ -3,7 +3,7 @@ import { describe, it } from 'mocha';
 import { SchemaShield } from '../lib';
 import expect from 'expect';
 import { stringifySchema } from './test-utils';
-import { deepClone } from '../lib/utils';
+import { deepClone, ValidationError } from '../lib/utils';
 
 const jsonTests = require('./all-test-suites.test.json');
 
@@ -94,7 +94,7 @@ for (let i = 0; i < jsonTests.length; i++) {
           result = validate(data);
           expect(result).toEqual({
             valid,
-            errors: valid ? [] : expect.any(Array),
+            error: valid ? null : expect.any(ValidationError),
             data: data === null ? null : expect.anything(),
           });
           expect(clonedSchema).toEqual(schema);

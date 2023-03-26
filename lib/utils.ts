@@ -1,5 +1,3 @@
-import { SchemaShield, ValidationErrorProps } from './index';
-
 export class ValidationError extends Error {
   name: string;
   pointer: string;
@@ -7,31 +5,14 @@ export class ValidationError extends Error {
   value: any;
   code: string;
 
-  constructor(
-    message: string,
-    options: ValidationErrorProps = {
-      pointer: '',
-      value: null,
-      code: '',
-    }
-  ) {
+  constructor(message: string, pointer?: string) {
     super(message);
-    this.name = 'ValidationError';
-    this.pointer = options.pointer;
-    this.message = message;
-    this.value = options.value;
-    this.code = options.code;
+    this.pointer = pointer;
   }
 }
 
 export const defaultValidator = (schema, data, pointer) => {
-  return [
-    new ValidationError('No validator for this schema', {
-      pointer,
-      value: data,
-      code: 'NO_VALIDATOR',
-    }),
-  ];
+  return [new ValidationError('No validator for this schema', pointer)];
 };
 
 export function deepEqual(obj: Array<any> | Record<string, any>, other: Array<any> | Record<string, any>) {

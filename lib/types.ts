@@ -6,20 +6,14 @@ export const Types: Record<string, ValidatorFunction> = {
     if (isObject(data)) {
       return {
         valid: true,
-        errors: [],
+        error: null,
         data,
       };
     }
 
     return {
       valid: false,
-      errors: [
-        new ValidationError('Data is not an object', {
-          pointer,
-          value: data,
-          code: 'NOT_AN_OBJECT',
-        }),
-      ],
+      error: new ValidationError('Data is not an object', pointer),
       data,
     };
   },
@@ -27,7 +21,7 @@ export const Types: Record<string, ValidatorFunction> = {
     if (Array.isArray(data)) {
       return {
         valid: true,
-        errors: [],
+        error: null,
         data,
       };
     }
@@ -38,33 +32,21 @@ export const Types: Record<string, ValidatorFunction> = {
       if (keys.length > 0 && (keys[0] !== '0' || keys.length !== data.length)) {
         return {
           valid: false,
-          errors: [
-            new ValidationError('Data is not an array', {
-              pointer,
-              value: data,
-              code: 'NOT_AN_ARRAY',
-            }),
-          ],
+          error: new ValidationError('Data is not an array', pointer),
           data,
         };
       }
 
       return {
         valid: true,
-        errors: [],
+        error: null,
         data,
       };
     }
 
     return {
       valid: false,
-      errors: [
-        new ValidationError('Data is not an array', {
-          pointer,
-          value: data,
-          code: 'NOT_AN_ARRAY',
-        }),
-      ],
+      error: new ValidationError('Data is not an array', pointer),
       data,
     };
   },
@@ -72,20 +54,14 @@ export const Types: Record<string, ValidatorFunction> = {
     if (typeof data === 'string') {
       return {
         valid: true,
-        errors: [],
+        error: null,
         data,
       };
     }
 
     return {
       valid: false,
-      errors: [
-        new ValidationError('Data is not a string', {
-          pointer,
-          value: data,
-          code: 'NOT_A_STRING',
-        }),
-      ],
+      error: new ValidationError('Data is not a string', pointer),
       data,
     };
   },
@@ -93,20 +69,14 @@ export const Types: Record<string, ValidatorFunction> = {
     if (typeof data === 'number') {
       return {
         valid: true,
-        errors: [],
+        error: null,
         data,
       };
     }
 
     return {
       valid: false,
-      errors: [
-        new ValidationError('Data is not a number', {
-          pointer,
-          value: data,
-          code: 'NOT_A_NUMBER',
-        }),
-      ],
+      error: new ValidationError('Data is not a number', pointer),
       data,
     };
   },
@@ -114,20 +84,14 @@ export const Types: Record<string, ValidatorFunction> = {
     if (typeof data === 'number' && Number.isInteger(data)) {
       return {
         valid: true,
-        errors: [],
+        error: null,
         data,
       };
     }
 
     return {
       valid: false,
-      errors: [
-        new ValidationError('Data is not an integer', {
-          pointer,
-          value: data,
-          code: 'NOT_AN_INTEGER',
-        }),
-      ],
+      error: new ValidationError('Data is not an integer', pointer),
       data,
     };
   },
@@ -136,20 +100,14 @@ export const Types: Record<string, ValidatorFunction> = {
     if (typeof data === 'boolean') {
       return {
         valid: true,
-        errors: [],
+        error: null,
         data,
       };
     }
 
     return {
       valid: false,
-      errors: [
-        new ValidationError('Data is not a boolean', {
-          pointer,
-          value: data,
-          code: 'NOT_A_BOOLEAN',
-        }),
-      ],
+      error: new ValidationError('Data is not a boolean', pointer),
       data,
     };
   },
@@ -157,20 +115,14 @@ export const Types: Record<string, ValidatorFunction> = {
     if (data === null) {
       return {
         valid: true,
-        errors: [],
+        error: null,
         data,
       };
     }
 
     return {
       valid: false,
-      errors: [
-        new ValidationError('Data is not null', {
-          pointer,
-          value: data,
-          code: 'NOT_NULL',
-        }),
-      ],
+      error: new ValidationError('Data is not null', pointer),
       data,
     };
   },
