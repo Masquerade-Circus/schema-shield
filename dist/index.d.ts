@@ -16,11 +16,8 @@ export interface FormatFunction {
     (data: any): boolean;
 }
 export interface CompiledSchema {
-    pointer: string;
-    validator?: ValidatorFunction;
-    type?: string;
     validators?: ValidatorFunction[];
-    keywords?: Record<string, ValidatorFunction>;
+    types?: ValidatorFunction[];
     [key: string]: any;
 }
 export interface Validator {
@@ -37,10 +34,9 @@ export declare class SchemaShield {
     addKeyword(name: string, validator: ValidatorFunction): void;
     compile(schema: any): Validator;
     private compileSchema;
-    private handleSubSchema;
-    private validateTypes;
-    private validateKeywords;
+    validate(schema: CompiledSchema, data: any): Result;
     private isSchemaOrKeywordPresent;
-    private isSchemaLike;
+    isSchemaLike(subSchema: any): boolean;
+    isCompiledSchema(subSchema: any): boolean;
 }
 //# sourceMappingURL=index.d.ts.map

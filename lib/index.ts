@@ -25,11 +25,8 @@ export interface FormatFunction {
 }
 
 export interface CompiledSchema {
-  pointer: string;
-  validator?: ValidatorFunction;
-  type?: string;
   validators?: ValidatorFunction[];
-  keywords?: Record<string, ValidatorFunction>;
+  types?: ValidatorFunction[];
   [key: string]: any;
 }
 
@@ -72,159 +69,91 @@ export class SchemaShield {
   compile(schema: any): Validator {
     const compiledSchema = this.compileSchema(schema, '#');
 
-    const validate: Validator = (data: any) => {
-      return compiledSchema.validator(compiledSchema, data, '#', this);
-    };
-
+    const validate: Validator = (data: any) => this.validate(compiledSchema, data);
     validate.compiledSchema = compiledSchema;
 
     return validate;
   }
 
   private compileSchema(schema: Partial<CompiledSchema> | any, pointer): CompiledSchema {
-    if (!this.isSchemaLike(schema)) {
+    if (!isObject(schema)) {
       if (schema === true) {
         schema = {
           anyOf: [{ type: 'string' }, { type: 'number' }, { type: 'boolean' }, { type: 'array' }, { type: 'object' }, { type: 'null' }],
         };
-      }
-
-      if (schema === false) {
+      } else if (schema === false) {
         schema = {
           oneOf: [],
+        };
+      } else {
+        schema = {
+          oneOf: [schema],
         };
       }
     }
 
-    const compiledSchema = {
-      ...schema,
-      pointer,
-    };
+    const compiledSchema: CompiledSchema = {};
 
-    if ('type' in compiledSchema) {
-      const types = Array.isArray(compiledSchema.type) ? compiledSchema.type : compiledSchema.type.split(',').map((t) => t.trim());
+    if ('type' in schema) {
+      const types = Array.isArray(schema.type) ? schema.type : schema.type.split(',').map((t) => t.trim());
 
-      compiledSchema.validators = types.map((type) => this.types.get(type)).filter((validator) => validator !== undefined);
+      compiledSchema.types = types.map((type) => this.types.get(type)).filter((validator) => validator !== undefined);
     }
 
-    // Compile schema type
-    const validator: ValidatorFunction = (schema: any, data: any, pointer: string) => {
-      if (typeof data === 'undefined') {
-        if (pointer === '#') {
-          return {
-            valid: false,
-            errors: [
-              new ValidationError('Data is undefined', {
-                pointer,
-                value: data,
-                code: 'DATA_UNDEFINED',
-              }),
-            ],
-            data,
-          };
-        }
-      }
-
-      let finalData = data;
-      const typeErrorsResult = this.validateTypes(schema, finalData, pointer);
-      if (typeErrorsResult.valid === false) {
-        return typeErrorsResult;
-      }
-      finalData = typeErrorsResult.data;
-
-      return this.validateKeywords(schema, finalData, pointer);
-    };
-
-    compiledSchema.validator = validator;
-
-    // Recursively compile sub schemas
     for (let key in schema) {
-      // Skip type as it is already compiled
       if (key === 'type') {
         continue;
       }
 
       if (this.keywords.has(key)) {
-        const validator = this.keywords.get(key);
-        compiledSchema.keywords = compiledSchema.keywords || {};
-        compiledSchema.keywords[key] = validator;
+        compiledSchema.validators = compiledSchema.validators || [];
+        compiledSchema.validators.push(this.keywords.get(key));
       }
 
-      this.handleSubSchema(key, schema, pointer, compiledSchema);
+      if (this.isSchemaLike(schema[key])) {
+        compiledSchema[key] = this.compileSchema(schema[key], `${pointer}/${key}`);
+        continue;
+      }
+      if (Array.isArray(schema[key])) {
+        compiledSchema[key] = schema[key].map((subSchema, index) =>
+          this.isSchemaLike(subSchema) ? this.compileSchema(subSchema, `${pointer}/${key}/${index}`) : subSchema
+        );
+        continue;
+      }
+
+      if (isObject(schema[key])) {
+        compiledSchema[key] = this.compileSchema(schema[key], `${pointer}/${key}`);
+        continue;
+      }
+
+      compiledSchema[key] = schema[key];
     }
 
     return compiledSchema;
   }
 
-  private handleSubSchema(key: string, schema: any, pointer: string, compiledSchema: any) {
-    if (Array.isArray(schema[key])) {
-      compiledSchema[key] = schema[key].map((subSchema, index) => {
-        if (this.isSchemaLike(subSchema)) {
-          return this.compileSchema(subSchema, `${pointer}/${key}/${index}`);
+  validate(schema: CompiledSchema, data: any): Result {
+    let errors: ValidationError[] = [];
+
+    if (schema.types) {
+      for (let type of schema.types) {
+        const result = type(schema, data, schema.pointer, this);
+
+        if (result.valid) {
+          errors = [];
+          break;
         }
-        return subSchema;
-      });
-      return;
-    }
 
-    if (isObject(schema[key])) {
-      if (this.isSchemaLike(schema[key]) && key !== 'properties') {
-        compiledSchema[key] = this.compileSchema(schema[key], `${pointer}/${key}`);
-        return;
-      }
-
-      for (let subKey in schema[key]) {
-        if (this.isSchemaLike(schema[key][subKey])) {
-          compiledSchema[key] = compiledSchema[key] || {};
-
-          compiledSchema[key][subKey] = this.compileSchema(schema[key][subKey], `${pointer}/${key}/${subKey}`);
-        }
+        errors.push(...result.errors);
       }
     }
-  }
 
-  private validateTypes(schema: CompiledSchema, data, pointer): Result {
-    if (typeof data === 'undefined' || !Array.isArray(schema.validators) || schema.validators.length === 0) {
-      return {
-        valid: true,
-        errors: [],
-        data,
-      };
-    }
+    if (schema.validators) {
+      for (let validator of schema.validators) {
+        const result = validator(schema, data, schema.pointer, this);
 
-    let errors = [];
-    let finalData = data;
-
-    for (let schemaValidator of schema.validators) {
-      const schemaResult = schemaValidator(schema, data, pointer, this);
-
-      finalData = schemaResult.data;
-
-      if (schemaResult.valid) {
-        return schemaResult;
-      }
-
-      errors = schemaResult.errors;
-    }
-
-    return {
-      valid: errors.length === 0,
-      errors,
-      data: finalData,
-    };
-  }
-
-  private validateKeywords(schema: CompiledSchema, data, pointer): Result {
-    const errors = [];
-    let finalData = data;
-
-    if ('keywords' in schema) {
-      for (let keyword in schema.keywords) {
-        const keywordValidator: ValidatorFunction = schema.keywords[keyword];
-        const keywordResult = keywordValidator(schema, finalData, pointer, this);
-        finalData = keywordResult.data;
-        if (!keywordResult.valid) {
-          errors.push(...keywordResult.errors);
+        if (!result.valid) {
+          return result;
         }
       }
     }
@@ -232,7 +161,7 @@ export class SchemaShield {
     return {
       valid: errors.length === 0,
       errors,
-      data: finalData,
+      data,
     };
   }
 
@@ -249,7 +178,11 @@ export class SchemaShield {
     return false;
   }
 
-  private isSchemaLike(subSchema: any): boolean {
+  isSchemaLike(subSchema: any): boolean {
     return isObject(subSchema) && this.isSchemaOrKeywordPresent(subSchema);
+  }
+
+  isCompiledSchema(subSchema: any): boolean {
+    return isObject(subSchema) && ('validators' in subSchema || 'types' in subSchema);
   }
 }

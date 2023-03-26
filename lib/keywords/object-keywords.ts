@@ -58,12 +58,7 @@ export const ObjectKeywords: Record<string, ValidatorFunction> = {
         continue;
       }
 
-      const { validator } = schema.properties[key] as CompiledSchema;
-      if (!validator) {
-        continue;
-      }
-
-      const validatorResult = validator(schema.properties[key], finalData[key], `${pointer}/${key}`, schemaShieldInstance);
+      const validatorResult = schemaShieldInstance.validate(schema.properties[key], finalData[key]);
 
       finalData[key] = validatorResult.data;
 
@@ -119,6 +114,7 @@ export const ObjectKeywords: Record<string, ValidatorFunction> = {
     const errors = [];
     let finalData = { ...data };
     const keys = Object.keys(data);
+    const isCompiledSchema = schemaShieldInstance.isCompiledSchema(schema.additionalProperties);
     for (const key of keys) {
       if (schema.properties && schema.properties.hasOwnProperty(key)) {
         continue;
@@ -148,17 +144,14 @@ export const ObjectKeywords: Record<string, ValidatorFunction> = {
         continue;
       }
 
-      const { validator } = schema.additionalProperties as CompiledSchema;
-      if (!validator) {
-        continue;
-      }
+      if (isCompiledSchema) {
+        const validatorResult = schemaShieldInstance.validate(schema.additionalProperties, finalData[key]);
 
-      const validatorResult = validator(schema.additionalProperties, finalData[key], `${pointer}/${key}`, schemaShieldInstance);
+        finalData[key] = validatorResult.data;
 
-      finalData[key] = validatorResult.data;
-
-      if (!validatorResult.valid) {
-        errors.push(...validatorResult.errors);
+        if (!validatorResult.valid) {
+          errors.push(...validatorResult.errors);
+        }
       }
     }
 
@@ -193,15 +186,10 @@ export const ObjectKeywords: Record<string, ValidatorFunction> = {
         continue;
       }
 
-      const { validator } = schema.patternProperties[pattern] as CompiledSchema;
-      if (!validator) {
-        continue;
-      }
-
       const keys = Object.keys(finalData);
       for (const key of keys) {
         if (regex.test(key)) {
-          const validatorResult = validator(schema.patternProperties[pattern], finalData[key], `${pointer}/${key}`, schemaShieldInstance);
+          const validatorResult = schemaShieldInstance.validate(schema.patternProperties[pattern], finalData[key]);
 
           finalData[key] = validatorResult.data;
 
@@ -238,16 +226,14 @@ export const ObjectKeywords: Record<string, ValidatorFunction> = {
 
     const errors = [];
     let finalData = { ...data };
-    const { validator } = schema.propertyNames as CompiledSchema;
-    if (!validator) {
-      return { valid: true, errors: [], data };
-    }
 
-    for (let key in finalData) {
-      const validatorResult = validator(schema.propertyNames, key, pointer, schemaShieldInstance);
+    if (schemaShieldInstance.isCompiledSchema(schema.propertyNames)) {
+      for (let key in finalData) {
+        const validatorResult = schemaShieldInstance.validate(schema.propertyNames, key);
 
-      if (!validatorResult.valid) {
-        errors.push(...validatorResult.errors);
+        if (!validatorResult.valid) {
+          errors.push(...validatorResult.errors);
+        }
       }
     }
 

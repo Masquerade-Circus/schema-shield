@@ -25,12 +25,7 @@ export const OtherKeywords: Record<string, ValidatorFunction> = {
     let finalData = data;
     for (let i = 0; i < schema.allOf.length; i++) {
       if (isObject(schema.allOf[i])) {
-        const { validator } = schema.allOf[i] as CompiledSchema;
-        if (!validator) {
-          continue;
-        }
-
-        const validatorResult = validator(schema.allOf[i], finalData, pointer, schemaShieldInstance);
+        const validatorResult = schemaShieldInstance.validate(schema.allOf[i], finalData);
 
         if (!validatorResult.valid) {
           errors.push(...validatorResult.errors);
@@ -71,11 +66,7 @@ export const OtherKeywords: Record<string, ValidatorFunction> = {
 
     for (let i = 0; i < schema.anyOf.length; i++) {
       if (isObject(schema.anyOf[i])) {
-        const { validator } = schema.anyOf[i] as CompiledSchema;
-        if (!validator) {
-          return { valid: true, errors: [], data };
-        }
-        const validationResult = validator(schema.anyOf[i], finalData, pointer, schemaShieldInstance);
+        const validationResult = schemaShieldInstance.validate(schema.anyOf[i], finalData);
         finalData = validationResult.data;
         if (validationResult.valid) {
           return { valid: true, errors: [], data: finalData };
@@ -112,12 +103,7 @@ export const OtherKeywords: Record<string, ValidatorFunction> = {
     let finalData = data;
     for (let i = 0; i < schema.oneOf.length; i++) {
       if (isObject(schema.oneOf[i])) {
-        const { validator } = schema.oneOf[i] as CompiledSchema;
-        if (!validator) {
-          validCount++;
-          continue;
-        }
-        const validationResult = validator(schema.oneOf[i], finalData, pointer, schemaShieldInstance);
+        const validationResult = schemaShieldInstance.validate(schema.oneOf[i], finalData);
         if (validationResult.valid) {
           validCount++;
         } else {
@@ -211,12 +197,7 @@ export const OtherKeywords: Record<string, ValidatorFunction> = {
         continue;
       }
 
-      const { validator } = dependency as CompiledSchema;
-      if (!validator) {
-        continue;
-      }
-
-      const validatorResult = validator(dependency, finalData, pointer, schemaShieldInstance);
+      const validatorResult = schemaShieldInstance.validate(dependency, finalData);
       if (!validatorResult.valid) {
         errors.push(...validatorResult.errors);
       }
@@ -284,13 +265,8 @@ export const OtherKeywords: Record<string, ValidatorFunction> = {
       };
     }
 
-    const { validator } = schema.contains as CompiledSchema;
-    if (!validator) {
-      return { valid: true, errors: [], data };
-    }
-
     for (let i = 0; i < data.length; i++) {
-      const validatorResult = validator(schema.contains, data[i], `${pointer}/${i}`, schemaShieldInstance);
+      const validatorResult = schemaShieldInstance.validate(schema.contains, data[i]);
       if (validatorResult.valid) {
         return { valid: true, errors: [], data };
       }
@@ -317,49 +293,32 @@ export const OtherKeywords: Record<string, ValidatorFunction> = {
     if (typeof schema.if === 'boolean') {
       if (schema.if) {
         if (schema.then) {
-          const { validator: thenValidator } = schema.then as CompiledSchema;
-          if (thenValidator) {
-            const thenResult = thenValidator(schema.then, data, pointer, schemaShieldInstance);
-            if (!thenResult.valid) {
-              return thenResult;
-            }
-          }
-        }
-      } else if (schema.else) {
-        const { validator: elseValidator } = schema.else as CompiledSchema;
-        if (elseValidator) {
-          const elseResult = elseValidator(schema.else, data, pointer, schemaShieldInstance);
-          if (!elseResult.valid) {
-            return elseResult;
-          }
-        }
-      }
-      return { valid: true, errors: [], data };
-    }
-
-    const { validator: ifValidator } = schema.if as CompiledSchema;
-    if (!ifValidator) {
-      return { valid: true, errors: [], data };
-    }
-
-    const ifResult = ifValidator(schema.if, data, pointer, schemaShieldInstance);
-    if (ifResult.valid) {
-      if (schema.then) {
-        const { validator: thenValidator } = schema.then as CompiledSchema;
-        if (thenValidator) {
-          const thenResult = thenValidator(schema.then, data, pointer, schemaShieldInstance);
+          const thenResult = schemaShieldInstance.validate(schema.then, data);
           if (!thenResult.valid) {
             return thenResult;
           }
         }
-      }
-    } else if (schema.else) {
-      const { validator: elseValidator } = schema.else as CompiledSchema;
-      if (elseValidator) {
-        const elseResult = elseValidator(schema.else, data, pointer, schemaShieldInstance);
+      } else if (schema.else) {
+        const elseResult = schemaShieldInstance.validate(schema.else, data);
         if (!elseResult.valid) {
           return elseResult;
         }
+      }
+      return { valid: true, errors: [], data };
+    }
+
+    const ifResult = schemaShieldInstance.validate(schema.if, data);
+    if (ifResult.valid) {
+      if (schema.then) {
+        const thenResult = schemaShieldInstance.validate(schema.then, data);
+        if (!thenResult.valid) {
+          return thenResult;
+        }
+      }
+    } else if (schema.else) {
+      const elseResult = schemaShieldInstance.validate(schema.else, data);
+      if (!elseResult.valid) {
+        return elseResult;
       }
     }
 
@@ -384,22 +343,7 @@ export const OtherKeywords: Record<string, ValidatorFunction> = {
       return { valid: true, errors: [], data };
     }
 
-    const { validator } = schema.not as CompiledSchema;
-    if (!validator) {
-      return {
-        valid: false,
-        errors: [
-          new ValidationError(`Value must not be valid`, {
-            pointer,
-            value: data,
-            code: 'VALUE_IS_VALID',
-          }),
-        ],
-        data,
-      };
-    }
-
-    const validatorResult = validator(schema.not, data, pointer, schemaShieldInstance);
+    const validatorResult = schemaShieldInstance.validate(schema.not, data);
     if (validatorResult.valid) {
       return {
         valid: false,

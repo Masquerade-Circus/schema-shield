@@ -3,6 +3,7 @@ import { describe, it } from 'mocha';
 import { SchemaShield } from '../lib';
 import expect from 'expect';
 import { stringifySchema } from './test-utils';
+import { deepClone } from '../lib/utils';
 
 const jsonTests = require('./all-test-suites.test.json');
 
@@ -75,21 +76,7 @@ for (let i = 0; i < jsonTests.length; i++) {
     continue;
   }
 
-  let validate;
-
-  function setup() {
-    if (validate) {
-      return { validate };
-    }
-    validate = schemaShield.compile(schema);
-    if (logSchema) {
-      console.log(JSON.stringify(schema, null, 2));
-      console.log(stringifySchema(validate));
-    }
-    return { validate };
-  }
-
-  describe(groupDescription, () => {
+  describe.only(groupDescription, () => {
     for (let j = 0; j < tests.length; j++) {
       const { description, data, valid } = tests[j];
 
@@ -99,20 +86,26 @@ for (let i = 0; i < jsonTests.length; i++) {
       }
 
       it(description, () => {
-        const { validate } = setup();
-        if (logData) {
+        let validate;
+        let result;
+        try {
+          let clonedSchema = deepClone(schema);
+          validate = schemaShield.compile(schema);
+          result = validate(data);
+          expect(result).toEqual({
+            valid,
+            errors: valid ? [] : expect.any(Array),
+            data: data === null ? null : expect.anything(),
+          });
+          expect(clonedSchema).toEqual(schema);
+        } catch (e) {
+          console.log('schema', JSON.stringify(schema, null, 2));
+          console.log('compiledSchema', stringifySchema(validate));
           console.log('data', data);
           console.log('valid', valid);
+
+          throw e;
         }
-        const result = validate(data);
-        if (valid !== result.valid) {
-          console.log('data', data, result);
-        }
-        expect(result).toEqual({
-          valid,
-          errors: valid ? [] : expect.any(Array),
-          data: data === null ? null : expect.anything(),
-        });
       });
     }
   });

@@ -29,11 +29,7 @@ export const ArrayKeywords: Record<string, ValidatorFunction> = {
           continue;
         }
 
-        const { validator } = schemaItems[i] as CompiledSchema;
-        if (!validator) {
-          continue;
-        }
-        const validatorResult = validator(schemaItems[i], finalData[i], `${pointer}/${i}`, schemaShieldInstance);
+        const validatorResult = schemaShieldInstance.validate(schemaItems[i], finalData[i]);
 
         finalData[i] = validatorResult.data;
 
@@ -51,14 +47,9 @@ export const ArrayKeywords: Record<string, ValidatorFunction> = {
           })
         );
       }
-    } else {
-      const { validator } = schemaItems as CompiledSchema;
-      if (!validator) {
-        return { valid: true, errors: [], data };
-      }
-
+    } else if (schemaShieldInstance.isCompiledSchema(schemaItems)) {
       for (let i = 0; i < dataLength; i++) {
-        const validatorErrors = validator(schemaItems, finalData[i], `${pointer}/${i}`, schemaShieldInstance);
+        const validatorErrors = schemaShieldInstance.validate(schemaItems, finalData[i]);
 
         finalData[i] = validatorErrors.data;
 
@@ -132,10 +123,9 @@ export const ArrayKeywords: Record<string, ValidatorFunction> = {
 
     const errors = [];
     let finalData = [...data];
-    if (typeof schema.additionalItems === 'object') {
+    if (schemaShieldInstance.isCompiledSchema(schema.additionalItems)) {
       for (let i = schema.items.length; i < finalData.length; i++) {
-        const { validator } = schema.additionalItems as CompiledSchema;
-        const validatorResult = validator(schema.additionalItems, finalData[i], `${pointer}/${i}`, schemaShieldInstance);
+        const validatorResult = schemaShieldInstance.validate(schema.additionalItems, finalData[i]);
         if (!validatorResult.valid) {
           errors.push(...validatorResult.errors);
         }
