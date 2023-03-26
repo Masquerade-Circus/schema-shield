@@ -40,7 +40,9 @@ export class SchemaShield {
     }
 
     for (const keyword of Object.keys(keywords)) {
-      this.addKeyword(keyword, keywords[keyword]);
+      if (keywords[keyword]) {
+        this.addKeyword(keyword, keywords[keyword] as ValidatorFunction);
+      }
     }
 
     for (const format of Object.keys(Formats)) {

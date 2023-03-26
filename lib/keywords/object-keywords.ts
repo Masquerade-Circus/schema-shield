@@ -1,7 +1,7 @@
 import { CompiledSchema, ValidatorFunction } from '../index';
 import { ValidationError, isObject } from '../utils';
 
-export const ObjectKeywords: Record<string, ValidatorFunction> = {
+export const ObjectKeywords: Record<string, ValidatorFunction | false> = {
   // Object
   required(schema, data, pointer) {
     if (!isObject(data)) {
@@ -210,4 +210,9 @@ export const ObjectKeywords: Record<string, ValidatorFunction> = {
 
     return { valid: true, error: null, data: finalData };
   },
+
+  default: false,
+  $ref: false,
+  definitions: false,
+  $id: false,
 };

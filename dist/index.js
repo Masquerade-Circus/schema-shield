@@ -752,7 +752,11 @@ var ObjectKeywords = {
       }
     }
     return { valid: true, error: null, data: finalData };
-  }
+  },
+  default: false,
+  $ref: false,
+  definitions: false,
+  $id: false
 };
 
 // lib/keywords/other-keywords.ts
@@ -1109,7 +1113,9 @@ var SchemaShield = class {
       this.addType(type, Types[type]);
     }
     for (const keyword of Object.keys(keywords)) {
-      this.addKeyword(keyword, keywords[keyword]);
+      if (keywords[keyword]) {
+        this.addKeyword(keyword, keywords[keyword]);
+      }
     }
     for (const format of Object.keys(Formats)) {
       if (Formats[format]) {
