@@ -215,4 +215,7 @@ export const ObjectKeywords: Record<string, ValidatorFunction | false> = {
   $ref: false,
   definitions: false,
   $id: false,
+  $schema: false,
+  title: false,
+  $comment: false,
 };

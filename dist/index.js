@@ -756,7 +756,10 @@ var ObjectKeywords = {
   default: false,
   $ref: false,
   definitions: false,
-  $id: false
+  $id: false,
+  $schema: false,
+  title: false,
+  $comment: false
 };
 
 // lib/keywords/other-keywords.ts
