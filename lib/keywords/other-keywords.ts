@@ -1,97 +1,83 @@
-import { CompiledSchema, ValidatorFunction } from '../index';
-import { ValidationError, isObject, deepEqual } from '../utils';
+import { CompiledSchema, ValidatorFunction } from "../index";
+import { ValidationError, deepEqual, isObject } from "../utils";
 
 export const OtherKeywords: Record<string, ValidatorFunction> = {
   nullable(schema, data, pointer) {
     if (schema.nullable && data !== null) {
-      return {
-        valid: false,
-        error: new ValidationError('Value must be null to be empty', pointer),
-        data,
-      };
+      throw new ValidationError("Value must be null to be empty", pointer);
     }
 
-    return { valid: true, error: null, data };
+    return data;
   },
 
   allOf(schema, data, pointer, schemaShieldInstance) {
-    let finalData = data;
     for (let i = 0; i < schema.allOf.length; i++) {
       if (isObject(schema.allOf[i])) {
-        const validatorResult = schemaShieldInstance.validate(schema.allOf[i], finalData);
+        data = schemaShieldInstance.validate(schema.allOf[i], data);
+        continue;
+      }
 
-        if (!validatorResult.valid) {
-          return { valid: false, error: validatorResult.error, data: finalData };
+      if (typeof schema.allOf[i] === "boolean") {
+        if (Boolean(data) !== schema.allOf[i]) {
+          throw new ValidationError(
+            `Value must match all schemas in allOf`,
+            pointer
+          );
         }
+        continue;
+      }
 
-        finalData = validatorResult.data;
-      } else {
-        if (typeof schema.allOf[i] === 'boolean') {
-          if (Boolean(data) !== schema.allOf[i]) {
-            return {
-              valid: false,
-              error: new ValidationError(`Value must match all schemas in allOf`, pointer),
-              data: finalData,
-            };
-          }
-          continue;
-        }
-
-        if (data !== schema.allOf[i]) {
-          return {
-            valid: false,
-            error: new ValidationError(`Value must match all schemas in allOf`, pointer),
-            data: finalData,
-          };
-        }
+      if (data !== schema.allOf[i]) {
+        throw new ValidationError(
+          `Value must match all schemas in allOf`,
+          pointer
+        );
       }
     }
 
-    return { valid: true, error: null, data: finalData };
+    return data;
   },
 
   anyOf(schema, data, pointer, schemaShieldInstance) {
-    let finalData = data;
-
     for (let i = 0; i < schema.anyOf.length; i++) {
       if (isObject(schema.anyOf[i])) {
-        const validationResult = schemaShieldInstance.validate(schema.anyOf[i], finalData);
-        finalData = validationResult.data;
-        if (validationResult.valid) {
-          return { valid: true, error: null, data: finalData };
+        try {
+          data = schemaShieldInstance.validate(schema.anyOf[i], data);
+          return data;
+        } catch (error) {
+          continue;
         }
       } else {
-        if (typeof schema.anyOf[i] === 'boolean') {
+        if (typeof schema.anyOf[i] === "boolean") {
           if (Boolean(data) === schema.anyOf[i]) {
-            return { valid: true, error: null, data: finalData };
+            return data;
           }
         }
 
         if (data === schema.anyOf[i]) {
-          return { valid: true, error: null, data: finalData };
+          return data;
         }
       }
     }
 
-    return {
-      valid: false,
-      error: new ValidationError(`Value must match at least one schema in anyOf`, pointer),
-      data,
-    };
+    throw new ValidationError(
+      `Value must match at least one schema in anyOf`,
+      pointer
+    );
   },
 
   oneOf(schema, data, pointer, schemaShieldInstance) {
     let validCount = 0;
-    let finalData = data;
     for (let i = 0; i < schema.oneOf.length; i++) {
       if (isObject(schema.oneOf[i])) {
-        const validationResult = schemaShieldInstance.validate(schema.oneOf[i], finalData);
-        if (validationResult.valid) {
+        try {
+          data = schemaShieldInstance.validate(schema.oneOf[i], data);
           validCount++;
+        } catch (error) {
+          continue;
         }
-        finalData = validationResult.data;
       } else {
-        if (typeof schema.oneOf[i] === 'boolean') {
+        if (typeof schema.oneOf[i] === "boolean") {
           if (Boolean(data) === schema.oneOf[i]) {
             validCount++;
           }
@@ -105,22 +91,20 @@ export const OtherKeywords: Record<string, ValidatorFunction> = {
     }
 
     if (validCount === 1) {
-      return { valid: true, error: null, data: finalData };
+      return data;
     }
 
-    return {
-      valid: false,
-      error: new ValidationError(`Value must match exactly one schema in oneOf`, pointer),
-      data: finalData,
-    };
+    throw new ValidationError(
+      `Value must match exactly one schema in oneOf`,
+      pointer
+    );
   },
 
   dependencies(schema, data, pointer, schemaShieldInstance) {
     if (!isObject(data)) {
-      return { valid: true, error: null, data };
+      return data;
     }
 
-    let finalData = data;
     for (const key in schema.dependencies) {
       if (key in data === false) {
         continue;
@@ -130,162 +114,152 @@ export const OtherKeywords: Record<string, ValidatorFunction> = {
       if (Array.isArray(dependency)) {
         for (let i = 0; i < dependency.length; i++) {
           if (!(dependency[i] in data)) {
-            return {
-              valid: false,
-              error: new ValidationError(`Dependency ${dependency[i]} is missing`, pointer),
-              data: finalData,
-            };
+            throw new ValidationError(
+              `Dependency ${dependency[i]} is missing`,
+              pointer
+            );
           }
         }
         continue;
       }
-
-      if (typeof dependency === 'boolean') {
+      if (typeof dependency === "boolean") {
         if (dependency) {
           continue;
         }
-        return {
-          valid: false,
-          error: new ValidationError(`Dependency ${key} is missing`, pointer),
-
-          data: finalData,
-        };
+        throw new ValidationError(`Dependency ${key} is missing`, pointer);
       }
 
-      if (typeof dependency === 'string') {
+      if (typeof dependency === "string") {
         if (dependency in data) {
           continue;
         }
-        return {
-          valid: false,
-          error: new ValidationError(`Dependency ${dependency} is missing`, pointer),
-          data: finalData,
-        };
+        throw new ValidationError(
+          `Dependency ${dependency} is missing`,
+          pointer
+        );
       }
 
-      const validatorResult = schemaShieldInstance.validate(dependency, finalData);
-      if (!validatorResult.valid) {
-        return { valid: false, error: validatorResult.error, data: finalData };
-      }
-      finalData = validatorResult.data;
+      data = schemaShieldInstance.validate(dependency, data);
     }
 
-    return { valid: true, error: null, data: finalData };
+    return data;
   },
 
   const(schema, data, pointer) {
     if (
       data === schema.const ||
-      (isObject(data) && isObject(schema.const) && deepEqual(data, schema.const)) ||
-      (Array.isArray(data) && Array.isArray(schema.const) && deepEqual(data, schema.const))
+      (isObject(data) &&
+        isObject(schema.const) &&
+        deepEqual(data, schema.const)) ||
+      (Array.isArray(data) &&
+        Array.isArray(schema.const) &&
+        deepEqual(data, schema.const))
     ) {
-      return { valid: true, error: null, data };
+      return data;
     }
-
-    return {
-      valid: false,
-      error: new ValidationError(`Value must be equal to const`, pointer),
-      data,
-    };
+    throw new ValidationError(`Value must be equal to const`, pointer);
   },
 
   contains(schema, data, pointer, schemaShieldInstance) {
     if (!Array.isArray(data)) {
-      return { valid: true, error: null, data };
+      return data;
     }
-
-    if (typeof schema.contains === 'boolean') {
+    if (typeof schema.contains === "boolean") {
       if (schema.contains) {
-        const valid = data.length > 0;
-        return {
-          valid,
-          error: valid ? null : new ValidationError(`Value must contain at least one item`, pointer),
-          data,
-        };
+        if (data.length === 0) {
+          throw new ValidationError(
+            `Value must contain at least one item`,
+            pointer
+          );
+        }
+        return data;
       }
 
-      return {
-        valid: false,
-        error: new ValidationError(`Value must not contain any items`, pointer),
-        data,
-      };
+      throw new ValidationError(`Value must not contain any items`, pointer);
     }
 
     for (let i = 0; i < data.length; i++) {
-      const validatorResult = schemaShieldInstance.validate(schema.contains, data[i]);
-      if (validatorResult.valid) {
-        return { valid: true, error: null, data };
+      try {
+        data[i] = schemaShieldInstance.validate(schema.contains, data[i]);
+        return data;
+      } catch (error) {
+        continue;
       }
     }
 
-    return {
-      valid: false,
-      error: new ValidationError(`Value must contain at least one item that matches the contains schema`, pointer),
-      data,
-    };
+    throw new ValidationError(
+      `Value must contain at least one item that matches the contains schema`,
+      pointer
+    );
   },
 
   if(schema, data, pointer, schemaShieldInstance) {
-    if ('then' in schema === false && 'else' in schema === false) {
-      return { valid: true, error: null, data };
+    if ("then" in schema === false && "else" in schema === false) {
+      return data;
     }
 
-    if (typeof schema.if === 'boolean') {
+    if (typeof schema.if === "boolean") {
       if (schema.if) {
         if (schema.then) {
-          const thenResult = schemaShieldInstance.validate(schema.then, data);
-          if (!thenResult.valid) {
-            return thenResult;
-          }
+          data = schemaShieldInstance.validate(schema.then, data);
         }
       } else if (schema.else) {
-        const elseResult = schemaShieldInstance.validate(schema.else, data);
-        if (!elseResult.valid) {
-          return elseResult;
-        }
+        data = schemaShieldInstance.validate(schema.else, data);
       }
-      return { valid: true, error: null, data };
+      return data;
     }
 
-    const ifResult = schemaShieldInstance.validate(schema.if, data);
-    if (ifResult.valid) {
+    try {
+      data = schemaShieldInstance.validate(schema.if, data);
       if (schema.then) {
-        const thenResult = schemaShieldInstance.validate(schema.then, data);
-        if (!thenResult.valid) {
-          return thenResult;
+        try {
+          data = schemaShieldInstance.validate(schema.then, data);
+        } catch (error) {
+          throw new ValidationError(
+            `Value must match then schema if it matches if schema`,
+            pointer
+          );
         }
       }
-    } else if (schema.else) {
-      const elseResult = schemaShieldInstance.validate(schema.else, data);
-      if (!elseResult.valid) {
-        return elseResult;
+    } catch (error) {
+      if (
+        error instanceof ValidationError === false ||
+        error.message === "Value must match then schema if it matches if schema"
+      ) {
+        throw error;
+      }
+      if (schema.else) {
+        try {
+          data = schemaShieldInstance.validate(schema.else, data);
+        } catch (error) {
+          throw new ValidationError(
+            `Value must match else schema if it does not match if schema`,
+            pointer
+          );
+        }
       }
     }
 
-    return { valid: true, error: null, data };
+    return data;
   },
 
   not(schema, data, pointer, schemaShieldInstance) {
-    if (typeof schema.not === 'boolean') {
+    if (typeof schema.not === "boolean") {
       if (schema.not) {
-        return {
-          valid: false,
-          error: new ValidationError(`Value must not be valid`, pointer),
-          data,
-        };
+        throw new ValidationError("Value must not be valid", pointer);
       }
-      return { valid: true, error: null, data };
+      return data;
     }
 
-    const validatorResult = schemaShieldInstance.validate(schema.not, data);
-    if (validatorResult.valid) {
-      return {
-        valid: false,
-        error: new ValidationError(`Value must not be valid`, pointer),
-        data,
-      };
+    try {
+      data = schemaShieldInstance.validate(schema.not, data);
+    } catch (error) {
+      if (error instanceof ValidationError) {
+        return data;
+      }
+      throw error;
     }
 
-    return { valid: true, error: null, data };
-  },
+    throw new ValidationError("Value must not be valid", pointer);
+  }
 };
