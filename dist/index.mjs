@@ -987,25 +987,25 @@ var SchemaShield = class {
       }
     }
     const compiledSchema = {};
+    const TypeError2 = new ValidationError(`Invalid type`, pointer);
+    const typeValidations = [];
+    let methodName = "";
     if ("type" in schema) {
       const types = Array.isArray(schema.type) ? schema.type : schema.type.split(",").map((t) => t.trim());
-      const typeValidations = [];
-      let name = "";
       for (const type of types) {
         const validator = this.types.get(type);
         if (validator) {
           typeValidations.push(validator);
-          name += (name ? "_OR_" : "") + validator.name;
+          methodName += (methodName ? "_OR_" : "") + validator.name;
         }
       }
-      const TypeError2 = new ValidationError(`Invalid type`, pointer);
       if (typeValidations.length === 0) {
         throw TypeError2;
       }
       if (typeValidations.length === 1) {
         const typeValidation = typeValidations[0];
         compiledSchema.$validate = getNamedFunction(
-          name,
+          methodName,
           (data) => {
             if (typeValidation(data)) {
               return [true, null];
@@ -1013,9 +1013,9 @@ var SchemaShield = class {
             return [false, TypeError2];
           }
         );
-      } else {
+      } else if (typeValidations.length > 1) {
         compiledSchema.$validate = getNamedFunction(
-          name,
+          methodName,
           (data) => {
             for (const validator of typeValidations) {
               if (validator(data)) {
@@ -1036,9 +1036,9 @@ var SchemaShield = class {
         const KeywordError = new ValidationError(`Invalid ${key}`, pointer);
         if (compiledSchema.$validate) {
           const prevValidator = compiledSchema.$validate;
-          const name = `${prevValidator.name}_AND_${keywordValidator.name}`;
+          methodName += `_AND_${keywordValidator.name}`;
           compiledSchema.$validate = getNamedFunction(
-            name,
+            methodName,
             (data) => {
               let [valid, error] = prevValidator(data);
               if (!valid) {
@@ -1053,8 +1053,9 @@ var SchemaShield = class {
             }
           );
         } else {
+          methodName = keywordValidator.name;
           compiledSchema.$validate = getNamedFunction(
-            keywordValidator.name,
+            methodName,
             (data) => {
               return keywordValidator(
                 compiledSchema,
