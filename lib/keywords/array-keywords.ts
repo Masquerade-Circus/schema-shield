@@ -35,9 +35,8 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
         if (isCompiledSchema(schemaItem)) {
           const [valid, error] = schemaItem.$validate(data[i]);
           if (!valid) {
-            KeywordError.message = error.message;
-            KeywordError.item = i;
-            return [false, KeywordError];
+            error.item = i;
+            return [false, error];
           }
         }
       }
@@ -49,9 +48,8 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
       for (let i = 0; i < dataLength; i++) {
         const [valid, error] = schemaItems.$validate(data[i]);
         if (!valid) {
-          KeywordError.message = error.message;
-          KeywordError.item = i;
-          return [false, KeywordError];
+          error.item = i;
+          return [false, error];
         }
       }
     }
@@ -59,7 +57,7 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
     return [true, null];
   },
 
-  minItems(schema, data, KeywordError, _) {
+  minItems(schema, data, KeywordError) {
     if (!Array.isArray(data) || data.length >= schema.minItems) {
       return [true, null];
     }
@@ -67,7 +65,7 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
     return [false, KeywordError];
   },
 
-  maxItems(schema, data, KeywordError, _) {
+  maxItems(schema, data, KeywordError) {
     if (!Array.isArray(data) || data.length <= schema.maxItems) {
       return [true, null];
     }
@@ -75,7 +73,7 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
     return [false, KeywordError];
   },
 
-  additionalItems(schema, data, KeywordError, _) {
+  additionalItems(schema, data, KeywordError) {
     if (!Array.isArray(data) || !schema.items || !Array.isArray(schema.items)) {
       return [true, null];
     }
@@ -92,9 +90,8 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
         for (let i = schema.items.length; i < data.length; i++) {
           const [valid, error] = schema.additionalItems.$validate(data[i]);
           if (!valid) {
-            KeywordError.message = error.message;
-            KeywordError.item = i;
-            return [false, KeywordError];
+            error.item = i;
+            return [false, error];
           }
         }
         return [true, null];

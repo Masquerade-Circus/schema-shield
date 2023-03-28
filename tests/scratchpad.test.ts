@@ -4,21 +4,60 @@ import { SchemaShield } from "../lib";
 import expect from "expect";
 import { stringifySchema } from "./test-utils";
 
+// const testGroup = {
+//   description: "integer type matches integers",
+//   schema: {
+//     type: "integer"
+//   },
+//   tests: [
+//     {
+//       description: "a float is not an integer",
+//       data: 1.1,
+//       valid: false
+//     },
+//     {
+//       description: "an integer is an integer",
+//       data: 1,
+//       valid: true
+//     }
+//   ]
+// };
+
 const testGroup = {
-  description: "integer type matches integers",
+  description: "nested items",
   schema: {
-    type: "integer"
+    type: "array",
+    items: {
+      type: "array",
+      items: {
+        type: "array",
+        items: {
+          type: "array",
+          items: {
+            type: "number"
+          }
+        }
+      }
+    }
   },
   tests: [
     {
-      description: "a float is not an integer",
-      data: 1.1,
+      description: "valid nested array",
+      data: [[[[1]], [[2], [3]]], [[[4], [5], [6]]]],
+      valid: true
+    },
+    {
+      description: "nested array with invalid type",
+      data: [[[["1"]], [[2], [3]]], [[[4], [5], [6]]]],
       valid: false
     },
     {
-      description: "an integer is an integer",
-      data: 1,
-      valid: true
+      description: "not deep enough",
+      data: [
+        [[1], [2], [3]],
+        [[4], [5], [6]]
+      ],
+      valid: false
     }
   ]
 };
@@ -51,6 +90,7 @@ describe.only("Scratchpad", () => {
         expect(validate(test.data)).toEqual([true, null]);
       } else {
         expect(validate(test.data)).toEqual([false, expect.anything()]);
+        console.log(validate(test.data));
       }
     });
   }

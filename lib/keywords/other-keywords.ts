@@ -21,7 +21,7 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
         if ("$validate" in schema.allOf[i]) {
           const [isValid, error] = schema.allOf[i].$validate(data);
           if (!isValid) {
-            return [false, KeywordError];
+            return [false, error];
           }
         }
         continue;

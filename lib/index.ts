@@ -96,11 +96,9 @@ export class SchemaShield {
     }
 
     const validate: Validator = (data: any) => {
-      if (this.immutable) {
-        data = deepClone(data);
-      }
-      return compiledSchema.$validate(data);
+      return compiledSchema.$validate(this.immutable ? deepClone(data) : data);
     };
+
     validate.compiledSchema = compiledSchema;
 
     return validate;
@@ -113,14 +111,7 @@ export class SchemaShield {
     if (!isObject(schema)) {
       if (schema === true) {
         schema = {
-          anyOf: [
-            { type: "string" },
-            { type: "number" },
-            { type: "boolean" },
-            { type: "array" },
-            { type: "object" },
-            { type: "null" }
-          ]
+          anyOf: [{}]
         };
       } else if (schema === false) {
         schema = {
@@ -136,6 +127,7 @@ export class SchemaShield {
     const compiledSchema: CompiledSchema = {} as CompiledSchema;
     const TypeError = new ValidationError(`Invalid type`, pointer);
     const typeValidations: TypeFunction[] = [];
+
     let methodName = "";
 
     if ("type" in schema) {
@@ -151,11 +143,13 @@ export class SchemaShield {
         }
       }
 
-      if (typeValidations.length === 0) {
+      const typeValidationsLength = typeValidations.length;
+
+      if (typeValidationsLength === 0) {
         throw TypeError;
       }
 
-      if (typeValidations.length === 1) {
+      if (typeValidationsLength === 1) {
         const typeValidation = typeValidations[0];
         compiledSchema.$validate = getNamedFunction<ValidateFunction>(
           methodName,
@@ -166,12 +160,12 @@ export class SchemaShield {
             return [false, TypeError];
           }
         );
-      } else if (typeValidations.length > 1) {
+      } else if (typeValidationsLength > 1) {
         compiledSchema.$validate = getNamedFunction<ValidateFunction>(
           methodName,
           (data) => {
-            for (const validator of typeValidations) {
-              if (validator(data)) {
+            for (let i = 0; i < typeValidationsLength; i++) {
+              if (typeValidations[i](data)) {
                 return [true, null];
               }
             }
@@ -181,45 +175,38 @@ export class SchemaShield {
       }
     }
 
-    for (let key in schema) {
+    for (const key in schema) {
       if (key === "type") {
+        compiledSchema.type = schema.type;
         continue;
       }
 
-      let keywordValidator = this.keywords.get(key);
+      const keywordValidator = this.keywords.get(key);
       if (keywordValidator) {
         const KeywordError = new ValidationError(`Invalid ${key}`, pointer);
+        const executeKeywordValidator = (data: any) =>
+          (keywordValidator as KeywordFunction)(
+            compiledSchema,
+            data,
+            KeywordError,
+            this
+          );
+
         if (compiledSchema.$validate) {
           const prevValidator = compiledSchema.$validate;
           methodName += `_AND_${keywordValidator.name}`;
           compiledSchema.$validate = getNamedFunction<ValidateFunction>(
             methodName,
             (data) => {
-              let [valid, error] = prevValidator(data);
-              if (!valid) {
-                return [false, error];
-              }
-
-              return (keywordValidator as KeywordFunction)(
-                compiledSchema,
-                data,
-                KeywordError,
-                this
-              );
+              const [valid, error] = prevValidator(data);
+              return valid ? executeKeywordValidator(data) : [false, error];
             }
           );
         } else {
           methodName = keywordValidator.name;
           compiledSchema.$validate = getNamedFunction<ValidateFunction>(
             methodName,
-            (data) => {
-              return (keywordValidator as KeywordFunction)(
-                compiledSchema,
-                data,
-                KeywordError,
-                this
-              );
-            }
+            executeKeywordValidator
           );
         }
       }

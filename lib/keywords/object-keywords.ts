@@ -45,8 +45,8 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
       if ("$validate" in schema.properties[key]) {
         const [valid, error] = schema.properties[key].$validate(data[key]);
         if (!valid) {
-          KeywordError.item = key;
-          return [false, KeywordError];
+          error.item = key;
+          return [false, error];
         }
       }
     }
@@ -103,8 +103,8 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
       if (isCompiled) {
         const [valid, error] = schema.additionalProperties.$validate(data[key]);
         if (!valid) {
-          KeywordError.item = key;
-          return [false, KeywordError];
+          error.item = key;
+          return [false, error];
         }
       }
     }
@@ -140,8 +140,8 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
               data[key]
             );
             if (!valid) {
-              KeywordError.item = key;
-              return [false, KeywordError];
+              error.item = key;
+              return [false, error];
             }
           }
         }
@@ -164,8 +164,8 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
       for (let key in data) {
         const [valid, error] = schema.propertyNames.$validate(key);
         if (!valid) {
-          KeywordError.item = key;
-          return [false, KeywordError];
+          error.item = key;
+          return [false, error];
         }
       }
     }

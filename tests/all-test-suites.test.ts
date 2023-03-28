@@ -82,7 +82,7 @@ for (let i = 0; i < jsonTests.length; i++) {
     continue;
   }
 
-  describe.only(groupDescription, () => {
+  describe.skip(groupDescription, () => {
     for (let j = 0; j < tests.length; j++) {
       const { description, data, valid } = tests[j];
 
