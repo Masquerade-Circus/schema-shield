@@ -1,48 +1,51 @@
 import { CompiledSchema, ValidatorFunction } from "../index";
-import { ValidationError, deepEqual, isObject } from "../utils";
+import {
+  ValidationError,
+  deepEqual,
+  isCompiledSchema,
+  isObject
+} from "../utils";
 
 export const OtherKeywords: Record<string, ValidatorFunction> = {
-  nullable(schema, data, pointer) {
+  nullable(schema, data, KeywordError) {
     if (schema.nullable && data !== null) {
-      throw new ValidationError("Value must be null to be empty", pointer);
+      throw KeywordError;
     }
 
     return data;
   },
 
-  allOf(schema, data, pointer, schemaShieldInstance) {
+  allOf(schema, data, KeywordError) {
     for (let i = 0; i < schema.allOf.length; i++) {
       if (isObject(schema.allOf[i])) {
-        data = schemaShieldInstance.validate(schema.allOf[i], data);
+        if ("$validate" in schema.allOf[i]) {
+          data = schema.allOf[i].$validate(data);
+        }
         continue;
       }
 
       if (typeof schema.allOf[i] === "boolean") {
         if (Boolean(data) !== schema.allOf[i]) {
-          throw new ValidationError(
-            `Value must match all schemas in allOf`,
-            pointer
-          );
+          throw KeywordError;
         }
         continue;
       }
 
       if (data !== schema.allOf[i]) {
-        throw new ValidationError(
-          `Value must match all schemas in allOf`,
-          pointer
-        );
+        throw KeywordError;
       }
     }
 
     return data;
   },
 
-  anyOf(schema, data, pointer, schemaShieldInstance) {
+  anyOf(schema, data, KeywordError) {
     for (let i = 0; i < schema.anyOf.length; i++) {
       if (isObject(schema.anyOf[i])) {
         try {
-          data = schemaShieldInstance.validate(schema.anyOf[i], data);
+          if ("$validate" in schema.anyOf[i]) {
+            data = schema.anyOf[i].$validate(data);
+          }
           return data;
         } catch (error) {
           continue;
@@ -60,18 +63,19 @@ export const OtherKeywords: Record<string, ValidatorFunction> = {
       }
     }
 
-    throw new ValidationError(
-      `Value must match at least one schema in anyOf`,
-      pointer
-    );
+    throw KeywordError;
   },
 
-  oneOf(schema, data, pointer, schemaShieldInstance) {
+  oneOf(schema, data, KeywordError) {
     let validCount = 0;
     for (let i = 0; i < schema.oneOf.length; i++) {
       if (isObject(schema.oneOf[i])) {
+        if ("$validate" in schema.oneOf[i] === false) {
+          validCount++;
+          continue;
+        }
         try {
-          data = schemaShieldInstance.validate(schema.oneOf[i], data);
+          data = schema.oneOf[i].$validate(data);
           validCount++;
         } catch (error) {
           continue;
@@ -94,13 +98,10 @@ export const OtherKeywords: Record<string, ValidatorFunction> = {
       return data;
     }
 
-    throw new ValidationError(
-      `Value must match exactly one schema in oneOf`,
-      pointer
-    );
+    throw KeywordError;
   },
 
-  dependencies(schema, data, pointer, schemaShieldInstance) {
+  dependencies(schema, data, KeywordError) {
     if (!isObject(data)) {
       return data;
     }
@@ -114,10 +115,8 @@ export const OtherKeywords: Record<string, ValidatorFunction> = {
       if (Array.isArray(dependency)) {
         for (let i = 0; i < dependency.length; i++) {
           if (!(dependency[i] in data)) {
-            throw new ValidationError(
-              `Dependency ${dependency[i]} is missing`,
-              pointer
-            );
+            KeywordError.item = i;
+            throw KeywordError;
           }
         }
         continue;
@@ -126,26 +125,23 @@ export const OtherKeywords: Record<string, ValidatorFunction> = {
         if (dependency) {
           continue;
         }
-        throw new ValidationError(`Dependency ${key} is missing`, pointer);
+        throw KeywordError;
       }
 
       if (typeof dependency === "string") {
         if (dependency in data) {
           continue;
         }
-        throw new ValidationError(
-          `Dependency ${dependency} is missing`,
-          pointer
-        );
+        throw KeywordError;
       }
 
-      data = schemaShieldInstance.validate(dependency, data);
+      data = dependency.$validate(data);
     }
 
     return data;
   },
 
-  const(schema, data, pointer) {
+  const(schema, data, KeywordError) {
     if (
       data === schema.const ||
       (isObject(data) &&
@@ -157,43 +153,10 @@ export const OtherKeywords: Record<string, ValidatorFunction> = {
     ) {
       return data;
     }
-    throw new ValidationError(`Value must be equal to const`, pointer);
+    throw KeywordError;
   },
 
-  contains(schema, data, pointer, schemaShieldInstance) {
-    if (!Array.isArray(data)) {
-      return data;
-    }
-    if (typeof schema.contains === "boolean") {
-      if (schema.contains) {
-        if (data.length === 0) {
-          throw new ValidationError(
-            `Value must contain at least one item`,
-            pointer
-          );
-        }
-        return data;
-      }
-
-      throw new ValidationError(`Value must not contain any items`, pointer);
-    }
-
-    for (let i = 0; i < data.length; i++) {
-      try {
-        data[i] = schemaShieldInstance.validate(schema.contains, data[i]);
-        return data;
-      } catch (error) {
-        continue;
-      }
-    }
-
-    throw new ValidationError(
-      `Value must contain at least one item that matches the contains schema`,
-      pointer
-    );
-  },
-
-  if(schema, data, pointer, schemaShieldInstance) {
+  if(schema, data, KeywordError) {
     if ("then" in schema === false && "else" in schema === false) {
       return data;
     }
@@ -201,24 +164,22 @@ export const OtherKeywords: Record<string, ValidatorFunction> = {
     if (typeof schema.if === "boolean") {
       if (schema.if) {
         if (schema.then) {
-          data = schemaShieldInstance.validate(schema.then, data);
+          return schema.then.$validate(data);
         }
       } else if (schema.else) {
-        data = schemaShieldInstance.validate(schema.else, data);
+        return schema.else.$validate(data);
       }
       return data;
     }
 
     try {
-      data = schemaShieldInstance.validate(schema.if, data);
+      data = schema.if.$validate(data);
       if (schema.then) {
         try {
-          data = schemaShieldInstance.validate(schema.then, data);
+          return schema.then.$validate(data);
         } catch (error) {
-          throw new ValidationError(
-            `Value must match then schema if it matches if schema`,
-            pointer
-          );
+          KeywordError.message = `Value must match then schema if it matches if schema`;
+          throw KeywordError;
         }
       }
     } catch (error) {
@@ -230,12 +191,10 @@ export const OtherKeywords: Record<string, ValidatorFunction> = {
       }
       if (schema.else) {
         try {
-          data = schemaShieldInstance.validate(schema.else, data);
+          return schema.else.$validate(data);
         } catch (error) {
-          throw new ValidationError(
-            `Value must match else schema if it does not match if schema`,
-            pointer
-          );
+          KeywordError.message = `Value must match else schema if it does not match if schema`;
+          throw KeywordError;
         }
       }
     }
@@ -243,23 +202,22 @@ export const OtherKeywords: Record<string, ValidatorFunction> = {
     return data;
   },
 
-  not(schema, data, pointer, schemaShieldInstance) {
+  not(schema, data, KeywordError) {
     if (typeof schema.not === "boolean") {
       if (schema.not) {
-        throw new ValidationError("Value must not be valid", pointer);
+        throw KeywordError;
       }
       return data;
     }
 
     try {
-      data = schemaShieldInstance.validate(schema.not, data);
+      data = schema.not.$validate(data);
     } catch (error) {
       if (error instanceof ValidationError) {
         return data;
       }
-      throw error;
     }
 
-    throw new ValidationError("Value must not be valid", pointer);
+    throw KeywordError;
   }
 };

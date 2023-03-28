@@ -1,9 +1,9 @@
 import { CompiledSchema, ValidatorFunction } from "../index";
-import { ValidationError, isObject } from "../utils";
+import { ValidationError, isCompiledSchema, isObject } from "../utils";
 
 export const ObjectKeywords: Record<string, ValidatorFunction | false> = {
   // Object
-  required(schema, data, pointer) {
+  required(schema, data, KeywordError) {
     if (!isObject(data)) {
       return data;
     }
@@ -11,14 +11,15 @@ export const ObjectKeywords: Record<string, ValidatorFunction | false> = {
     for (let i = 0; i < schema.required.length; i++) {
       const key = schema.required[i];
       if (!data.hasOwnProperty(key)) {
-        throw new ValidationError("Property is required", `${pointer}/${key}`);
+        KeywordError.item = key;
+        throw KeywordError;
       }
     }
 
     return data;
   },
 
-  properties(schema, data, pointer, schemaShieldInstance) {
+  properties(schema, data, KeywordError) {
     if (!isObject(data)) {
       return data;
     }
@@ -35,48 +36,43 @@ export const ObjectKeywords: Record<string, ValidatorFunction | false> = {
 
       if (typeof schema.properties[key] === "boolean") {
         if (schema.properties[key] === false) {
-          throw new ValidationError(
-            "Property is not allowed",
-            `${pointer}/${key}`
-          );
+          KeywordError.item = key;
+          throw KeywordError;
         }
         continue;
       }
 
-      data[key] = schemaShieldInstance.validate(
-        schema.properties[key],
-        data[key]
-      );
+      if ("$validate" in schema.properties[key]) {
+        data[key] = schema.properties[key].$validate(data[key]);
+      }
     }
 
     return data;
   },
 
-  maxProperties(schema, data, pointer) {
+  maxProperties(schema, data, KeywordError) {
     if (!isObject(data) || Object.keys(data).length <= schema.maxProperties) {
       return data;
     }
 
-    throw new ValidationError("Object has too many properties", pointer);
+    throw KeywordError;
   },
 
-  minProperties(schema, data, pointer) {
+  minProperties(schema, data, KeywordError) {
     if (!isObject(data) || Object.keys(data).length >= schema.minProperties) {
       return data;
     }
 
-    throw new ValidationError("Object has too few properties", pointer);
+    throw KeywordError;
   },
 
-  additionalProperties(schema, data, pointer, schemaShieldInstance) {
+  additionalProperties(schema, data, KeywordError) {
     if (!isObject(data)) {
       return data;
     }
 
     const keys = Object.keys(data);
-    const isCompiledSchema = schemaShieldInstance.isCompiledSchema(
-      schema.additionalProperties
-    );
+    const isCompiled = isCompiledSchema(schema.additionalProperties);
     for (const key of keys) {
       if (schema.properties && schema.properties.hasOwnProperty(key)) {
         continue;
@@ -96,24 +92,19 @@ export const ObjectKeywords: Record<string, ValidatorFunction | false> = {
       }
 
       if (schema.additionalProperties === false) {
-        throw new ValidationError(
-          "Property is not allowed",
-          `${pointer}/${key}`
-        );
+        KeywordError.item = key;
+        throw KeywordError;
       }
 
-      if (isCompiledSchema) {
-        data[key] = schemaShieldInstance.validate(
-          schema.additionalProperties,
-          data[key]
-        );
+      if (isCompiled) {
+        data[key] = schema.additionalProperties.$validate(data[key]);
       }
     }
 
     return data;
   },
 
-  patternProperties(schema, data, pointer, schemaShieldInstance) {
+  patternProperties(schema, data, KeywordError) {
     if (!isObject(data)) {
       return data;
     }
@@ -125,10 +116,8 @@ export const ObjectKeywords: Record<string, ValidatorFunction | false> = {
         if (schema.patternProperties[pattern] === false) {
           for (const key in data) {
             if (regex.test(key)) {
-              throw new ValidationError(
-                "Property is not allowed",
-                `${pointer}/${key}`
-              );
+              KeywordError.item = key;
+              throw KeywordError;
             }
           }
         }
@@ -138,10 +127,9 @@ export const ObjectKeywords: Record<string, ValidatorFunction | false> = {
       const keys = Object.keys(data);
       for (const key of keys) {
         if (regex.test(key)) {
-          data[key] = schemaShieldInstance.validate(
-            schema.patternProperties[pattern],
-            data[key]
-          );
+          if ("$validate" in schema.patternProperties[pattern]) {
+            data[key] = schema.patternProperties[pattern].$validate(data[key]);
+          }
         }
       }
     }
@@ -149,30 +137,37 @@ export const ObjectKeywords: Record<string, ValidatorFunction | false> = {
     return data;
   },
 
-  propertyNames(schema, data, pointer, schemaShieldInstance) {
+  propertyNames(schema, data, KeywordError) {
     if (!isObject(data)) {
       return data;
     }
     if (typeof schema.propertyNames === "boolean") {
       if (schema.propertyNames === false && Object.keys(data).length > 0) {
-        throw new ValidationError("Property names are not allowed", pointer);
+        throw KeywordError;
       }
     }
 
-    if (schemaShieldInstance.isCompiledSchema(schema.propertyNames)) {
+    if (isCompiledSchema(schema.propertyNames)) {
       for (let key in data) {
-        schemaShieldInstance.validate(schema.propertyNames, key);
+        schema.propertyNames.$validate(key);
       }
     }
 
     return data;
   },
 
+  // Required by other keywords but not used as a function itself
+  then: false,
+  else: false,
   default: false,
+
+  // Not implemented yet
   $ref: false,
   definitions: false,
   $id: false,
   $schema: false,
   title: false,
-  $comment: false
+  $comment: false,
+  contentMediaType: false,
+  contentEncoding: false
 };

@@ -3,23 +3,23 @@ import { ValidationError, deepEqual } from "../utils";
 import { ValidatorFunction } from "../index";
 
 export const StringKeywords: Record<string, ValidatorFunction> = {
-  minLength(schema, data, pointer) {
+  minLength(schema, data, KeywordError) {
     if (typeof data !== "string" || data.length >= schema.minLength) {
       return data;
     }
 
-    throw new ValidationError("String is too short", pointer);
+    throw KeywordError;
   },
 
-  maxLength(schema, data, pointer) {
+  maxLength(schema, data, KeywordError) {
     if (typeof data !== "string" || data.length <= schema.maxLength) {
       return data;
     }
 
-    throw new ValidationError("String is too long", pointer);
+    throw KeywordError;
   },
 
-  pattern(schema, data, pointer) {
+  pattern(schema, data, KeywordError) {
     if (typeof data !== "string") {
       return data;
     }
@@ -27,20 +27,17 @@ export const StringKeywords: Record<string, ValidatorFunction> = {
     const patternRegexp = new RegExp(schema.pattern, "u");
 
     if (patternRegexp instanceof RegExp === false) {
-      throw new ValidationError(
-        "Pattern is not a valid regular expression",
-        pointer
-      );
+      throw KeywordError;
     }
 
     if (patternRegexp.test(data)) {
       return data;
     }
 
-    throw new ValidationError("String does not match pattern", pointer);
+    throw KeywordError;
   },
 
-  format(schema, data, pointer, formatInstance) {
+  format(schema, data, KeywordError, formatInstance) {
     if (typeof data !== "string") {
       return data;
     }
@@ -55,16 +52,13 @@ export const StringKeywords: Record<string, ValidatorFunction> = {
         return data;
       }
 
-      throw new ValidationError(
-        `String does not match format ${schema.format}`,
-        pointer
-      );
+      throw KeywordError;
     }
 
-    throw new ValidationError(`Unknown format ${schema.format}`, pointer);
+    throw KeywordError;
   },
 
-  enum(schema, data, pointer) {
+  enum(schema, data, KeywordError) {
     // Check if data is an array or an object
     const isArray = Array.isArray(data);
     const isObject = typeof data === "object" && data !== null;
@@ -88,9 +82,6 @@ export const StringKeywords: Record<string, ValidatorFunction> = {
       }
     }
 
-    throw new ValidationError(
-      `Value must be one of ${schema.enum.join(", ")}`,
-      pointer
-    );
+    throw KeywordError;
   }
 };

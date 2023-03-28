@@ -1,8 +1,8 @@
 import { CompiledSchema, ValidatorFunction } from "../index";
-import { ValidationError, isObject } from "../utils";
+import { ValidationError, isCompiledSchema, isObject } from "../utils";
 
 export const ArrayKeywords: Record<string, ValidatorFunction> = {
-  items(schema, data, pointer, schemaShieldInstance) {
+  items(schema, data, KeywordError) {
     if (!Array.isArray(data)) {
       return data;
     }
@@ -12,7 +12,7 @@ export const ArrayKeywords: Record<string, ValidatorFunction> = {
 
     if (typeof schemaItems === "boolean") {
       if (schemaItems === false && dataLength > 0) {
-        throw new ValidationError("Array is not allowed", pointer);
+        throw KeywordError;
       }
 
       return data;
@@ -24,63 +24,61 @@ export const ArrayKeywords: Record<string, ValidatorFunction> = {
       for (let i = 0; i < itemsLength; i++) {
         if (typeof schemaItems[i] === "boolean") {
           if (schemaItems[i] === false && typeof data[i] !== "undefined") {
-            throw new ValidationError(
-              "Array item is not allowed",
-              `${pointer}/${i}`
-            );
+            KeywordError.message = "Array item is not allowed";
+            KeywordError.item = i;
+            throw KeywordError;
           }
           continue;
         }
 
-        data[i] = schemaShieldInstance.validate(schemaItems[i], data[i]);
+        if (isCompiledSchema(schemaItems[i])) {
+          data[i] = schemaItems[i].$validate(data[i]);
+        }
       }
 
       return data;
     }
 
-    if (schemaShieldInstance.isCompiledSchema(schemaItems)) {
+    if (isCompiledSchema(schemaItems)) {
       for (let i = 0; i < dataLength; i++) {
-        data[i] = schemaShieldInstance.validate(schemaItems, data[i]);
+        data[i] = schemaItems.$validate(data[i]);
       }
     }
 
     return data;
   },
 
-  minItems(schema, data, pointer) {
+  minItems(schema, data, KeywordError) {
     if (!Array.isArray(data) || data.length >= schema.minItems) {
       return data;
     }
 
-    throw new ValidationError("Array is too short", pointer);
+    throw KeywordError;
   },
 
-  maxItems(schema, data, pointer) {
+  maxItems(schema, data, KeywordError) {
     if (!Array.isArray(data) || data.length <= schema.maxItems) {
       return data;
     }
 
-    throw new ValidationError("Array is too long", pointer);
+    throw KeywordError;
   },
 
-  additionalItems(schema, data, pointer, schemaShieldInstance) {
+  additionalItems(schema, data, KeywordError) {
     if (!Array.isArray(data) || !schema.items || !Array.isArray(schema.items)) {
       return data;
     }
 
     if (schema.additionalItems === false) {
       if (data.length > schema.items.length) {
-        throw new ValidationError("Array has too many items", pointer);
+        throw KeywordError;
       }
       return data;
     }
 
-    if (schemaShieldInstance.isCompiledSchema(schema.additionalItems)) {
+    if (isCompiledSchema(schema.additionalItems)) {
       for (let i = schema.items.length; i < data.length; i++) {
-        data[i] = schemaShieldInstance.validate(
-          schema.additionalItems,
-          data[i]
-        );
+        data[i] = schema.additionalItems.$validate(data[i]);
       }
       return data;
     }
@@ -88,7 +86,7 @@ export const ArrayKeywords: Record<string, ValidatorFunction> = {
     return data;
   },
 
-  uniqueItems(schema, data, pointer) {
+  uniqueItems(schema, data, KeywordError) {
     if (!Array.isArray(data) || !schema.uniqueItems) {
       return data;
     }
@@ -115,12 +113,39 @@ export const ArrayKeywords: Record<string, ValidatorFunction> = {
       }
 
       if (unique.has(itemStr)) {
-        throw new ValidationError("Array items are not unique", pointer);
+        throw KeywordError;
       } else {
         unique.add(itemStr);
       }
     }
 
     return data;
+  },
+
+  contains(schema, data, KeywordError) {
+    if (!Array.isArray(data)) {
+      return data;
+    }
+    if (typeof schema.contains === "boolean") {
+      if (schema.contains) {
+        if (data.length === 0) {
+          throw KeywordError;
+        }
+        return data;
+      }
+
+      throw KeywordError;
+    }
+
+    for (let i = 0; i < data.length; i++) {
+      try {
+        data[i] = schema.contains.$validate(data[i]);
+        return data;
+      } catch (error) {
+        continue;
+      }
+    }
+
+    throw KeywordError;
   }
 };

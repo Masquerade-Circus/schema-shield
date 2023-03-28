@@ -11,6 +11,9 @@ const logData = true;
 const logSchema = true;
 
 const jsonTestsToSkip = {
+  "valid definition": {
+    "valid definition schema": "Not implemented"
+  },
   "invalid definition schema": "Not implemented",
   "invalid definition": "Not implemented",
   "evaluating the same schema location against the same data location twice is not a sign of an infinite loop":

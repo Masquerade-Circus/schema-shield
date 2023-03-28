@@ -4,6 +4,7 @@ export class ValidationError extends Error {
   message: string;
   value: any;
   code: string;
+  item: string | number;
 
   constructor(message: string, pointer?: string) {
     super(message);
@@ -11,11 +12,10 @@ export class ValidationError extends Error {
   }
 }
 
-export const defaultValidator = (schema, data, pointer) => {
-  return [new ValidationError('No validator for this schema', pointer)];
-};
-
-export function deepEqual(obj: Array<any> | Record<string, any>, other: Array<any> | Record<string, any>) {
+export function deepEqual(
+  obj: Array<any> | Record<string, any>,
+  other: Array<any> | Record<string, any>
+) {
   if (Array.isArray(obj) && Array.isArray(other)) {
     if (obj.length !== other.length) {
       return false;
@@ -30,7 +30,7 @@ export function deepEqual(obj: Array<any> | Record<string, any>, other: Array<an
     return true;
   }
 
-  if (typeof obj === 'object' && typeof other === 'object') {
+  if (typeof obj === "object" && typeof other === "object") {
     if (obj === null || other === null) {
       return obj === other;
     }
@@ -53,7 +53,7 @@ export function deepEqual(obj: Array<any> | Record<string, any>, other: Array<an
 }
 
 export function isObject(data) {
-  return typeof data === 'object' && data !== null && !Array.isArray(data);
+  return typeof data === "object" && data !== null && !Array.isArray(data);
 }
 
 export function areCloseEnough(a, b, epsilon = 1e-15) {
@@ -90,4 +90,12 @@ export function deepClone(obj: any): any {
   }
 
   return obj;
+}
+
+export function isCompiledSchema(subSchema: any): boolean {
+  return isObject(subSchema) && "$validate" in subSchema;
+}
+
+export function getNamedFunction<T>(name: string, fn: T): T {
+  return Object.defineProperty(fn, "name", { value: name });
 }

@@ -1,18 +1,19 @@
-import { ValidationError } from './utils';
-export interface Result {
-    valid: boolean;
-    error: ValidationError | null;
-    data: any;
-}
+import { ValidationError } from "./utils";
+export type Result = any;
 export interface ValidatorFunction {
-    (schema: CompiledSchema, data: any, pointer: string, schemaShieldInstance: SchemaShield): Result;
+    (schema: CompiledSchema, data: any, error: ValidationError, instance: SchemaShield): Result;
+}
+export interface TypeFunction {
+    (data: any): boolean;
 }
 export interface FormatFunction {
     (data: any): boolean;
 }
+export interface ValidateFunction {
+    (data: any): Result;
+}
 export interface CompiledSchema {
-    validators?: ValidatorFunction[];
-    types?: ValidatorFunction[];
+    $validate?: ValidateFunction;
     [key: string]: any;
 }
 export interface Validator {
@@ -20,18 +21,18 @@ export interface Validator {
     compiledSchema: CompiledSchema;
 }
 export declare class SchemaShield {
-    types: Map<string, false | ValidatorFunction>;
+    types: Map<string, false | TypeFunction>;
     formats: Map<string, false | FormatFunction>;
     keywords: Map<string, false | ValidatorFunction>;
-    constructor();
-    addType(name: string, validator: ValidatorFunction): void;
+    immutable: boolean;
+    constructor({ immutable }?: {
+        immutable?: boolean;
+    });
+    addType(name: string, validator: TypeFunction): void;
     addFormat(name: string, validator: FormatFunction): void;
     addKeyword(name: string, validator: ValidatorFunction): void;
     compile(schema: any): Validator;
     private compileSchema;
-    validate(schema: CompiledSchema, data: any): Result;
-    private isSchemaOrKeywordPresent;
     isSchemaLike(subSchema: any): boolean;
-    isCompiledSchema(subSchema: any): boolean;
 }
 //# sourceMappingURL=index.d.ts.map

@@ -1,65 +1,36 @@
-import { ValidationError, isObject } from "./utils";
+import { TypeFunction } from "./index";
+import { isObject } from "./utils";
 
-import { ValidatorFunction } from "./index";
-
-export const Types: Record<string, ValidatorFunction> = {
-  object(schema, data, pointer) {
-    if (isObject(data)) {
-      return data;
-    }
-
-    throw new ValidationError("Data is not an object", pointer);
+export const Types: Record<string, TypeFunction> = {
+  object(data) {
+    return isObject(data);
   },
-  array(schema, data, pointer) {
+  array(data) {
     if (Array.isArray(data)) {
-      return data;
+      return true;
     }
 
-    if (typeof data === "object" && data !== null && "length" in data) {
-      // Check if the first key is a number and the length is the same as the number of keys - 1 (length)
-      const keys = Object.keys(data);
-      if (keys.length > 0 && (keys[0] !== "0" || keys.length !== data.length)) {
-        throw new ValidationError("Data is not an array", pointer);
-      }
-
-      return data;
-    }
-
-    throw new ValidationError("Data is not an array", pointer);
+    return (
+      typeof data === "object" &&
+      data !== null &&
+      "length" in data &&
+      "0" in data &&
+      Object.keys(data).length - 1 === data.length
+    );
   },
-  string(schema, data, pointer) {
-    if (typeof data === "string") {
-      return data;
-    }
-
-    throw new ValidationError("Data is not a string", pointer);
+  string(data) {
+    return typeof data === "string";
   },
-  number(schema, data, pointer) {
-    if (typeof data === "number") {
-      return data;
-    }
-
-    throw new ValidationError("Data is not a number", pointer);
+  number(data) {
+    return typeof data === "number";
   },
-  integer(schema, data, pointer) {
-    if (typeof data === "number" && Number.isInteger(data)) {
-      return data;
-    }
-
-    throw new ValidationError("Data is not an integer", pointer);
+  integer(data) {
+    return typeof data === "number" && data % 1 === 0;
   },
-  boolean(schema, data, pointer) {
-    if (typeof data === "boolean") {
-      return data;
-    }
-
-    throw new ValidationError("Data is not a boolean", pointer);
+  boolean(data) {
+    return typeof data === "boolean";
   },
-  null(schema, data, pointer) {
-    if (data === null) {
-      return data;
-    }
-
-    throw new ValidationError("Data is not null", pointer);
+  null(data) {
+    return data === null;
   }
 };
