@@ -11,13 +11,13 @@ import { keywords } from "./keywords";
 
 export type Result = any;
 
-export interface ValidatorFunction {
+export interface KeywordFunction {
   (
     schema: CompiledSchema,
     data: any,
     error: ValidationError,
     instance: SchemaShield
-  ): Result;
+  ): [boolean, ValidationError];
 }
 
 export interface TypeFunction {
@@ -29,7 +29,7 @@ export interface FormatFunction {
 }
 
 export interface ValidateFunction {
-  (data: any): Result;
+  (data: any): [boolean, ValidationError];
 }
 
 export interface CompiledSchema {
@@ -38,14 +38,14 @@ export interface CompiledSchema {
 }
 
 export interface Validator {
-  (data: any): Result;
+  (data: any): [boolean, ValidationError];
   compiledSchema: CompiledSchema;
 }
 
 export class SchemaShield {
   types = new Map<string, TypeFunction | false>();
   formats = new Map<string, FormatFunction | false>();
-  keywords = new Map<string, ValidatorFunction | false>();
+  keywords = new Map<string, KeywordFunction | false>();
   immutable = false;
 
   constructor({
@@ -60,7 +60,7 @@ export class SchemaShield {
     }
 
     for (const [keyword, validator] of Object.entries(keywords)) {
-      this.addKeyword(keyword, validator as ValidatorFunction);
+      this.addKeyword(keyword, validator as KeywordFunction);
     }
 
     for (const [format, validator] of Object.entries(Formats)) {
@@ -78,7 +78,7 @@ export class SchemaShield {
     this.formats.set(name, validator);
   }
 
-  addKeyword(name: string, validator: ValidatorFunction) {
+  addKeyword(name: string, validator: KeywordFunction) {
     this.keywords.set(name, validator);
   }
 
@@ -91,7 +91,7 @@ export class SchemaShield {
 
       compiledSchema.$validate = getNamedFunction<ValidateFunction>(
         "any",
-        (data) => data
+        (data) => [true, null]
       );
     }
 
@@ -140,7 +140,7 @@ export class SchemaShield {
         ? schema.type
         : schema.type.split(",").map((t) => t.trim());
 
-      const typeValidations = [];
+      const typeValidations: TypeFunction[] = [];
       let name = "";
       for (const type of types) {
         const validator = this.types.get(type);
@@ -161,9 +161,9 @@ export class SchemaShield {
           name,
           (data) => {
             if (typeValidation(data)) {
-              return data;
+              return [true, null];
             }
-            throw TypeError;
+            return [false, TypeError];
           }
         );
       } else {
@@ -172,10 +172,10 @@ export class SchemaShield {
           (data) => {
             for (const validator of typeValidations) {
               if (validator(data)) {
-                return data;
+                return [true, null];
               }
             }
-            throw TypeError;
+            return [false, TypeError];
           }
         );
       }
@@ -192,12 +192,15 @@ export class SchemaShield {
         if (compiledSchema.$validate) {
           const prevValidator = compiledSchema.$validate;
           const name = `${prevValidator.name}_AND_${keywordValidator.name}`;
-
           compiledSchema.$validate = getNamedFunction<ValidateFunction>(
             name,
             (data) => {
-              data = prevValidator(data);
-              return (keywordValidator as ValidatorFunction)(
+              let [valid, error] = prevValidator(data);
+              if (!valid) {
+                return [false, error];
+              }
+
+              return (keywordValidator as KeywordFunction)(
                 compiledSchema,
                 data,
                 KeywordError,
@@ -209,7 +212,7 @@ export class SchemaShield {
           compiledSchema.$validate = getNamedFunction<ValidateFunction>(
             keywordValidator.name,
             (data) => {
-              return (keywordValidator as ValidatorFunction)(
+              return (keywordValidator as KeywordFunction)(
                 compiledSchema,
                 data,
                 KeywordError,

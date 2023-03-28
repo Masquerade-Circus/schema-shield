@@ -1,1 +1,1 @@
-{"version":3,"file":"number-keywords.d.ts","sourceRoot":"","sources":["../../lib/keywords/number-keywords.ts"],"names":[],"mappings":"AAEA,OAAO,EAAE,iBAAiB,EAAE,MAAM,UAAU,CAAC;AAE7C,eAAO,MAAM,cAAc,EAAE,MAAM,CAAC,MAAM,EAAE,iBAAiB,CAwF5D,CAAC"}
+{"version":3,"file":"number-keywords.d.ts","sourceRoot":"","sources":["../../lib/keywords/number-keywords.ts"],"names":[],"mappings":"AAEA,OAAO,EAAE,eAAe,EAAE,MAAM,UAAU,CAAC;AAE3C,eAAO,MAAM,cAAc,EAAE,MAAM,CAAC,MAAM,EAAE,eAAe,CAwF1D,CAAC"}

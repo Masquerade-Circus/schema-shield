@@ -1,3 +1,5 @@
+import { CompiledSchema } from "./index";
+
 export class ValidationError extends Error {
   name: string;
   pointer: string;
@@ -92,7 +94,7 @@ export function deepClone(obj: any): any {
   return obj;
 }
 
-export function isCompiledSchema(subSchema: any): boolean {
+export function isCompiledSchema(subSchema: any): subSchema is CompiledSchema {
   return isObject(subSchema) && "$validate" in subSchema;
 }
 

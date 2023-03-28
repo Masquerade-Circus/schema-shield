@@ -30,16 +30,27 @@ describe.only("Scratchpad", () => {
 
   before(() => {
     const schemaShield = new SchemaShield();
+    schemaShield.addFormat("hex", (value) => /^0x[0-9A-Fa-f]*$/.test(value));
+    console.log(
+      stringifySchema(
+        schemaShield.compile({
+          type: "string",
+          format: "hex"
+        }),
+        true
+      )
+    );
+
     validate = schemaShield.compile(testGroup.schema);
-    console.log(stringifySchema(validate));
+    console.log(stringifySchema(validate, true));
   });
 
   for (const test of testGroup.tests) {
     it(test.description, () => {
       if (test.valid) {
-        expect(validate(test.data)).toEqual(test.data);
+        expect(validate(test.data)).toEqual([true, null]);
       } else {
-        // expect(() => validate(test.data)).toThrow();
+        expect(validate(test.data)).toEqual([false, expect.anything()]);
       }
     });
   }

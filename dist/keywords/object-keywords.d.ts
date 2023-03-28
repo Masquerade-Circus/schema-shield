@@ -1,3 +1,3 @@
-import { ValidatorFunction } from "../index";
-export declare const ObjectKeywords: Record<string, ValidatorFunction | false>;
+import { KeywordFunction } from "../index";
+export declare const ObjectKeywords: Record<string, KeywordFunction | false>;
 //# sourceMappingURL=object-keywords.d.ts.map

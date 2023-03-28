@@ -1,61 +1,61 @@
 import { ValidationError, deepEqual } from "../utils";
 
-import { ValidatorFunction } from "../index";
+import { KeywordFunction } from "../index";
 
-export const StringKeywords: Record<string, ValidatorFunction> = {
+export const StringKeywords: Record<string, KeywordFunction> = {
   minLength(schema, data, KeywordError) {
     if (typeof data !== "string" || data.length >= schema.minLength) {
-      return data;
+      return [true, null];
     }
 
-    throw KeywordError;
+    return [false, KeywordError];
   },
 
   maxLength(schema, data, KeywordError) {
     if (typeof data !== "string" || data.length <= schema.maxLength) {
-      return data;
+      return [true, null];
     }
 
-    throw KeywordError;
+    return [false, KeywordError];
   },
 
   pattern(schema, data, KeywordError) {
     if (typeof data !== "string") {
-      return data;
+      return [true, null];
     }
 
     const patternRegexp = new RegExp(schema.pattern, "u");
 
     if (patternRegexp instanceof RegExp === false) {
-      throw KeywordError;
+      return [false, KeywordError];
     }
 
     if (patternRegexp.test(data)) {
-      return data;
+      return [true, null];
     }
 
-    throw KeywordError;
+    return [false, KeywordError];
   },
 
   format(schema, data, KeywordError, formatInstance) {
     if (typeof data !== "string") {
-      return data;
+      return [true, null];
     }
 
     const formatValidate = formatInstance.formats.get(schema.format);
     if (formatValidate === false) {
-      return data;
+      return [true, null];
     }
 
     if (typeof formatValidate === "function") {
       if (formatValidate(data)) {
-        return data;
+        return [true, null];
       }
 
-      throw KeywordError;
+      return [false, KeywordError];
     }
 
-    throw KeywordError;
+    return [false, KeywordError];
   },
 
   enum(schema, data, KeywordError) {
@@ -68,7 +68,7 @@ export const StringKeywords: Record<string, ValidatorFunction> = {
 
       // Simple equality check
       if (enumItem === data) {
-        return data;
+        return [true, null];
       }
 
       // If data is an array or an object, check for deep equality
@@ -77,11 +77,11 @@ export const StringKeywords: Record<string, ValidatorFunction> = {
         (isObject && typeof enumItem === "object" && enumItem !== null)
       ) {
         if (deepEqual(enumItem, data)) {
-          return data;
+          return [true, null];
         }
       }
     }
 
-    throw KeywordError;
+    return [false, KeywordError];
   }
 };

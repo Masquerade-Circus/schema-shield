@@ -100,12 +100,12 @@ for (let i = 0; i < jsonTests.length; i++) {
         try {
           let clonedSchema = deepClone(schema);
           validate = schemaShield.compile(schema);
+          result = validate(data);
 
-          if (valid) {
-            result = validate(data);
-          } else {
-            expect(() => validate(data)).toThrow(ValidationError);
-          }
+          expect(result).toEqual([
+            valid,
+            valid ? null : expect.any(ValidationError)
+          ]);
 
           expect(clonedSchema).toEqual(schema);
         } catch (e) {
