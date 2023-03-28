@@ -102,10 +102,11 @@ for (let i = 0; i < jsonTests.length; i++) {
           validate = schemaShield.compile(schema);
           result = validate(data);
 
-          expect(result).toEqual([
-            data === null ? null : expect.anything(),
-            valid ? undefined : expect.any(ValidationError)
-          ]);
+          expect(result).toEqual({
+            valid,
+            error: valid ? null : expect.any(ValidationError),
+            data: data === null ? null : expect.anything()
+          });
 
           expect(clonedSchema).toEqual(schema);
         } catch (e) {

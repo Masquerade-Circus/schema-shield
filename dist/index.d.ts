@@ -17,7 +17,11 @@ export interface CompiledSchema {
     [key: string]: any;
 }
 export interface Validator {
-    (data: any): [any, Result];
+    (data: any): {
+        data: any;
+        error: ValidationError | null;
+        valid: boolean;
+    };
     compiledSchema: CompiledSchema;
 }
 export declare class SchemaShield {

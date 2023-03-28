@@ -948,16 +948,18 @@ var SchemaShield = class {
       }
       compiledSchema.$validate = getNamedFunction(
         "any",
-        (data) => {
+        () => {
         }
       );
     }
     const validate = (data) => {
       const clonedData = this.immutable ? deepClone(data) : data;
-      return [
-        clonedData,
-        compiledSchema.$validate(clonedData)
-      ];
+      const error = compiledSchema.$validate(clonedData);
+      return {
+        data: clonedData,
+        error: error || null,
+        valid: !error
+      };
     };
     validate.compiledSchema = compiledSchema;
     return validate;

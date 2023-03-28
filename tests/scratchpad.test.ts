@@ -85,12 +85,14 @@ describe.only("Scratchpad", () => {
     console.log(stringifySchema(validate, true));
   });
 
-  for (const test of testGroup.tests) {
-    it(test.description, () => {
-      expect(validate(test.data)).toEqual([
-        test.data === null ? null : expect.anything(),
-        test.valid ? undefined : expect.any(ValidationError)
-      ]);
+  for (const { valid, data, description } of testGroup.tests) {
+    it(description, () => {
+      expect(validate(data)).toEqual({
+        valid,
+        error: valid ? null : expect.any(ValidationError),
+        data: data === null ? null : expect.anything()
+      });
+      console.log(validate(data)[1]);
     });
   }
 

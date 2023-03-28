@@ -38,7 +38,7 @@ export interface CompiledSchema {
 }
 
 export interface Validator {
-  (data: any): [any, Result];
+  (data: any): { data: any; error: ValidationError | null; valid: boolean };
   compiledSchema: CompiledSchema;
 }
 
@@ -91,16 +91,18 @@ export class SchemaShield {
 
       compiledSchema.$validate = getNamedFunction<ValidateFunction>(
         "any",
-        (data) => {}
+        () => {}
       );
     }
 
     const validate: Validator = (data: any) => {
       const clonedData = this.immutable ? deepClone(data) : data;
-      return [
-        clonedData,
-        compiledSchema.$validate(clonedData) as ValidationError
-      ];
+      const error = compiledSchema.$validate(clonedData);
+      return {
+        data: clonedData,
+        error: error || null,
+        valid: !error
+      };
     };
 
     validate.compiledSchema = compiledSchema;
