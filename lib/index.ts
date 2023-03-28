@@ -83,10 +83,10 @@ export class SchemaShield {
   }
 
   compile(schema: any): Validator {
-    const compiledSchema = this.compileSchema(schema, "#");
+    const compiledSchema = this.compileSchema(schema);
     if (!compiledSchema.$validate) {
       if (this.isSchemaLike(schema) === false) {
-        throw new ValidationError("Invalid schema", "#");
+        throw new ValidationError("Invalid schema");
       }
 
       compiledSchema.$validate = getNamedFunction<ValidateFunction>(
@@ -98,9 +98,10 @@ export class SchemaShield {
     const validate: Validator = (data: any) => {
       const clonedData = this.immutable ? deepClone(data) : data;
       const error = compiledSchema.$validate(clonedData);
+
       return {
         data: clonedData,
-        error: error || null,
+        error: error ? error : null,
         valid: !error
       };
     };
@@ -110,10 +111,7 @@ export class SchemaShield {
     return validate;
   }
 
-  private compileSchema(
-    schema: Partial<CompiledSchema> | any,
-    pointer
-  ): CompiledSchema {
+  private compileSchema(schema: Partial<CompiledSchema> | any): CompiledSchema {
     if (!isObject(schema)) {
       if (schema === true) {
         schema = {
@@ -131,7 +129,8 @@ export class SchemaShield {
     }
 
     const compiledSchema: CompiledSchema = {} as CompiledSchema;
-    const TypeError = new ValidationError(`Invalid type`, pointer);
+    const TypeError = new ValidationError(`Invalid type`);
+    TypeError.keyword = "type";
     const typeValidations: TypeFunction[] = [];
 
     let methodName = "";
@@ -189,7 +188,8 @@ export class SchemaShield {
 
       const keywordValidator = this.keywords.get(key);
       if (keywordValidator) {
-        const KeywordError = new ValidationError(`Invalid ${key}`, pointer);
+        const KeywordError = new ValidationError(`Invalid ${key}`);
+        KeywordError.keyword = key;
         const executeKeywordValidator = (data: any) =>
           (keywordValidator as KeywordFunction)(
             compiledSchema,
@@ -205,7 +205,13 @@ export class SchemaShield {
             methodName,
             (data) => {
               const error = prevValidator(data);
-              return error ? error : executeKeywordValidator(data);
+              if (error) {
+                return error;
+              }
+              const keywordError = executeKeywordValidator(data);
+              if (keywordError) {
+                return keywordError;
+              }
             }
           );
         } else {
@@ -218,17 +224,14 @@ export class SchemaShield {
       }
 
       if (isObject(schema[key])) {
-        compiledSchema[key] = this.compileSchema(
-          schema[key],
-          `${pointer}/${key}`
-        );
+        compiledSchema[key] = this.compileSchema(schema[key]);
         continue;
       }
 
       if (Array.isArray(schema[key])) {
         compiledSchema[key] = schema[key].map((subSchema, index) =>
           this.isSchemaLike(subSchema)
-            ? this.compileSchema(subSchema, `${pointer}/${key}/${index}`)
+            ? this.compileSchema(subSchema)
             : subSchema
         );
         continue;

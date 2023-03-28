@@ -1,12 +1,12 @@
 import { CompiledSchema } from "./index";
 export declare class ValidationError extends Error {
-    name: string;
-    pointer: string;
     message: string;
-    value: any;
-    code: string;
     item: string | number;
-    constructor(message: string, pointer?: string);
+    keyword: string;
+    cause: ValidationError;
+    path: string;
+    private _getCause;
+    getCause(): any;
 }
 export declare function deepEqual(obj: Array<any> | Record<string, any>, other: Array<any> | Record<string, any>): boolean;
 export declare function isObject(data: any): boolean;

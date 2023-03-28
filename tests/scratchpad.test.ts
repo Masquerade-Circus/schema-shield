@@ -82,17 +82,20 @@ describe.only("Scratchpad", () => {
     );
 
     validate = schemaShield.compile(testGroup.schema);
+    console.log(JSON.stringify(testGroup.schema, null, 2));
     console.log(stringifySchema(validate, true));
   });
 
   for (const { valid, data, description } of testGroup.tests) {
-    it(description, () => {
+    it.only(description, () => {
       expect(validate(data)).toEqual({
         valid,
         error: valid ? null : expect.any(ValidationError),
         data: data === null ? null : expect.anything()
       });
-      console.log(validate(data)[1]);
+      if (!valid) {
+        console.log(validate(data).error.getCause());
+      }
     });
   }
 

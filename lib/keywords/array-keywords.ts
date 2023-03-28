@@ -35,8 +35,9 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
         if (isCompiledSchema(schemaItem)) {
           const error = schemaItem.$validate(data[i]);
           if (error) {
-            error.item = i;
-            return error;
+            KeywordError.item = i;
+            KeywordError.cause = error;
+            return KeywordError;
           }
         }
       }
@@ -48,8 +49,9 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
       for (let i = 0; i < dataLength; i++) {
         const error = schemaItems.$validate(data[i]);
         if (error) {
-          error.item = i;
-          return error;
+          KeywordError.item = i;
+          KeywordError.cause = error;
+          return KeywordError;
         }
       }
     }
@@ -90,8 +92,9 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
         for (let i = schema.items.length; i < data.length; i++) {
           const error = schema.additionalItems.$validate(data[i]);
           if (error) {
-            error.item = i;
-            return error;
+            KeywordError.item = i;
+            KeywordError.cause = error;
+            return KeywordError;
           }
         }
         return;

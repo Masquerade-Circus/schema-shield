@@ -21,7 +21,8 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
         if ("$validate" in schema.allOf[i]) {
           const error = schema.allOf[i].$validate(data);
           if (error) {
-            return error;
+            KeywordError.cause = error;
+            return KeywordError;
           }
         }
         continue;
@@ -138,7 +139,8 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
       }
       const error = dependency.$validate(data);
       if (error) {
-        return error;
+        KeywordError.cause = error;
+        return KeywordError;
       }
     }
 

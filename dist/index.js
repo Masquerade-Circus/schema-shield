@@ -127,15 +127,21 @@ module.exports = __toCommonJS(lib_exports);
 
 // lib/utils.ts
 var ValidationError = class extends Error {
-  name;
-  pointer;
   message;
-  value;
-  code;
   item;
-  constructor(message, pointer) {
-    super(message);
-    this.pointer = pointer;
+  keyword;
+  cause;
+  path = "";
+  _getCause(pointer = "#") {
+    const path = pointer + "/" + this.keyword + ("item" in this ? "/" + this.item : "");
+    if (!this.cause) {
+      this.path = path;
+      return this;
+    }
+    return this.cause._getCause(path);
+  }
+  getCause() {
+    return this._getCause();
   }
 };
 function deepEqual(obj, other) {
@@ -340,8 +346,9 @@ var ArrayKeywords = {
         if (isCompiledSchema(schemaItem)) {
           const error = schemaItem.$validate(data[i]);
           if (error) {
-            error.item = i;
-            return error;
+            KeywordError.item = i;
+            KeywordError.cause = error;
+            return KeywordError;
           }
         }
       }
@@ -351,8 +358,9 @@ var ArrayKeywords = {
       for (let i = 0; i < dataLength; i++) {
         const error = schemaItems.$validate(data[i]);
         if (error) {
-          error.item = i;
-          return error;
+          KeywordError.item = i;
+          KeywordError.cause = error;
+          return KeywordError;
         }
       }
     }
@@ -385,8 +393,9 @@ var ArrayKeywords = {
         for (let i = schema.items.length; i < data.length; i++) {
           const error = schema.additionalItems.$validate(data[i]);
           if (error) {
-            error.item = i;
-            return error;
+            KeywordError.item = i;
+            KeywordError.cause = error;
+            return KeywordError;
           }
         }
         return;
@@ -550,8 +559,9 @@ var ObjectKeywords = {
       if ("$validate" in schema.properties[key]) {
         const error = schema.properties[key].$validate(data[key]);
         if (error) {
-          error.item = key;
-          return error;
+          KeywordError.item = key;
+          KeywordError.cause = error;
+          return KeywordError;
         }
       }
     }
@@ -598,8 +608,9 @@ var ObjectKeywords = {
       if (isCompiled) {
         const error = schema.additionalProperties.$validate(data[key]);
         if (error) {
-          error.item = key;
-          return error;
+          KeywordError.item = key;
+          KeywordError.cause = error;
+          return KeywordError;
         }
       }
     }
@@ -631,8 +642,9 @@ var ObjectKeywords = {
               data[key]
             );
             if (error) {
-              error.item = key;
-              return error;
+              KeywordError.item = key;
+              KeywordError.cause = error;
+              return KeywordError;
             }
           }
         }
@@ -653,8 +665,9 @@ var ObjectKeywords = {
       for (let key in data) {
         const error = schema.propertyNames.$validate(key);
         if (error) {
-          error.item = key;
-          return error;
+          KeywordError.item = key;
+          KeywordError.cause = error;
+          return KeywordError;
         }
       }
     }
@@ -689,7 +702,8 @@ var OtherKeywords = {
         if ("$validate" in schema.allOf[i]) {
           const error = schema.allOf[i].$validate(data);
           if (error) {
-            return error;
+            KeywordError.cause = error;
+            return KeywordError;
           }
         }
         continue;
@@ -792,7 +806,8 @@ var OtherKeywords = {
       }
       const error = dependency.$validate(data);
       if (error) {
-        return error;
+        KeywordError.cause = error;
+        return KeywordError;
       }
     }
     return;
@@ -953,10 +968,10 @@ var SchemaShield = class {
     this.keywords.set(name, validator);
   }
   compile(schema) {
-    const compiledSchema = this.compileSchema(schema, "#");
+    const compiledSchema = this.compileSchema(schema);
     if (!compiledSchema.$validate) {
       if (this.isSchemaLike(schema) === false) {
-        throw new ValidationError("Invalid schema", "#");
+        throw new ValidationError("Invalid schema");
       }
       compiledSchema.$validate = getNamedFunction(
         "any",
@@ -969,14 +984,14 @@ var SchemaShield = class {
       const error = compiledSchema.$validate(clonedData);
       return {
         data: clonedData,
-        error: error || null,
+        error: error ? error : null,
         valid: !error
       };
     };
     validate.compiledSchema = compiledSchema;
     return validate;
   }
-  compileSchema(schema, pointer) {
+  compileSchema(schema) {
     if (!isObject(schema)) {
       if (schema === true) {
         schema = {
@@ -993,7 +1008,8 @@ var SchemaShield = class {
       }
     }
     const compiledSchema = {};
-    const TypeError2 = new ValidationError(`Invalid type`, pointer);
+    const TypeError2 = new ValidationError(`Invalid type`);
+    TypeError2.keyword = "type";
     const typeValidations = [];
     let methodName = "";
     if ("type" in schema) {
@@ -1041,7 +1057,8 @@ var SchemaShield = class {
       }
       const keywordValidator = this.keywords.get(key);
       if (keywordValidator) {
-        const KeywordError = new ValidationError(`Invalid ${key}`, pointer);
+        const KeywordError = new ValidationError(`Invalid ${key}`);
+        KeywordError.keyword = key;
         const executeKeywordValidator = (data) => keywordValidator(
           compiledSchema,
           data,
@@ -1055,7 +1072,13 @@ var SchemaShield = class {
             methodName,
             (data) => {
               const error = prevValidator(data);
-              return error ? error : executeKeywordValidator(data);
+              if (error) {
+                return error;
+              }
+              const keywordError = executeKeywordValidator(data);
+              if (keywordError) {
+                return keywordError;
+              }
             }
           );
         } else {
@@ -1067,15 +1090,12 @@ var SchemaShield = class {
         }
       }
       if (isObject(schema[key])) {
-        compiledSchema[key] = this.compileSchema(
-          schema[key],
-          `${pointer}/${key}`
-        );
+        compiledSchema[key] = this.compileSchema(schema[key]);
         continue;
       }
       if (Array.isArray(schema[key])) {
         compiledSchema[key] = schema[key].map(
-          (subSchema, index) => this.isSchemaLike(subSchema) ? this.compileSchema(subSchema, `${pointer}/${key}/${index}`) : subSchema
+          (subSchema, index) => this.isSchemaLike(subSchema) ? this.compileSchema(subSchema) : subSchema
         );
         continue;
       }

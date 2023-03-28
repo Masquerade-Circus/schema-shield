@@ -1,16 +1,38 @@
 import { CompiledSchema } from "./index";
 
-export class ValidationError extends Error {
-  name: string;
-  pointer: string;
-  message: string;
-  value: any;
-  code: string;
-  item: string | number;
+function getError(error, pointer = "#") {
+  const path =
+    pointer + "/" + error.keyword + ("item" in error ? "/" + error.item : "");
 
-  constructor(message: string, pointer?: string) {
-    super(message);
-    this.pointer = pointer;
+  if (!error.cause) {
+    error.path = path;
+    return error;
+  }
+
+  return getError(error.cause, path);
+}
+
+export class ValidationError extends Error {
+  message: string;
+  item: string | number;
+  keyword: string;
+  cause: ValidationError;
+  path: string = "";
+
+  private _getCause(pointer = "#") {
+    const path =
+      pointer + "/" + this.keyword + ("item" in this ? "/" + this.item : "");
+
+    if (!this.cause) {
+      this.path = path;
+      return this;
+    }
+
+    return this.cause._getCause(path);
+  }
+
+  getCause() {
+    return this._getCause();
   }
 }
 
