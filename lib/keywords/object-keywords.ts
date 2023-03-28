@@ -5,23 +5,23 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
   // Object
   required(schema, data, KeywordError) {
     if (!isObject(data)) {
-      return [true, null];
+      return;
     }
 
     for (let i = 0; i < schema.required.length; i++) {
       const key = schema.required[i];
       if (!data.hasOwnProperty(key)) {
         KeywordError.item = key;
-        return [false, KeywordError];
+        return KeywordError;
       }
     }
 
-    return [true, null];
+    return;
   },
 
   properties(schema, data, KeywordError) {
     if (!isObject(data)) {
-      return [true, null];
+      return;
     }
 
     const keys = Object.keys(schema.properties);
@@ -37,42 +37,42 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
       if (typeof schema.properties[key] === "boolean") {
         if (schema.properties[key] === false) {
           KeywordError.item = key;
-          return [false, KeywordError];
+          return KeywordError;
         }
         continue;
       }
 
       if ("$validate" in schema.properties[key]) {
-        const [valid, error] = schema.properties[key].$validate(data[key]);
-        if (!valid) {
+        const error = schema.properties[key].$validate(data[key]);
+        if (error) {
           error.item = key;
-          return [false, error];
+          return error;
         }
       }
     }
 
-    return [true, null];
+    return;
   },
 
   maxProperties(schema, data, KeywordError) {
     if (!isObject(data) || Object.keys(data).length <= schema.maxProperties) {
-      return [true, null];
+      return;
     }
 
-    return [false, KeywordError];
+    return KeywordError;
   },
 
   minProperties(schema, data, KeywordError) {
     if (!isObject(data) || Object.keys(data).length >= schema.minProperties) {
-      return [true, null];
+      return;
     }
 
-    return [false, KeywordError];
+    return KeywordError;
   },
 
   additionalProperties(schema, data, KeywordError) {
     if (!isObject(data)) {
-      return [true, null];
+      return;
     }
 
     const keys = Object.keys(data);
@@ -97,24 +97,24 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
 
       if (schema.additionalProperties === false) {
         KeywordError.item = key;
-        return [false, KeywordError];
+        return KeywordError;
       }
 
       if (isCompiled) {
-        const [valid, error] = schema.additionalProperties.$validate(data[key]);
-        if (!valid) {
+        const error = schema.additionalProperties.$validate(data[key]);
+        if (error) {
           error.item = key;
-          return [false, error];
+          return error;
         }
       }
     }
 
-    return [true, null];
+    return;
   },
 
   patternProperties(schema, data, KeywordError) {
     if (!isObject(data)) {
-      return [true, null];
+      return;
     }
 
     const patterns = Object.keys(schema.patternProperties);
@@ -125,7 +125,7 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
           for (const key in data) {
             if (regex.test(key)) {
               KeywordError.item = key;
-              return [false, KeywordError];
+              return KeywordError;
             }
           }
         }
@@ -136,41 +136,41 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
       for (const key of keys) {
         if (regex.test(key)) {
           if ("$validate" in schema.patternProperties[pattern]) {
-            const [valid, error] = schema.patternProperties[pattern].$validate(
+            const error = schema.patternProperties[pattern].$validate(
               data[key]
             );
-            if (!valid) {
+            if (error) {
               error.item = key;
-              return [false, error];
+              return error;
             }
           }
         }
       }
     }
 
-    return [true, null];
+    return;
   },
 
   propertyNames(schema, data, KeywordError) {
     if (!isObject(data)) {
-      return [true, null];
+      return;
     }
     if (typeof schema.propertyNames === "boolean") {
       if (schema.propertyNames === false && Object.keys(data).length > 0) {
-        return [false, KeywordError];
+        return KeywordError;
       }
     }
     if (isCompiledSchema(schema.propertyNames)) {
       for (let key in data) {
-        const [valid, error] = schema.propertyNames.$validate(key);
-        if (!valid) {
+        const error = schema.propertyNames.$validate(key);
+        if (error) {
           error.item = key;
-          return [false, error];
+          return error;
         }
       }
     }
 
-    return [true, null];
+    return;
   },
 
   // Required by other keywords but not used as a function itself

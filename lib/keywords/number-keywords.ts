@@ -5,7 +5,7 @@ import { KeywordFunction } from "../index";
 export const NumberKeywords: Record<string, KeywordFunction> = {
   minimum(schema, data, KeywordError, instance) {
     if (typeof data !== "number") {
-      return [true, null];
+      return;
     }
 
     let min = schema.minimum;
@@ -16,15 +16,15 @@ export const NumberKeywords: Record<string, KeywordFunction> = {
     }
 
     if (data < min) {
-      return [false, KeywordError];
+      return KeywordError;
     }
 
-    return [true, null];
+    return;
   },
 
   maximum(schema, data, KeywordError, instance) {
     if (typeof data !== "number") {
-      return [true, null];
+      return;
     }
 
     let max = schema.maximum;
@@ -35,28 +35,28 @@ export const NumberKeywords: Record<string, KeywordFunction> = {
     }
 
     if (data > max) {
-      return [false, KeywordError];
+      return KeywordError;
     }
 
-    return [true, null];
+    return;
   },
 
   multipleOf(schema, data, KeywordError, instance) {
     if (typeof data !== "number") {
-      return [true, null];
+      return;
     }
 
     const quotient = data / schema.multipleOf;
 
     if (!isFinite(quotient)) {
-      return [true, null];
+      return;
     }
 
     if (!areCloseEnough(quotient, Math.round(quotient))) {
-      return [false, KeywordError];
+      return KeywordError;
     }
 
-    return [true, null];
+    return;
   },
 
   exclusiveMinimum(schema, data, KeywordError, instance) {
@@ -65,14 +65,14 @@ export const NumberKeywords: Record<string, KeywordFunction> = {
       typeof schema.exclusiveMinimum !== "number" ||
       "minimum" in schema
     ) {
-      return [true, null];
+      return;
     }
 
     if (data <= schema.exclusiveMinimum + 1e-15) {
-      return [false, KeywordError];
+      return KeywordError;
     }
 
-    return [true, null];
+    return;
   },
 
   exclusiveMaximum(schema, data, KeywordError, instance) {
@@ -81,13 +81,13 @@ export const NumberKeywords: Record<string, KeywordFunction> = {
       typeof schema.exclusiveMaximum !== "number" ||
       "maximum" in schema
     ) {
-      return [true, null];
+      return;
     }
 
     if (data >= schema.exclusiveMaximum) {
-      return [false, KeywordError];
+      return KeywordError;
     }
 
-    return [true, null];
+    return;
   }
 };

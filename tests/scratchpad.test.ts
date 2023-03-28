@@ -1,6 +1,7 @@
 import { before, describe, it } from "mocha";
 
 import { SchemaShield } from "../lib";
+import { ValidationError } from "../lib/utils";
 import expect from "expect";
 import { stringifySchema } from "./test-utils";
 
@@ -86,12 +87,10 @@ describe.only("Scratchpad", () => {
 
   for (const test of testGroup.tests) {
     it(test.description, () => {
-      if (test.valid) {
-        expect(validate(test.data)).toEqual([true, null]);
-      } else {
-        expect(validate(test.data)).toEqual([false, expect.anything()]);
-        console.log(validate(test.data));
-      }
+      expect(validate(test.data)).toEqual([
+        test.data === null ? null : expect.anything(),
+        test.valid ? undefined : expect.any(ValidationError)
+      ]);
     });
   }
 

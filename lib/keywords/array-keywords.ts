@@ -4,7 +4,7 @@ import { ValidationError, isCompiledSchema, isObject } from "../utils";
 export const ArrayKeywords: Record<string, KeywordFunction> = {
   items(schema, data, KeywordError) {
     if (!Array.isArray(data)) {
-      return [true, null];
+      return;
     }
 
     const schemaItems = schema.items;
@@ -12,10 +12,10 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
 
     if (typeof schemaItems === "boolean") {
       if (schemaItems === false && dataLength > 0) {
-        return [false, KeywordError];
+        return KeywordError;
       }
 
-      return [true, null];
+      return;
     }
 
     if (Array.isArray(schemaItems)) {
@@ -27,85 +27,85 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
           if (schemaItem === false && typeof data[i] !== "undefined") {
             KeywordError.message = "Array item is not allowed";
             KeywordError.item = i;
-            return [false, KeywordError];
+            return KeywordError;
           }
           continue;
         }
 
         if (isCompiledSchema(schemaItem)) {
-          const [valid, error] = schemaItem.$validate(data[i]);
-          if (!valid) {
+          const error = schemaItem.$validate(data[i]);
+          if (error) {
             error.item = i;
-            return [false, error];
+            return error;
           }
         }
       }
 
-      return [true, null];
+      return;
     }
 
     if (isCompiledSchema(schemaItems)) {
       for (let i = 0; i < dataLength; i++) {
-        const [valid, error] = schemaItems.$validate(data[i]);
-        if (!valid) {
+        const error = schemaItems.$validate(data[i]);
+        if (error) {
           error.item = i;
-          return [false, error];
+          return error;
         }
       }
     }
 
-    return [true, null];
+    return;
   },
 
   minItems(schema, data, KeywordError) {
     if (!Array.isArray(data) || data.length >= schema.minItems) {
-      return [true, null];
+      return;
     }
 
-    return [false, KeywordError];
+    return KeywordError;
   },
 
   maxItems(schema, data, KeywordError) {
     if (!Array.isArray(data) || data.length <= schema.maxItems) {
-      return [true, null];
+      return;
     }
 
-    return [false, KeywordError];
+    return KeywordError;
   },
 
   additionalItems(schema, data, KeywordError) {
     if (!Array.isArray(data) || !schema.items || !Array.isArray(schema.items)) {
-      return [true, null];
+      return;
     }
 
     if (schema.additionalItems === false) {
       if (data.length > schema.items.length) {
-        return [false, KeywordError];
+        return KeywordError;
       }
-      return [true, null];
+      return;
     }
 
     if (isObject(schema.additionalItems)) {
       if (isCompiledSchema(schema.additionalItems)) {
         for (let i = schema.items.length; i < data.length; i++) {
-          const [valid, error] = schema.additionalItems.$validate(data[i]);
-          if (!valid) {
+          const error = schema.additionalItems.$validate(data[i]);
+          if (error) {
             error.item = i;
-            return [false, error];
+            return error;
           }
         }
-        return [true, null];
+        return;
       }
 
-      return [true, null];
+      return;
     }
 
-    return [true, null];
+    return;
   },
 
   uniqueItems(schema, data, KeywordError) {
     if (!Array.isArray(data) || !schema.uniqueItems) {
-      return [true, null];
+      return;
     }
 
     const unique = new Set();
@@ -130,37 +130,37 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
       }
 
       if (unique.has(itemStr)) {
-        return [false, KeywordError];
+        return KeywordError;
       }
       unique.add(itemStr);
     }
 
-    return [true, null];
+    return;
   },
 
   contains(schema, data, KeywordError) {
     if (!Array.isArray(data)) {
-      return [true, null];
+      return;
     }
     if (typeof schema.contains === "boolean") {
       if (schema.contains) {
         if (data.length === 0) {
-          return [false, KeywordError];
+          return KeywordError;
         }
-        return [true, null];
+        return;
       }
 
-      return [false, KeywordError];
+      return KeywordError;
     }
 
     for (let i = 0; i < data.length; i++) {
-      const [valid, error] = schema.contains.$validate(data[i]);
-      if (valid) {
-        return [true, null];
+      const error = schema.contains.$validate(data[i]);
+      if (!error) {
+        return;
       }
       continue;
     }
 
-    return [false, KeywordError];
+    return KeywordError;
   }
 };

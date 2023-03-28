@@ -9,7 +9,7 @@ import { Formats } from "./formats";
 import { Types } from "./types";
 import { keywords } from "./keywords";
 
-export type Result = any;
+export type Result = void | ValidationError;
 
 export interface KeywordFunction {
   (
@@ -17,7 +17,7 @@ export interface KeywordFunction {
     data: any,
     error: ValidationError,
     instance: SchemaShield
-  ): [boolean, ValidationError];
+  ): Result;
 }
 
 export interface TypeFunction {
@@ -29,7 +29,7 @@ export interface FormatFunction {
 }
 
 export interface ValidateFunction {
-  (data: any): [boolean, ValidationError];
+  (data: any): Result;
 }
 
 export interface CompiledSchema {
@@ -38,7 +38,7 @@ export interface CompiledSchema {
 }
 
 export interface Validator {
-  (data: any): [boolean, ValidationError];
+  (data: any): [any, Result];
   compiledSchema: CompiledSchema;
 }
 
@@ -91,12 +91,16 @@ export class SchemaShield {
 
       compiledSchema.$validate = getNamedFunction<ValidateFunction>(
         "any",
-        (data) => [true, null]
+        (data) => {}
       );
     }
 
     const validate: Validator = (data: any) => {
-      return compiledSchema.$validate(this.immutable ? deepClone(data) : data);
+      const clonedData = this.immutable ? deepClone(data) : data;
+      return [
+        clonedData,
+        compiledSchema.$validate(clonedData) as ValidationError
+      ];
     };
 
     validate.compiledSchema = compiledSchema;
@@ -155,9 +159,9 @@ export class SchemaShield {
           methodName,
           (data) => {
             if (typeValidation(data)) {
-              return [true, null];
+              return;
             }
-            return [false, TypeError];
+            return TypeError;
           }
         );
       } else if (typeValidationsLength > 1) {
@@ -166,10 +170,10 @@ export class SchemaShield {
           (data) => {
             for (let i = 0; i < typeValidationsLength; i++) {
               if (typeValidations[i](data)) {
-                return [true, null];
+                return;
               }
             }
-            return [false, TypeError];
+            return TypeError;
           }
         );
       }
@@ -198,8 +202,8 @@ export class SchemaShield {
           compiledSchema.$validate = getNamedFunction<ValidateFunction>(
             methodName,
             (data) => {
-              const [valid, error] = prevValidator(data);
-              return valid ? executeKeywordValidator(data) : [false, error];
+              const error = prevValidator(data);
+              return error ? error : executeKeywordValidator(data);
             }
           );
         } else {

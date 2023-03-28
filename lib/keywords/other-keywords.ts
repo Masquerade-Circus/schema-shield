@@ -9,19 +9,19 @@ import {
 export const OtherKeywords: Record<string, KeywordFunction> = {
   nullable(schema, data, KeywordError) {
     if (schema.nullable && data !== null) {
-      return [false, KeywordError];
+      return KeywordError;
     }
 
-    return [true, null];
+    return;
   },
 
   allOf(schema, data, KeywordError) {
     for (let i = 0; i < schema.allOf.length; i++) {
       if (isObject(schema.allOf[i])) {
         if ("$validate" in schema.allOf[i]) {
-          const [isValid, error] = schema.allOf[i].$validate(data);
-          if (!isValid) {
-            return [false, error];
+          const error = schema.allOf[i].$validate(data);
+          if (error) {
+            return error;
           }
         }
         continue;
@@ -29,44 +29,44 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
 
       if (typeof schema.allOf[i] === "boolean") {
         if (Boolean(data) !== schema.allOf[i]) {
-          return [false, KeywordError];
+          return KeywordError;
         }
         continue;
       }
 
       if (data !== schema.allOf[i]) {
-        return [false, KeywordError];
+        return KeywordError;
       }
     }
 
-    return [true, null];
+    return;
   },
 
   anyOf(schema, data, KeywordError) {
     for (let i = 0; i < schema.anyOf.length; i++) {
       if (isObject(schema.anyOf[i])) {
         if ("$validate" in schema.anyOf[i]) {
-          const [isValid, error] = schema.anyOf[i].$validate(data);
-          if (isValid) {
-            return [true, null];
+          const error = schema.anyOf[i].$validate(data);
+          if (!error) {
+            return;
           }
           continue;
         }
-        return [true, null];
+        return;
       } else {
         if (typeof schema.anyOf[i] === "boolean") {
           if (Boolean(data) === schema.anyOf[i]) {
-            return [true, null];
+            return;
           }
         }
 
         if (data === schema.anyOf[i]) {
-          return [true, null];
+          return;
         }
       }
     }
 
-    return [false, KeywordError];
+    return KeywordError;
   },
 
   oneOf(schema, data, KeywordError) {
@@ -74,8 +74,8 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
     for (let i = 0; i < schema.oneOf.length; i++) {
       if (isObject(schema.oneOf[i])) {
         if ("$validate" in schema.oneOf[i]) {
-          const [isValid, error] = schema.oneOf[i].$validate(data);
-          if (isValid) {
+          const error = schema.oneOf[i].$validate(data);
+          if (!error) {
             validCount++;
           }
           continue;
@@ -97,15 +97,15 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
     }
 
     if (validCount === 1) {
-      return [true, null];
+      return;
     }
 
-    return [false, KeywordError];
+    return KeywordError;
   },
 
   dependencies(schema, data, KeywordError) {
     if (!isObject(data)) {
-      return [true, null];
+      return;
     }
 
     for (const key in schema.dependencies) {
@@ -118,7 +118,7 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
         for (let i = 0; i < dependency.length; i++) {
           if (!(dependency[i] in data)) {
             KeywordError.item = i;
-            return [false, KeywordError];
+            return KeywordError;
           }
         }
         continue;
@@ -127,22 +127,22 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
         if (dependency) {
           continue;
         }
-        return [false, KeywordError];
+        return KeywordError;
       }
 
       if (typeof dependency === "string") {
         if (dependency in data) {
           continue;
         }
-        return [false, KeywordError];
+        return KeywordError;
       }
-      const [isValid, error] = dependency.$validate(data);
-      if (!isValid) {
-        return [false, error];
+      const error = dependency.$validate(data);
+      if (error) {
+        return error;
       }
     }
 
-    return [true, null];
+    return;
   },
 
   const(schema, data, KeywordError) {
@@ -155,14 +155,14 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
         Array.isArray(schema.const) &&
         deepEqual(data, schema.const))
     ) {
-      return [true, null];
+      return;
     }
-    return [false, KeywordError];
+    return KeywordError;
   },
 
   if(schema, data, KeywordError) {
     if ("then" in schema === false && "else" in schema === false) {
-      return [true, null];
+      return;
     }
     if (typeof schema.if === "boolean") {
       if (schema.if) {
@@ -172,42 +172,42 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
       } else if (schema.else) {
         return schema.else.$validate(data);
       }
-      return [true, null];
+      return;
     }
 
-    const [isValid, error] = schema.if.$validate(data);
-    if (isValid) {
+    const error = schema.if.$validate(data);
+    if (!error) {
       if (schema.then) {
         return schema.then.$validate(data);
       }
-      return [true, null];
+      return;
     } else {
       if (schema.else) {
         return schema.else.$validate(data);
       }
-      return [true, null];
+      return;
     }
   },
 
   not(schema, data, KeywordError) {
     if (typeof schema.not === "boolean") {
       if (schema.not) {
-        return [false, KeywordError];
+        return KeywordError;
       }
-      return [true, null];
+      return;
     }
 
     if (isObject(schema.not)) {
       if ("$validate" in schema.not) {
-        const [valid, error] = schema.not.$validate(data);
-        if (valid) {
-          return [false, KeywordError];
+        const error = schema.not.$validate(data);
+        if (!error) {
+          return KeywordError;
         }
-        return [true, null];
+        return;
       }
-      return [false, KeywordError];
+      return KeywordError;
     }
 
-    return [false, KeywordError];
+    return KeywordError;
   }
 };

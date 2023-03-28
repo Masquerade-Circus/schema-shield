@@ -1,7 +1,7 @@
 import { ValidationError } from "./utils";
-export type Result = any;
+export type Result = void | ValidationError;
 export interface KeywordFunction {
-    (schema: CompiledSchema, data: any, error: ValidationError, instance: SchemaShield): [boolean, ValidationError];
+    (schema: CompiledSchema, data: any, error: ValidationError, instance: SchemaShield): Result;
 }
 export interface TypeFunction {
     (data: any): boolean;
@@ -10,14 +10,14 @@ export interface FormatFunction {
     (data: any): boolean;
 }
 export interface ValidateFunction {
-    (data: any): [boolean, ValidationError];
+    (data: any): Result;
 }
 export interface CompiledSchema {
     $validate?: ValidateFunction;
     [key: string]: any;
 }
 export interface Validator {
-    (data: any): [boolean, ValidationError];
+    (data: any): [any, Result];
     compiledSchema: CompiledSchema;
 }
 export declare class SchemaShield {

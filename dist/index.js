@@ -314,15 +314,15 @@ var Types = {
 var ArrayKeywords = {
   items(schema, data, KeywordError) {
     if (!Array.isArray(data)) {
-      return [true, null];
+      return;
     }
     const schemaItems = schema.items;
     const dataLength = data.length;
     if (typeof schemaItems === "boolean") {
       if (schemaItems === false && dataLength > 0) {
-        return [false, KeywordError];
+        return KeywordError;
       }
-      return [true, null];
+      return;
     }
     if (Array.isArray(schemaItems)) {
       const schemaItemsLength = schemaItems.length;
@@ -333,74 +333,71 @@ var ArrayKeywords = {
           if (schemaItem === false && typeof data[i] !== "undefined") {
             KeywordError.message = "Array item is not allowed";
             KeywordError.item = i;
-            return [false, KeywordError];
+            return KeywordError;
           }
           continue;
         }
         if (isCompiledSchema(schemaItem)) {
-          const [valid, error] = schemaItem.$validate(data[i]);
-          if (!valid) {
-            KeywordError.message = error.message;
-            KeywordError.item = i;
-            return [false, KeywordError];
+          const error = schemaItem.$validate(data[i]);
+          if (error) {
+            error.item = i;
+            return error;
           }
         }
       }
-      return [true, null];
+      return;
     }
     if (isCompiledSchema(schemaItems)) {
       for (let i = 0; i < dataLength; i++) {
-        const [valid, error] = schemaItems.$validate(data[i]);
-        if (!valid) {
-          KeywordError.message = error.message;
-          KeywordError.item = i;
-          return [false, KeywordError];
+        const error = schemaItems.$validate(data[i]);
+        if (error) {
+          error.item = i;
+          return error;
         }
       }
     }
-    return [true, null];
+    return;
   },
-  minItems(schema, data, KeywordError, _) {
+  minItems(schema, data, KeywordError) {
     if (!Array.isArray(data) || data.length >= schema.minItems) {
-      return [true, null];
+      return;
     }
-    return [false, KeywordError];
+    return KeywordError;
   },
-  maxItems(schema, data, KeywordError, _) {
+  maxItems(schema, data, KeywordError) {
     if (!Array.isArray(data) || data.length <= schema.maxItems) {
-      return [true, null];
+      return;
     }
-    return [false, KeywordError];
+    return KeywordError;
   },
-  additionalItems(schema, data, KeywordError, _) {
+  additionalItems(schema, data, KeywordError) {
     if (!Array.isArray(data) || !schema.items || !Array.isArray(schema.items)) {
-      return [true, null];
+      return;
     }
     if (schema.additionalItems === false) {
       if (data.length > schema.items.length) {
-        return [false, KeywordError];
+        return KeywordError;
       }
-      return [true, null];
+      return;
     }
     if (isObject(schema.additionalItems)) {
       if (isCompiledSchema(schema.additionalItems)) {
         for (let i = schema.items.length; i < data.length; i++) {
-          const [valid, error] = schema.additionalItems.$validate(data[i]);
-          if (!valid) {
-            KeywordError.message = error.message;
-            KeywordError.item = i;
-            return [false, KeywordError];
+          const error = schema.additionalItems.$validate(data[i]);
+          if (error) {
+            error.item = i;
+            return error;
           }
         }
-        return [true, null];
+        return;
       }
-      return [true, null];
+      return;
     }
-    return [true, null];
+    return;
   },
   uniqueItems(schema, data, KeywordError) {
     if (!Array.isArray(data) || !schema.uniqueItems) {
-      return [true, null];
+      return;
     }
     const unique = /* @__PURE__ */ new Set();
     for (const item of data) {
@@ -419,33 +416,33 @@ var ArrayKeywords = {
         itemStr = String(item);
       }
       if (unique.has(itemStr)) {
-        return [false, KeywordError];
+        return KeywordError;
       }
       unique.add(itemStr);
     }
-    return [true, null];
+    return;
   },
   contains(schema, data, KeywordError) {
     if (!Array.isArray(data)) {
-      return [true, null];
+      return;
     }
     if (typeof schema.contains === "boolean") {
       if (schema.contains) {
         if (data.length === 0) {
-          return [false, KeywordError];
+          return KeywordError;
         }
-        return [true, null];
+        return;
       }
-      return [false, KeywordError];
+      return KeywordError;
     }
     for (let i = 0; i < data.length; i++) {
-      const [valid, error] = schema.contains.$validate(data[i]);
-      if (valid) {
-        return [true, null];
+      const error = schema.contains.$validate(data[i]);
+      if (!error) {
+        return;
       }
       continue;
     }
-    return [false, KeywordError];
+    return KeywordError;
   }
 };
 
@@ -453,7 +450,7 @@ var ArrayKeywords = {
 var NumberKeywords = {
   minimum(schema, data, KeywordError, instance) {
     if (typeof data !== "number") {
-      return [true, null];
+      return;
     }
     let min = schema.minimum;
     if (typeof schema.exclusiveMinimum === "number") {
@@ -462,13 +459,13 @@ var NumberKeywords = {
       min += 1e-15;
     }
     if (data < min) {
-      return [false, KeywordError];
+      return KeywordError;
     }
-    return [true, null];
+    return;
   },
   maximum(schema, data, KeywordError, instance) {
     if (typeof data !== "number") {
-      return [true, null];
+      return;
     }
     let max = schema.maximum;
     if (typeof schema.exclusiveMaximum === "number") {
@@ -477,40 +474,40 @@ var NumberKeywords = {
       max -= 1e-15;
     }
     if (data > max) {
-      return [false, KeywordError];
+      return KeywordError;
     }
-    return [true, null];
+    return;
   },
   multipleOf(schema, data, KeywordError, instance) {
     if (typeof data !== "number") {
-      return [true, null];
+      return;
     }
     const quotient = data / schema.multipleOf;
     if (!isFinite(quotient)) {
-      return [true, null];
+      return;
     }
     if (!areCloseEnough(quotient, Math.round(quotient))) {
-      return [false, KeywordError];
+      return KeywordError;
     }
-    return [true, null];
+    return;
   },
   exclusiveMinimum(schema, data, KeywordError, instance) {
     if (typeof data !== "number" || typeof schema.exclusiveMinimum !== "number" || "minimum" in schema) {
-      return [true, null];
+      return;
     }
     if (data <= schema.exclusiveMinimum + 1e-15) {
-      return [false, KeywordError];
+      return KeywordError;
     }
-    return [true, null];
+    return;
   },
   exclusiveMaximum(schema, data, KeywordError, instance) {
     if (typeof data !== "number" || typeof schema.exclusiveMaximum !== "number" || "maximum" in schema) {
-      return [true, null];
+      return;
     }
     if (data >= schema.exclusiveMaximum) {
-      return [false, KeywordError];
+      return KeywordError;
     }
-    return [true, null];
+    return;
   }
 };
 
@@ -519,20 +516,20 @@ var ObjectKeywords = {
   // Object
   required(schema, data, KeywordError) {
     if (!isObject(data)) {
-      return [true, null];
+      return;
     }
     for (let i = 0; i < schema.required.length; i++) {
       const key = schema.required[i];
       if (!data.hasOwnProperty(key)) {
         KeywordError.item = key;
-        return [false, KeywordError];
+        return KeywordError;
       }
     }
-    return [true, null];
+    return;
   },
   properties(schema, data, KeywordError) {
     if (!isObject(data)) {
-      return [true, null];
+      return;
     }
     const keys = Object.keys(schema.properties);
     for (const key of keys) {
@@ -546,35 +543,35 @@ var ObjectKeywords = {
       if (typeof schema.properties[key] === "boolean") {
         if (schema.properties[key] === false) {
           KeywordError.item = key;
-          return [false, KeywordError];
+          return KeywordError;
         }
         continue;
       }
       if ("$validate" in schema.properties[key]) {
-        const [valid, error] = schema.properties[key].$validate(data[key]);
-        if (!valid) {
-          KeywordError.item = key;
-          return [false, KeywordError];
+        const error = schema.properties[key].$validate(data[key]);
+        if (error) {
+          error.item = key;
+          return error;
         }
       }
     }
-    return [true, null];
+    return;
   },
   maxProperties(schema, data, KeywordError) {
     if (!isObject(data) || Object.keys(data).length <= schema.maxProperties) {
-      return [true, null];
+      return;
     }
-    return [false, KeywordError];
+    return KeywordError;
   },
   minProperties(schema, data, KeywordError) {
     if (!isObject(data) || Object.keys(data).length >= schema.minProperties) {
-      return [true, null];
+      return;
     }
-    return [false, KeywordError];
+    return KeywordError;
   },
   additionalProperties(schema, data, KeywordError) {
     if (!isObject(data)) {
-      return [true, null];
+      return;
     }
     const keys = Object.keys(data);
     const isCompiled = isCompiledSchema(schema.additionalProperties);
@@ -596,21 +593,21 @@ var ObjectKeywords = {
       }
       if (schema.additionalProperties === false) {
         KeywordError.item = key;
-        return [false, KeywordError];
+        return KeywordError;
       }
       if (isCompiled) {
-        const [valid, error] = schema.additionalProperties.$validate(data[key]);
-        if (!valid) {
-          KeywordError.item = key;
-          return [false, KeywordError];
+        const error = schema.additionalProperties.$validate(data[key]);
+        if (error) {
+          error.item = key;
+          return error;
         }
       }
     }
-    return [true, null];
+    return;
   },
   patternProperties(schema, data, KeywordError) {
     if (!isObject(data)) {
-      return [true, null];
+      return;
     }
     const patterns = Object.keys(schema.patternProperties);
     for (const pattern of patterns) {
@@ -620,7 +617,7 @@ var ObjectKeywords = {
           for (const key in data) {
             if (regex.test(key)) {
               KeywordError.item = key;
-              return [false, KeywordError];
+              return KeywordError;
             }
           }
         }
@@ -630,38 +627,38 @@ var ObjectKeywords = {
       for (const key of keys) {
         if (regex.test(key)) {
           if ("$validate" in schema.patternProperties[pattern]) {
-            const [valid, error] = schema.patternProperties[pattern].$validate(
+            const error = schema.patternProperties[pattern].$validate(
               data[key]
             );
-            if (!valid) {
-              KeywordError.item = key;
-              return [false, KeywordError];
+            if (error) {
+              error.item = key;
+              return error;
             }
           }
         }
       }
     }
-    return [true, null];
+    return;
   },
   propertyNames(schema, data, KeywordError) {
     if (!isObject(data)) {
-      return [true, null];
+      return;
     }
     if (typeof schema.propertyNames === "boolean") {
       if (schema.propertyNames === false && Object.keys(data).length > 0) {
-        return [false, KeywordError];
+        return KeywordError;
       }
     }
     if (isCompiledSchema(schema.propertyNames)) {
       for (let key in data) {
-        const [valid, error] = schema.propertyNames.$validate(key);
-        if (!valid) {
-          KeywordError.item = key;
-          return [false, KeywordError];
+        const error = schema.propertyNames.$validate(key);
+        if (error) {
+          error.item = key;
+          return error;
         }
       }
     }
-    return [true, null];
+    return;
   },
   // Required by other keywords but not used as a function itself
   then: false,
@@ -682,64 +679,64 @@ var ObjectKeywords = {
 var OtherKeywords = {
   nullable(schema, data, KeywordError) {
     if (schema.nullable && data !== null) {
-      return [false, KeywordError];
+      return KeywordError;
     }
-    return [true, null];
+    return;
   },
   allOf(schema, data, KeywordError) {
     for (let i = 0; i < schema.allOf.length; i++) {
       if (isObject(schema.allOf[i])) {
         if ("$validate" in schema.allOf[i]) {
-          const [isValid, error] = schema.allOf[i].$validate(data);
-          if (!isValid) {
-            return [false, KeywordError];
+          const error = schema.allOf[i].$validate(data);
+          if (error) {
+            return error;
           }
         }
         continue;
       }
       if (typeof schema.allOf[i] === "boolean") {
         if (Boolean(data) !== schema.allOf[i]) {
-          return [false, KeywordError];
+          return KeywordError;
         }
         continue;
       }
       if (data !== schema.allOf[i]) {
-        return [false, KeywordError];
+        return KeywordError;
       }
     }
-    return [true, null];
+    return;
   },
   anyOf(schema, data, KeywordError) {
     for (let i = 0; i < schema.anyOf.length; i++) {
       if (isObject(schema.anyOf[i])) {
         if ("$validate" in schema.anyOf[i]) {
-          const [isValid, error] = schema.anyOf[i].$validate(data);
-          if (isValid) {
-            return [true, null];
+          const error = schema.anyOf[i].$validate(data);
+          if (!error) {
+            return;
           }
           continue;
         }
-        return [true, null];
+        return;
       } else {
         if (typeof schema.anyOf[i] === "boolean") {
           if (Boolean(data) === schema.anyOf[i]) {
-            return [true, null];
+            return;
           }
         }
         if (data === schema.anyOf[i]) {
-          return [true, null];
+          return;
         }
       }
     }
-    return [false, KeywordError];
+    return KeywordError;
   },
   oneOf(schema, data, KeywordError) {
     let validCount = 0;
     for (let i = 0; i < schema.oneOf.length; i++) {
       if (isObject(schema.oneOf[i])) {
         if ("$validate" in schema.oneOf[i]) {
-          const [isValid, error] = schema.oneOf[i].$validate(data);
-          if (isValid) {
+          const error = schema.oneOf[i].$validate(data);
+          if (!error) {
             validCount++;
           }
           continue;
@@ -759,13 +756,13 @@ var OtherKeywords = {
       }
     }
     if (validCount === 1) {
-      return [true, null];
+      return;
     }
-    return [false, KeywordError];
+    return KeywordError;
   },
   dependencies(schema, data, KeywordError) {
     if (!isObject(data)) {
-      return [true, null];
+      return;
     }
     for (const key in schema.dependencies) {
       if (key in data === false) {
@@ -776,7 +773,7 @@ var OtherKeywords = {
         for (let i = 0; i < dependency.length; i++) {
           if (!(dependency[i] in data)) {
             KeywordError.item = i;
-            return [false, KeywordError];
+            return KeywordError;
           }
         }
         continue;
@@ -785,30 +782,30 @@ var OtherKeywords = {
         if (dependency) {
           continue;
         }
-        return [false, KeywordError];
+        return KeywordError;
       }
       if (typeof dependency === "string") {
         if (dependency in data) {
           continue;
         }
-        return [false, KeywordError];
+        return KeywordError;
       }
-      const [isValid, error] = dependency.$validate(data);
-      if (!isValid) {
-        return [false, error];
+      const error = dependency.$validate(data);
+      if (error) {
+        return error;
       }
     }
-    return [true, null];
+    return;
   },
   const(schema, data, KeywordError) {
     if (data === schema.const || isObject(data) && isObject(schema.const) && deepEqual(data, schema.const) || Array.isArray(data) && Array.isArray(schema.const) && deepEqual(data, schema.const)) {
-      return [true, null];
+      return;
     }
-    return [false, KeywordError];
+    return KeywordError;
   },
   if(schema, data, KeywordError) {
     if ("then" in schema === false && "else" in schema === false) {
-      return [true, null];
+      return;
     }
     if (typeof schema.if === "boolean") {
       if (schema.if) {
@@ -818,39 +815,39 @@ var OtherKeywords = {
       } else if (schema.else) {
         return schema.else.$validate(data);
       }
-      return [true, null];
+      return;
     }
-    const [isValid, error] = schema.if.$validate(data);
-    if (isValid) {
+    const error = schema.if.$validate(data);
+    if (!error) {
       if (schema.then) {
         return schema.then.$validate(data);
       }
-      return [true, null];
+      return;
     } else {
       if (schema.else) {
         return schema.else.$validate(data);
       }
-      return [true, null];
+      return;
     }
   },
   not(schema, data, KeywordError) {
     if (typeof schema.not === "boolean") {
       if (schema.not) {
-        return [false, KeywordError];
+        return KeywordError;
       }
-      return [true, null];
+      return;
     }
     if (isObject(schema.not)) {
       if ("$validate" in schema.not) {
-        const [valid, error] = schema.not.$validate(data);
-        if (valid) {
-          return [false, KeywordError];
+        const error = schema.not.$validate(data);
+        if (!error) {
+          return KeywordError;
         }
-        return [true, null];
+        return;
       }
-      return [false, KeywordError];
+      return KeywordError;
     }
-    return [false, KeywordError];
+    return KeywordError;
   }
 };
 
@@ -858,44 +855,44 @@ var OtherKeywords = {
 var StringKeywords = {
   minLength(schema, data, KeywordError) {
     if (typeof data !== "string" || data.length >= schema.minLength) {
-      return [true, null];
+      return;
     }
-    return [false, KeywordError];
+    return KeywordError;
   },
   maxLength(schema, data, KeywordError) {
     if (typeof data !== "string" || data.length <= schema.maxLength) {
-      return [true, null];
+      return;
     }
-    return [false, KeywordError];
+    return KeywordError;
   },
   pattern(schema, data, KeywordError) {
     if (typeof data !== "string") {
-      return [true, null];
+      return;
     }
     const patternRegexp = new RegExp(schema.pattern, "u");
     if (patternRegexp instanceof RegExp === false) {
-      return [false, KeywordError];
+      return KeywordError;
     }
     if (patternRegexp.test(data)) {
-      return [true, null];
+      return;
     }
-    return [false, KeywordError];
+    return KeywordError;
   },
   format(schema, data, KeywordError, formatInstance) {
     if (typeof data !== "string") {
-      return [true, null];
+      return;
     }
     const formatValidate = formatInstance.formats.get(schema.format);
     if (formatValidate === false) {
-      return [true, null];
+      return;
     }
     if (typeof formatValidate === "function") {
       if (formatValidate(data)) {
-        return [true, null];
+        return;
       }
-      return [false, KeywordError];
+      return KeywordError;
     }
-    return [false, KeywordError];
+    return KeywordError;
   },
   enum(schema, data, KeywordError) {
     const isArray = Array.isArray(data);
@@ -903,15 +900,15 @@ var StringKeywords = {
     for (let i = 0; i < schema.enum.length; i++) {
       const enumItem = schema.enum[i];
       if (enumItem === data) {
-        return [true, null];
+        return;
       }
       if (isArray && Array.isArray(enumItem) || isObject2 && typeof enumItem === "object" && enumItem !== null) {
         if (deepEqual(enumItem, data)) {
-          return [true, null];
+          return;
         }
       }
     }
-    return [false, KeywordError];
+    return KeywordError;
   }
 };
 
@@ -963,14 +960,16 @@ var SchemaShield = class {
       }
       compiledSchema.$validate = getNamedFunction(
         "any",
-        (data) => [true, null]
+        (data) => {
+        }
       );
     }
     const validate = (data) => {
-      if (this.immutable) {
-        data = deepClone(data);
-      }
-      return compiledSchema.$validate(data);
+      const clonedData = this.immutable ? deepClone(data) : data;
+      return [
+        clonedData,
+        compiledSchema.$validate(clonedData)
+      ];
     };
     validate.compiledSchema = compiledSchema;
     return validate;
@@ -979,14 +978,7 @@ var SchemaShield = class {
     if (!isObject(schema)) {
       if (schema === true) {
         schema = {
-          anyOf: [
-            { type: "string" },
-            { type: "number" },
-            { type: "boolean" },
-            { type: "array" },
-            { type: "object" },
-            { type: "null" }
-          ]
+          anyOf: [{}]
         };
       } else if (schema === false) {
         schema = {
@@ -1011,71 +1003,64 @@ var SchemaShield = class {
           methodName += (methodName ? "_OR_" : "") + validator.name;
         }
       }
-      if (typeValidations.length === 0) {
+      const typeValidationsLength = typeValidations.length;
+      if (typeValidationsLength === 0) {
         throw TypeError2;
       }
-      if (typeValidations.length === 1) {
+      if (typeValidationsLength === 1) {
         const typeValidation = typeValidations[0];
         compiledSchema.$validate = getNamedFunction(
           methodName,
           (data) => {
             if (typeValidation(data)) {
-              return [true, null];
+              return;
             }
-            return [false, TypeError2];
+            return TypeError2;
           }
         );
-      } else if (typeValidations.length > 1) {
+      } else if (typeValidationsLength > 1) {
         compiledSchema.$validate = getNamedFunction(
           methodName,
           (data) => {
-            for (const validator of typeValidations) {
-              if (validator(data)) {
-                return [true, null];
+            for (let i = 0; i < typeValidationsLength; i++) {
+              if (typeValidations[i](data)) {
+                return;
               }
             }
-            return [false, TypeError2];
+            return TypeError2;
           }
         );
       }
     }
-    for (let key in schema) {
+    for (const key in schema) {
       if (key === "type") {
+        compiledSchema.type = schema.type;
         continue;
       }
-      let keywordValidator = this.keywords.get(key);
+      const keywordValidator = this.keywords.get(key);
       if (keywordValidator) {
         const KeywordError = new ValidationError(`Invalid ${key}`, pointer);
+        const executeKeywordValidator = (data) => keywordValidator(
+          compiledSchema,
+          data,
+          KeywordError,
+          this
+        );
         if (compiledSchema.$validate) {
           const prevValidator = compiledSchema.$validate;
           methodName += `_AND_${keywordValidator.name}`;
           compiledSchema.$validate = getNamedFunction(
             methodName,
             (data) => {
-              let [valid, error] = prevValidator(data);
-              if (!valid) {
-                return [false, error];
-              }
-              return keywordValidator(
-                compiledSchema,
-                data,
-                KeywordError,
-                this
-              );
+              const error = prevValidator(data);
+              return error ? error : executeKeywordValidator(data);
             }
           );
         } else {
           methodName = keywordValidator.name;
           compiledSchema.$validate = getNamedFunction(
             methodName,
-            (data) => {
-              return keywordValidator(
-                compiledSchema,
-                data,
-                KeywordError,
-                this
-              );
-            }
+            executeKeywordValidator
           );
         }
       }

@@ -5,57 +5,57 @@ import { KeywordFunction } from "../index";
 export const StringKeywords: Record<string, KeywordFunction> = {
   minLength(schema, data, KeywordError) {
     if (typeof data !== "string" || data.length >= schema.minLength) {
-      return [true, null];
+      return;
     }
 
-    return [false, KeywordError];
+    return KeywordError;
   },
 
   maxLength(schema, data, KeywordError) {
     if (typeof data !== "string" || data.length <= schema.maxLength) {
-      return [true, null];
+      return;
     }
 
-    return [false, KeywordError];
+    return KeywordError;
   },
 
   pattern(schema, data, KeywordError) {
     if (typeof data !== "string") {
-      return [true, null];
+      return;
     }
 
     const patternRegexp = new RegExp(schema.pattern, "u");
 
     if (patternRegexp instanceof RegExp === false) {
-      return [false, KeywordError];
+      return KeywordError;
     }
 
     if (patternRegexp.test(data)) {
-      return [true, null];
+      return;
     }
 
-    return [false, KeywordError];
+    return KeywordError;
   },
 
   format(schema, data, KeywordError, formatInstance) {
     if (typeof data !== "string") {
-      return [true, null];
+      return;
     }
 
     const formatValidate = formatInstance.formats.get(schema.format);
     if (formatValidate === false) {
-      return [true, null];
+      return;
     }
 
     if (typeof formatValidate === "function") {
       if (formatValidate(data)) {
-        return [true, null];
+        return;
       }
 
-      return [false, KeywordError];
+      return KeywordError;
     }
 
-    return [false, KeywordError];
+    return KeywordError;
   },
 
   enum(schema, data, KeywordError) {
@@ -68,7 +68,7 @@ export const StringKeywords: Record<string, KeywordFunction> = {
 
       // Simple equality check
       if (enumItem === data) {
-        return [true, null];
+        return;
       }
 
       // If data is an array or an object, check for deep equality
@@ -77,11 +77,11 @@ export const StringKeywords: Record<string, KeywordFunction> = {
         (isObject && typeof enumItem === "object" && enumItem !== null)
       ) {
         if (deepEqual(enumItem, data)) {
-          return [true, null];
+          return;
         }
       }
     }
 
-    return [false, KeywordError];
+    return KeywordError;
   }
 };
