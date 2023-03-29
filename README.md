@@ -6,6 +6,38 @@ Unlike many other libraries, SchemaShield does not rely on code generation, maki
 
 Despite its feature-rich and easy extendable nature, SchemaShield is designed to be fast and efficient, matching the performance of other libraries that use code generation.
 
+## Table of Contents
+
+- [Table of Contents](#table-of-contents)
+- [Features](#features)
+- [Usage](#usage)
+- [About No Code Generation](#about-no-code-generation)
+- [Error Handling](#error-handling)
+  - [ValidationError Properties](#validationerror-properties)
+  - [Get the cause of the error](#get-the-cause-of-the-error)
+- [Adding Custom Types](#adding-custom-types)
+  - [Method Signature](#method-signature)
+  - [Example: Adding a Custom Type](#example-adding-a-custom-type)
+- [Adding Custom Formats](#adding-custom-formats)
+  - [Method Signature](#method-signature-1)
+  - [Example: Adding a Custom Format](#example-adding-a-custom-format)
+- [Adding Custom Keywords](#adding-custom-keywords)
+  - [Method Signature](#method-signature-2)
+    - [About the `defineError` Function](#about-the-defineerror-function)
+    - [About the `instance` Argument](#about-the-instance-argument)
+  - [Example: Adding a Custom Keyword](#example-adding-a-custom-keyword)
+  - [Complex example: Adding a Custom Keyword that uses the instance](#complex-example-adding-a-custom-keyword-that-uses-the-instance)
+- [No Code Generation opened possibilities](#no-code-generation-opened-possibilities)
+- [Immutable Mode](#immutable-mode)
+- [TypeScript Support](#typescript-support)
+- [Known Limitations](#known-limitations)
+  - [Schema References and Schema Definitions](#schema-references-and-schema-definitions)
+  - [Unsupported Formats](#unsupported-formats)
+  - [Internationalized formats](#internationalized-formats)
+- [Testing](#testing)
+- [Contribute](#contribute)
+- [Legal](#legal)
+
 ## Features
 
 - Supports draft-06 and draft-07 of the [JSON Schema](https://json-schema.org/) specification.
@@ -98,7 +130,7 @@ if (validationResult.valid) {
 - `error`: A `ValidationError` instance if validation failed, otherwise null
 - `valid`: true if validation was successful, otherwise false
 
-## No Code Generation for Enhanced Safety
+## About No Code Generation
 
 Unlike some other validation libraries that rely on code generation to achieve fast performance, SchemaShield does not use code generation.
 
@@ -678,6 +710,12 @@ Also you can contribute to SchemaShield and add support for these keywords and f
 SchemaShield prioritizes reliability and accuracy in JSON Schema validation by using the [JSON Schema Test Suite](https://github.com/json-schema-org/JSON-Schema-Test-Suite).
 
 This comprehensive test suite ensures compliance with the JSON Schema standard, providing developers with a dependable and consistent validation experience.
+
+```bash
+npm test
+# or
+npm run test:dev # for development
+```
 
 ## Contribute
 

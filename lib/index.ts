@@ -132,7 +132,7 @@ export class SchemaShield {
       }
     }
 
-    const compiledSchema: CompiledSchema = {} as CompiledSchema;
+    const compiledSchema: CompiledSchema = { ...schema } as CompiledSchema;
     const defineTypeError = getDefinedErrorFunctionForKey("type", schema);
     const typeValidations: TypeFunction[] = [];
 
@@ -165,7 +165,7 @@ export class SchemaShield {
             if (typeValidation(data)) {
               return;
             }
-            return defineTypeError("Invalid type");
+            return defineTypeError("Invalid type", { data });
           }
         );
       } else if (typeValidationsLength > 1) {
@@ -177,13 +177,13 @@ export class SchemaShield {
                 return;
               }
             }
-            return defineTypeError("Invalid type");
+            return defineTypeError("Invalid type", { data });
           }
         );
       }
     }
 
-    for (const key in schema) {
+    for (const key of Object.keys(schema)) {
       if (key === "type") {
         compiledSchema.type = schema.type;
         continue;

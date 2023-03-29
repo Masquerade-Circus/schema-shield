@@ -130,8 +130,15 @@ export function deepClone(obj: any): any {
     return result;
   }
 
+  // Is class instance of any kind
+  if (obj && obj.constructor && obj.constructor.name !== "Object") {
+    return obj;
+  }
+
   if (isObject(obj)) {
-    const result = {};
+    const result = {
+      ...obj
+    };
     for (const key in obj) {
       result[key] = deepClone(obj[key]);
     }

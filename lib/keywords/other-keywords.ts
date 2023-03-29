@@ -1,10 +1,6 @@
-import { CompiledSchema, KeywordFunction } from "../index";
-import {
-  ValidationError,
-  deepEqual,
-  isCompiledSchema,
-  isObject
-} from "../utils";
+import { deepEqual, isCompiledSchema, isObject } from "../utils";
+
+import { KeywordFunction } from "../index";
 
 export const OtherKeywords: Record<string, KeywordFunction> = {
   enum(schema, data, defineError) {
@@ -143,23 +139,27 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
     }
     if (typeof schema.if === "boolean") {
       if (schema.if) {
-        if (schema.then) {
+        if (isCompiledSchema(schema.then)) {
           return schema.then.$validate(data);
         }
-      } else if (schema.else) {
+      } else if (isCompiledSchema(schema.else)) {
         return schema.else.$validate(data);
       }
       return;
     }
 
+    if (!isCompiledSchema(schema.if)) {
+      return;
+    }
+
     const error = schema.if.$validate(data);
     if (!error) {
-      if (schema.then) {
+      if (isCompiledSchema(schema.then)) {
         return schema.then.$validate(data);
       }
       return;
     } else {
-      if (schema.else) {
+      if (isCompiledSchema(schema.else)) {
         return schema.else.$validate(data);
       }
       return;

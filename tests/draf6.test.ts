@@ -21,7 +21,6 @@ const jsonTestFiles = files.reduce((acc, file) => {
 }, {});
 
 const jsonTestsToSkip = {
-  "validate definition against metaschema": "Not implemented",
   "maxLength validation": {
     "two supplementary Unicode code points is long enough":
       "No one supports this"
@@ -31,22 +30,12 @@ const jsonTestsToSkip = {
       "No one supports this"
   },
 
-  // Next to implement
-  "properties whose names are Javascript object property names": {
-    "ignores arrays": "Next to implement",
-    "ignores other non-objects": "Next to implement",
-    "none of the properties mentioned": "Next to implement",
-    "__proto__ not valid": "Next to implement",
-    "toString not valid": "Next to implement",
-    "constructor not valid": "Next to implement",
-    "all present and valid": "Next to implement"
-  },
-
   // Sub items
   "items and subitems": "Not implemented",
 
   // Ref
   "$id inside an unknown keyword is not a real identifier": "Not implemented",
+  "validate definition against metaschema": "Not implemented",
 
   // Needs investigation
   "evaluating the same schema location against the same data location twice is not a sign of an infinite loop":
@@ -118,8 +107,11 @@ for (let file in jsonTestFiles) {
             console.log("compiledSchema", stringifySchema(validate));
             console.log("data", data);
             console.log("valid", valid);
-            console.log("result", result);
-            console.log("e", e);
+            console.log("result", result.valid);
+            console.log(
+              "e",
+              result.error?.getCause ? result.error.getCause() : e
+            );
             console.log("file", file);
 
             throw e;

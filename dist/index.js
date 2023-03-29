@@ -205,8 +205,13 @@ function deepClone(obj) {
     }
     return result;
   }
+  if (obj && obj.constructor && obj.constructor.name !== "Object") {
+    return obj;
+  }
   if (isObject(obj)) {
-    const result = {};
+    const result = {
+      ...obj
+    };
     for (const key in obj) {
       result[key] = deepClone(obj[key]);
     }
@@ -354,7 +359,7 @@ var ArrayKeywords = {
     const dataLength = data.length;
     if (typeof schemaItems === "boolean") {
       if (schemaItems === false && dataLength > 0) {
-        return defineError("Array items are not allowed");
+        return defineError("Array items are not allowed", { data });
       }
       return;
     }
@@ -365,7 +370,10 @@ var ArrayKeywords = {
         const schemaItem = schemaItems[i];
         if (typeof schemaItem === "boolean") {
           if (schemaItem === false && typeof data[i] !== "undefined") {
-            return defineError("Array item is not allowed", { item: i });
+            return defineError("Array item is not allowed", {
+              item: i,
+              data: data[i]
+            });
           }
           continue;
         }
@@ -374,7 +382,8 @@ var ArrayKeywords = {
           if (error) {
             return defineError("Array item is invalid", {
               item: i,
-              cause: error
+              cause: error,
+              data: data[i]
             });
           }
         }
@@ -387,7 +396,8 @@ var ArrayKeywords = {
         if (error) {
           return defineError("Array item is invalid", {
             item: i,
-            cause: error
+            cause: error,
+            data: data[i]
           });
         }
       }
@@ -401,7 +411,11 @@ var ArrayKeywords = {
     for (let i = 0; i < data.length; i++) {
       const error = schema.elements.$validate(data[i]);
       if (error) {
-        return defineError("Array item is invalid", { item: i, cause: error });
+        return defineError("Array item is invalid", {
+          item: i,
+          cause: error,
+          data: data[i]
+        });
       }
     }
     return;
@@ -410,13 +424,13 @@ var ArrayKeywords = {
     if (!Array.isArray(data) || data.length >= schema.minItems) {
       return;
     }
-    return defineError("Array is too short");
+    return defineError("Array is too short", { data });
   },
   maxItems(schema, data, defineError) {
     if (!Array.isArray(data) || data.length <= schema.maxItems) {
       return;
     }
-    return defineError("Array is too long");
+    return defineError("Array is too long", { data });
   },
   additionalItems(schema, data, defineError) {
     if (!Array.isArray(data) || !schema.items || !Array.isArray(schema.items)) {
@@ -424,7 +438,7 @@ var ArrayKeywords = {
     }
     if (schema.additionalItems === false) {
       if (data.length > schema.items.length) {
-        return defineError("Array is too long");
+        return defineError("Array is too long", { data });
       }
       return;
     }
@@ -435,7 +449,8 @@ var ArrayKeywords = {
           if (error) {
             return defineError("Array item is invalid", {
               item: i,
-              cause: error
+              cause: error,
+              data: data[i]
             });
           }
         }
@@ -466,7 +481,7 @@ var ArrayKeywords = {
         itemStr = String(item);
       }
       if (unique.has(itemStr)) {
-        return defineError("Array items are not unique");
+        return defineError("Array items are not unique", { data: item });
       }
       unique.add(itemStr);
     }
@@ -479,11 +494,11 @@ var ArrayKeywords = {
     if (typeof schema.contains === "boolean") {
       if (schema.contains) {
         if (data.length === 0) {
-          return defineError("Array must contain at least one item");
+          return defineError("Array must contain at least one item", { data });
         }
         return;
       }
-      return defineError("Array must not contain any items");
+      return defineError("Array must not contain any items", { data });
     }
     for (let i = 0; i < data.length; i++) {
       const error = schema.contains.$validate(data[i]);
@@ -492,7 +507,7 @@ var ArrayKeywords = {
       }
       continue;
     }
-    return defineError("Array must contain at least one item");
+    return defineError("Array must contain at least one item", { data });
   }
 };
 
@@ -509,7 +524,7 @@ var NumberKeywords = {
       min += 1e-15;
     }
     if (data < min) {
-      return defineError("Value is less than the minimum");
+      return defineError("Value is less than the minimum", { data });
     }
     return;
   },
@@ -524,7 +539,7 @@ var NumberKeywords = {
       max -= 1e-15;
     }
     if (data > max) {
-      return defineError("Value is greater than the maximum");
+      return defineError("Value is greater than the maximum", { data });
     }
     return;
   },
@@ -537,7 +552,7 @@ var NumberKeywords = {
       return;
     }
     if (!areCloseEnough(quotient, Math.round(quotient))) {
-      return defineError("Value is not a multiple of the multipleOf");
+      return defineError("Value is not a multiple of the multipleOf", { data });
     }
     return;
   },
@@ -556,7 +571,8 @@ var NumberKeywords = {
     }
     if (data >= schema.exclusiveMaximum) {
       return defineError(
-        "Value is greater than or equal to the exclusiveMaximum"
+        "Value is greater than or equal to the exclusiveMaximum",
+        { data }
       );
     }
     return;
@@ -573,7 +589,10 @@ var ObjectKeywords = {
     for (let i = 0; i < schema.required.length; i++) {
       const key = schema.required[i];
       if (!data.hasOwnProperty(key)) {
-        return defineError("Required property is missing", { item: key });
+        return defineError("Required property is missing", {
+          item: key,
+          data: data[key]
+        });
       }
     }
     return;
@@ -582,9 +601,8 @@ var ObjectKeywords = {
     if (!isObject(data)) {
       return;
     }
-    const keys = Object.keys(schema.properties);
-    for (const key of keys) {
-      if (typeof data[key] === "undefined") {
+    for (const key of Object.keys(schema.properties)) {
+      if (!data.hasOwnProperty(key)) {
         const schemaProp = schema.properties[key];
         if (isObject(schemaProp) && "default" in schemaProp) {
           data[key] = schemaProp.default;
@@ -593,7 +611,10 @@ var ObjectKeywords = {
       }
       if (typeof schema.properties[key] === "boolean") {
         if (schema.properties[key] === false) {
-          return defineError("Property is not allowed", { item: key });
+          return defineError("Property is not allowed", {
+            item: key,
+            data: data[key]
+          });
         }
         continue;
       }
@@ -602,7 +623,8 @@ var ObjectKeywords = {
         if (error) {
           return defineError("Property is invalid", {
             item: key,
-            cause: error
+            cause: error,
+            data: data[key]
           });
         }
       }
@@ -617,7 +639,11 @@ var ObjectKeywords = {
     for (const key of keys) {
       const error = schema.values.$validate(data[key]);
       if (error) {
-        return defineError("Property is invalid", { item: key, cause: error });
+        return defineError("Property is invalid", {
+          item: key,
+          cause: error,
+          data: data[key]
+        });
       }
     }
     return;
@@ -626,13 +652,13 @@ var ObjectKeywords = {
     if (!isObject(data) || Object.keys(data).length <= schema.maxProperties) {
       return;
     }
-    return defineError("Too many properties");
+    return defineError("Too many properties", { data });
   },
   minProperties(schema, data, defineError) {
     if (!isObject(data) || Object.keys(data).length >= schema.minProperties) {
       return;
     }
-    return defineError("Too few properties");
+    return defineError("Too few properties", { data });
   },
   additionalProperties(schema, data, defineError) {
     if (!isObject(data)) {
@@ -658,7 +684,8 @@ var ObjectKeywords = {
       }
       if (schema.additionalProperties === false) {
         return defineError("Additional properties are not allowed", {
-          item: key
+          item: key,
+          data: data[key]
         });
       }
       if (isCompiled) {
@@ -666,7 +693,8 @@ var ObjectKeywords = {
         if (error) {
           return defineError("Additional properties are invalid", {
             item: key,
-            cause: error
+            cause: error,
+            data: data[key]
           });
         }
       }
@@ -684,7 +712,10 @@ var ObjectKeywords = {
         if (schema.patternProperties[pattern] === false) {
           for (const key in data) {
             if (regex.test(key)) {
-              return defineError("Property is not allowed", { item: key });
+              return defineError("Property is not allowed", {
+                item: key,
+                data: data[key]
+              });
             }
           }
         }
@@ -700,7 +731,8 @@ var ObjectKeywords = {
             if (error) {
               return defineError("Property is invalid", {
                 item: key,
-                cause: error
+                cause: error,
+                data: data[key]
               });
             }
           }
@@ -715,7 +747,7 @@ var ObjectKeywords = {
     }
     if (typeof schema.propertyNames === "boolean") {
       if (schema.propertyNames === false && Object.keys(data).length > 0) {
-        return defineError("Properties are not allowed");
+        return defineError("Properties are not allowed", { data });
       }
     }
     if (isCompiledSchema(schema.propertyNames)) {
@@ -724,7 +756,8 @@ var ObjectKeywords = {
         if (error) {
           return defineError("Property name is invalid", {
             item: key,
-            cause: error
+            cause: error,
+            data: data[key]
           });
         }
       }
@@ -743,7 +776,10 @@ var ObjectKeywords = {
       if (Array.isArray(dependency)) {
         for (let i = 0; i < dependency.length; i++) {
           if (!(dependency[i] in data)) {
-            return defineError("Dependency is not satisfied", { item: i });
+            return defineError("Dependency is not satisfied", {
+              item: i,
+              data: dependency[i]
+            });
           }
         }
         continue;
@@ -752,17 +788,20 @@ var ObjectKeywords = {
         if (dependency) {
           continue;
         }
-        return defineError("Dependency is not satisfied");
+        return defineError("Dependency is not satisfied", { data: dependency });
       }
       if (typeof dependency === "string") {
         if (dependency in data) {
           continue;
         }
-        return defineError("Dependency is not satisfied");
+        return defineError("Dependency is not satisfied", { data: dependency });
       }
       const error = dependency.$validate(data);
       if (error) {
-        return defineError("Dependency is not satisfied", { cause: error });
+        return defineError("Dependency is not satisfied", {
+          cause: error,
+          data
+        });
       }
     }
     return;
@@ -804,7 +843,7 @@ var OtherKeywords = {
         }
       }
     }
-    return defineError("Value is not one of the allowed values");
+    return defineError("Value is not one of the allowed values", { data });
   },
   allOf(schema, data, defineError) {
     for (let i = 0; i < schema.allOf.length; i++) {
@@ -812,19 +851,19 @@ var OtherKeywords = {
         if ("$validate" in schema.allOf[i]) {
           const error = schema.allOf[i].$validate(data);
           if (error) {
-            return defineError("Value is not valid", { cause: error });
+            return defineError("Value is not valid", { cause: error, data });
           }
         }
         continue;
       }
       if (typeof schema.allOf[i] === "boolean") {
         if (Boolean(data) !== schema.allOf[i]) {
-          return defineError("Value is not valid");
+          return defineError("Value is not valid", { data });
         }
         continue;
       }
       if (data !== schema.allOf[i]) {
-        return defineError("Value is not valid");
+        return defineError("Value is not valid", { data });
       }
     }
     return;
@@ -851,7 +890,7 @@ var OtherKeywords = {
         }
       }
     }
-    return defineError("Value is not valid");
+    return defineError("Value is not valid", { data });
   },
   oneOf(schema, data, defineError) {
     let validCount = 0;
@@ -881,13 +920,13 @@ var OtherKeywords = {
     if (validCount === 1) {
       return;
     }
-    return defineError("Value is not valid");
+    return defineError("Value is not valid", { data });
   },
   const(schema, data, defineError) {
     if (data === schema.const || isObject(data) && isObject(schema.const) && deepEqual(data, schema.const) || Array.isArray(data) && Array.isArray(schema.const) && deepEqual(data, schema.const)) {
       return;
     }
-    return defineError("Value is not valid");
+    return defineError("Value is not valid", { data });
   },
   if(schema, data, defineError) {
     if ("then" in schema === false && "else" in schema === false) {
@@ -895,22 +934,25 @@ var OtherKeywords = {
     }
     if (typeof schema.if === "boolean") {
       if (schema.if) {
-        if (schema.then) {
+        if (isCompiledSchema(schema.then)) {
           return schema.then.$validate(data);
         }
-      } else if (schema.else) {
+      } else if (isCompiledSchema(schema.else)) {
         return schema.else.$validate(data);
       }
       return;
     }
+    if (!isCompiledSchema(schema.if)) {
+      return;
+    }
     const error = schema.if.$validate(data);
     if (!error) {
-      if (schema.then) {
+      if (isCompiledSchema(schema.then)) {
         return schema.then.$validate(data);
       }
       return;
     } else {
-      if (schema.else) {
+      if (isCompiledSchema(schema.else)) {
         return schema.else.$validate(data);
       }
       return;
@@ -919,7 +961,7 @@ var OtherKeywords = {
   not(schema, data, defineError) {
     if (typeof schema.not === "boolean") {
       if (schema.not) {
-        return defineError("Value is not valid");
+        return defineError("Value is not valid", { data });
       }
       return;
     }
@@ -927,13 +969,13 @@ var OtherKeywords = {
       if ("$validate" in schema.not) {
         const error = schema.not.$validate(data);
         if (!error) {
-          return defineError("Value is not valid", { cause: error });
+          return defineError("Value is not valid", { cause: error, data });
         }
         return;
       }
-      return defineError("Value is not valid");
+      return defineError("Value is not valid", { data });
     }
-    return defineError("Value is not valid");
+    return defineError("Value is not valid", { data });
   }
 };
 
@@ -943,13 +985,13 @@ var StringKeywords = {
     if (typeof data !== "string" || data.length >= schema.minLength) {
       return;
     }
-    return defineError("Value is shorter than the minimum length");
+    return defineError("Value is shorter than the minimum length", { data });
   },
   maxLength(schema, data, defineError) {
     if (typeof data !== "string" || data.length <= schema.maxLength) {
       return;
     }
-    return defineError("Value is longer than the maximum length");
+    return defineError("Value is longer than the maximum length", { data });
   },
   pattern(schema, data, defineError) {
     if (typeof data !== "string") {
@@ -957,12 +999,12 @@ var StringKeywords = {
     }
     const patternRegexp = new RegExp(schema.pattern, "u");
     if (patternRegexp instanceof RegExp === false) {
-      return defineError("Invalid regular expression");
+      return defineError("Invalid regular expression", { data });
     }
     if (patternRegexp.test(data)) {
       return;
     }
-    return defineError("Value does not match the pattern");
+    return defineError("Value does not match the pattern", { data });
   },
   format(schema, data, defineError, formatInstance) {
     if (typeof data !== "string") {
@@ -976,9 +1018,9 @@ var StringKeywords = {
       if (formatValidate(data)) {
         return;
       }
-      return defineError("Value does not match the format");
+      return defineError("Value does not match the format", { data });
     }
-    return defineError("Format is not supported");
+    return defineError("Format is not supported", { data });
   }
 };
 
@@ -1064,7 +1106,7 @@ var SchemaShield = class {
         };
       }
     }
-    const compiledSchema = {};
+    const compiledSchema = { ...schema };
     const defineTypeError = getDefinedErrorFunctionForKey("type", schema);
     const typeValidations = [];
     let methodName = "";
@@ -1089,7 +1131,7 @@ var SchemaShield = class {
             if (typeValidation(data)) {
               return;
             }
-            return defineTypeError("Invalid type");
+            return defineTypeError("Invalid type", { data });
           }
         );
       } else if (typeValidationsLength > 1) {
@@ -1101,12 +1143,12 @@ var SchemaShield = class {
                 return;
               }
             }
-            return defineTypeError("Invalid type");
+            return defineTypeError("Invalid type", { data });
           }
         );
       }
     }
-    for (const key in schema) {
+    for (const key of Object.keys(schema)) {
       if (key === "type") {
         compiledSchema.type = schema.type;
         continue;

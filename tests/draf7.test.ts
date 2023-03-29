@@ -31,18 +31,6 @@ const jsonTestsToSkip = {
       "No one supports this"
   },
 
-  // Next to implement
-  "contains with false if subschema": "Not working",
-  "properties whose names are Javascript object property names": {
-    "ignores arrays": "Next to implement",
-    "ignores other non-objects": "Next to implement",
-    "none of the properties mentioned": "Next to implement",
-    "__proto__ not valid": "Next to implement",
-    "toString not valid": "Next to implement",
-    "constructor not valid": "Next to implement",
-    "all present and valid": "Next to implement"
-  },
-
   // Sub items
   "items and subitems": "Not implemented",
 
@@ -120,7 +108,10 @@ for (let file in jsonTestFiles) {
             console.log("data", data);
             console.log("valid", valid);
             console.log("result", result);
-            console.log("e", e);
+            console.log(
+              "e",
+              result.error?.getCause ? result.error.getCause() : e
+            );
             console.log("file", file);
 
             throw e;

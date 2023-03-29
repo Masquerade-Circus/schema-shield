@@ -1,6 +1,5 @@
-import { ValidationError, areCloseEnough } from "../utils";
-
 import { KeywordFunction } from "../index";
+import { areCloseEnough } from "../utils";
 
 export const NumberKeywords: Record<string, KeywordFunction> = {
   minimum(schema, data, defineError, instance) {

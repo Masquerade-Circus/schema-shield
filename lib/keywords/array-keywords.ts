@@ -1,5 +1,6 @@
-import { CompiledSchema, KeywordFunction } from "../index";
-import { ValidationError, isCompiledSchema, isObject } from "../utils";
+import { isCompiledSchema, isObject } from "../utils";
+
+import { KeywordFunction } from "../index";
 
 export const ArrayKeywords: Record<string, KeywordFunction> = {
   items(schema, data, defineError) {

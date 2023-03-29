@@ -1,5 +1,6 @@
-import { CompiledSchema, KeywordFunction } from "../index";
-import { ValidationError, isCompiledSchema, isObject } from "../utils";
+import { isCompiledSchema, isObject } from "../utils";
+
+import { KeywordFunction } from "../index";
 
 export const ObjectKeywords: Record<string, KeywordFunction | false> = {
   // Object
@@ -26,9 +27,8 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
       return;
     }
 
-    const keys = Object.keys(schema.properties);
-    for (const key of keys) {
-      if (typeof data[key] === "undefined") {
+    for (const key of Object.keys(schema.properties)) {
+      if (!data.hasOwnProperty(key)) {
         const schemaProp = schema.properties[key];
         if (isObject(schemaProp) && "default" in schemaProp) {
           data[key] = schemaProp.default;

@@ -5,6 +5,46 @@ import { ValidationError } from "../lib/utils";
 import expect from "expect";
 import { stringifySchema } from "./test-utils";
 
+it("Should create a SchemaShield instance and validate", () => {
+  let schema = {
+    type: "object",
+    properties: {
+      foo: {
+        type: "string"
+      },
+      bar: {
+        type: "integer"
+      },
+      array: {
+        type: "array",
+        items: {
+          type: "string"
+        }
+      },
+      hello: {
+        type: "string",
+        default: "world"
+      }
+    },
+    required: ["foo", "bar", "array"]
+  };
+
+  let data = {
+    foo: "hello",
+    bar: 42,
+    array: ["hello", "world"]
+  };
+
+  let schemaShield = new SchemaShield();
+  let validate = schemaShield.compile(schema);
+
+  expect(validate(data)).toEqual({
+    data: { ...data, hello: "world" },
+    error: null,
+    valid: true
+  });
+});
+
 // const testGroup = {
 //   description: "integer type matches integers",
 //   schema: {
@@ -71,19 +111,10 @@ describe("Scratchpad", () => {
   before(() => {
     const schemaShield = new SchemaShield();
     schemaShield.addFormat("hex", (value) => /^0x[0-9A-Fa-f]*$/.test(value));
-    console.log(
-      stringifySchema(
-        schemaShield.compile({
-          type: "string",
-          format: "hex"
-        }),
-        true
-      )
-    );
 
     validate = schemaShield.compile(testGroup.schema);
-    console.log(JSON.stringify(testGroup.schema, null, 2));
-    console.log(stringifySchema(validate, true));
+    // console.log(JSON.stringify(testGroup.schema, null, 2));
+    // console.log(stringifySchema(validate, false));
   });
 
   for (const { valid, data, description } of testGroup.tests) {
@@ -93,9 +124,6 @@ describe("Scratchpad", () => {
         error: valid ? null : expect.any(ValidationError),
         data: data === null ? null : expect.anything()
       });
-      if (!valid) {
-        // console.log(validate(data).error.getCause());
-      }
     });
   }
 
@@ -116,8 +144,8 @@ describe("Scratchpad", () => {
   }
 });
 
-describe.only("Scratchpad", () => {
-  it("should work", () => {
+describe("ValidationError", () => {
+  it("should get the correct properties within an error", () => {
     const schemaShield = new SchemaShield({ immutable: true });
 
     const schema = {
@@ -140,16 +168,18 @@ describe.only("Scratchpad", () => {
 
     const validationResult = validator(invalidData);
 
-    if (validationResult.valid) {
-      console.log("Data is valid:", validationResult.data);
-    } else if (validationResult.error) {
-      console.error("Validation error:", validationResult.error.message); // "Invalid "
+    expect(validationResult.valid).toEqual(false);
+    expect(validationResult.error).not.toBeNull();
+
+    // Validating error property again just to make TS happy in the next lines
+    if (validationResult.error !== null) {
+      expect(validationResult.error.message).toEqual("Property is invalid");
       const errorCause = validationResult.error.getCause();
-      console.error("Root cause:", errorCause.message);
-      console.error("Error path:", errorCause.path);
-      console.error("Error data:", errorCause.data);
-      console.error("Error schema:", errorCause.schema);
-      console.error("Error keyword:", errorCause.keyword);
+      expect(errorCause.message).toEqual("Value is less than the minimum");
+      expect(errorCause.path).toEqual("#/properties/age/minimum");
+      expect(errorCause.data).toEqual(15);
+      expect(errorCause.schema).toEqual(18);
+      expect(errorCause.keyword).toEqual("minimum");
     }
   });
 });

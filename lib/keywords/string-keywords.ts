@@ -1,5 +1,3 @@
-import { ValidationError, deepEqual } from "../utils";
-
 import { KeywordFunction } from "../index";
 
 export const StringKeywords: Record<string, KeywordFunction> = {
