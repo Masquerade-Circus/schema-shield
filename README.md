@@ -1,18 +1,32 @@
-# SchemaShield Documentation
+# SchemaShield
 
-SchemaShield is a comprehensive schema validation library that allows you to validate data based on the provided schema. It offers a variety of types, keywords, and formats for validation.
+SchemaShield is a versatile and powerful JSON Schema validator designed to simplify the process of validating complex data structures.
+
+Unlike many other libraries, SchemaShield does not rely on code generation, making it safer to pass real references to objects, classes, or variables and opening new possibilities for custom validation that are not possible with other libraries.
+
+Despite its feature-rich and easy extendable nature, SchemaShield is designed to be fast and efficient, matching the performance of other libraries that use code generation.
 
 ## Features
 
-- Custom type, keyword, and format validators
-- Immutable mode for data protection
-- Lightweight and fast
-- Easy to use and extend
-- Error handling and reporting using the new [Error: cause](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error/cause) property
+- Supports draft-06 and draft-07 of the [JSON Schema](https://json-schema.org/) specification.
+- No Code Generation for Enhanced Safety and Validation Flexibility.
+- Custom type, keyword, and format validators.
+- Immutable mode for data protection.
+- Lightweight and fast.
+- Easy to use and extend.
+- Typescript support.
 
 ## Usage
 
-### 1. Import the SchemaShield class
+**1. Install the package**
+
+```bash
+npm install schema-shield
+# or
+yarn add schema-shield
+```
+
+**2. Import the SchemaShield class**
 
 ```javascript
 import { SchemaShield } from "schema-shield";
@@ -20,7 +34,7 @@ import { SchemaShield } from "schema-shield";
 const { SchemaShield } = require("schema-shield");
 ```
 
-### 2. Instantiate the SchemaShield class
+**3. Instantiate the SchemaShield class**
 
 ```javascript
 const schemaShield = new SchemaShield({ immutable: true });
@@ -28,30 +42,26 @@ const schemaShield = new SchemaShield({ immutable: true });
 
 **`immutable`** (optional): Set to `true` to ensure that input data remains unmodified during validation. Default is `false` for better performance.
 
-### 3. Add custom types, keywords, and formats (optional)
+**3.5. Add custom types, keywords, and formats (optional)**
 
 ```javascript
-// Must return true or false
 schemaShield.addType("customType", (data) => {
   // Custom type validation logic
 });
 
-// Must return true or false
 schemaShield.addFormat("customFormat", (data) => {
   // Custom format validation logic
 });
 
-// Does not need to return anything if validation is successful
-// Must return a defined error if validation fails (see below)
 schemaShield.addKeyword(
   "customKeyword",
-  (schema, data, defineError, schemaShieldInstance) => {
+  (schema, data, defineError, instance) => {
     // Custom keyword validation logic
   }
 );
 ```
 
-### 4. Compile a schema
+**4. Compile a schema**
 
 ```javascript
 const schema = {
@@ -65,7 +75,7 @@ const schema = {
 const validator = schemaShield.compile(schema);
 ```
 
-### 5. Validate data
+**5. Validate some data**
 
 ```javascript
 const data = {
@@ -84,9 +94,26 @@ if (validationResult.valid) {
 
 **`validationResult`**: Contains the following properties:
 
-- data: The validated (and potentially modified) data
-- error: A `ValidationError` instance if validation failed, otherwise null
-- valid: true if validation was successful, otherwise false
+- `data`: The validated (and potentially modified) data
+- `error`: A `ValidationError` instance if validation failed, otherwise null
+- `valid`: true if validation was successful, otherwise false
+
+## No Code Generation for Enhanced Safety
+
+Unlike some other validation libraries that rely on code generation to achieve fast performance, SchemaShield does not use code generation.
+
+This design decision ensures that you can safely pass real references to objects, classes, or variables in your custom validation functions without any unintended side effects or security concerns.
+
+For example, you can easily use `instanceof` to check if the provided data is an instance of a particular class or a subclass:
+
+```javascript
+schemaShield.addType("date-class", (data) => data instanceof Date);
+// or use your custom classes, functions or references
+class CustomDate extends Date {}
+schemaShield.addType("custom-date-class", (data) => data instanceof CustomDate);
+```
+
+You can see a full example of this in the [No Code Generation opened possibilities](#no-code-generation-opened-possibilities) section.
 
 ## Error Handling
 
@@ -143,7 +170,7 @@ if (validationResult.valid) {
   // Get the root cause of the error
   const errorCause = validationResult.error.getCause();
   console.error("Root cause:", errorCause.message); // "Value is less than the minimum"
-  console.error("Error path:", errorCause.path); // "/properties/age/minimum"
+  console.error("Error path:", errorCause.path); // "#/properties/age/minimum"
   console.error("Error data:", errorCause.data); // 15
   console.error("Error schema:", errorCause.schema); // 18
   console.error("Error keyword:", errorCause.keyword); // "minimum"
@@ -310,13 +337,17 @@ addKeyword(name: string, validator: KeywordFunction): void;
 - `name`: The name of the custom keyword. This should be a unique string that does not conflict with existing keywords.
 - `validator`: A `KeywordFunction` that takes four arguments: `schema`, `data`, `defineError`, and `instance` (The SchemaShield instance that is currently running the validation). The function should not return anything if the data is valid for the custom keyword, and should return a `ValidationError` instance if the data is invalid.
 
-Take into account that the error must be generated using the `defineError` function because this has the required data relevant for the current keyword (`schema`, `keyword`, `getCause` method).
+#### About the `defineError` Function
+
+Take into account that the error must be generated using the `defineError` function because the error returned by this method has the required data relevant for the current keyword (`schema`, `keyword`, `getCause` method).
 
 - `message`: A string that describes the validation error.
 - `options`: An optional object with properties that provide more context for the error:
-  - `item`?: An optional value representing the final item in the path where the validation error occurred.
+  - `item`?: An optional value representing the final item in the path where the validation error occurred. (e.g. index of an array item)
   - `cause`?: An optional `ValidationError` that represents the cause of the current error.
   - `data`?: An optional value representing the data that caused the validation error.
+
+#### About the `instance` Argument
 
 The `instance` argument is the SchemaShield instance that is currently running the validation. This can be used to access to other `types`, `keywords` or `formats` that have been added to the instance.
 
@@ -369,7 +400,7 @@ if (validationResult.valid) {
 }
 ```
 
-### Complex example: Adding a Custom Keyword using the instance
+### Complex example: Adding a Custom Keyword that uses the instance
 
 In this example we'll add a custom keyword called `prefixedUsername` that will validate if a given string is a valid username and has a specific prefix. This will only work if the additional validation methods and types have been added to the instance.
 
@@ -471,3 +502,206 @@ if (validationResult.valid) {
   console.error("Validation error:", validationResult.error.getCause().message);
 }
 ```
+
+## No Code Generation opened possibilities
+
+With the no code generation nature of SchemaShield, you can create complex validation logic that incorporates custom classes, objects, or variables. This flexibility allows you to seamlessly integrate the validation process into your application's unique requirements and data structures.
+
+For example, imagine you have a custom class representing a project and another representing an employee. You could create a custom validator to ensure that only employees with the right qualifications are assigned to a specific project:
+
+```javascript
+import { SchemaShield, ValidationError } from "schema-shield";
+
+const schemaShield = new SchemaShield();
+
+// Custom classes
+class Project {
+  constructor(name: string, requiredSkills: string[]) {
+    this.name = name;
+    this.requiredSkills = requiredSkills;
+  }
+}
+
+class Employee {
+  constructor(name: string, skills: string[]) {
+    this.name = name;
+    this.skills = skills;
+  }
+
+  hasSkillsForProject(project: Project) {
+    return project.requiredSkills.every((skill) => this.skills.includes(skill));
+  }
+}
+
+// Add custom types to the instance
+schemaShield.addType("project", (data) => data instanceof Project);
+schemaShield.addType("employee", (data) => data instanceof Employee);
+
+schemaShield.addKeyword(
+  "requiresQualifiedEmployee",
+  (schema, data, defineError, instance) => {
+    const { assignment, project, employee } = data;
+
+    const stringTypeValidator = instance.types.get("string");
+    const projectTypeValidator = instance.types.get("project");
+    const employeeTypeValidator = instance.types.get("employee");
+
+    if (!stringTypeValidator(assignment)) {
+      return defineError("Assignment must be a string", {
+        item: "assignment",
+        data: assignment
+      });
+    }
+
+    if (!projectTypeValidator(project)) {
+      return defineError("Project must be a Project instance", {
+        item: "project",
+        data: project
+      });
+    }
+
+    if (!employeeTypeValidator(employee)) {
+      return defineError("Employee must be an Employee instance", {
+        item: "employee",
+        data: employee
+      });
+    }
+
+    if (schema.requiresQualifiedEmployee) {
+      if (!employee.hasSkillsForProject(project)) {
+        return defineError(
+          "Employee does not meet the project's requirements",
+          {
+            data: {
+              assignment,
+              project,
+              employee
+            }
+          }
+        );
+      }
+    }
+  }
+);
+
+// Create and compile the schema
+const schema = {
+  type: "object",
+  properties: {
+    assignment: {}, // Empty schema because we will validate it with the custom keyword
+    project: {}, // Empty schema because we will validate it with the custom keyword
+    employee: {} // Empty schema because we will validate it with the custom keyword
+  },
+  required: ["assignment", "project", "employee"],
+  requiresQualifiedEmployee: true
+};
+
+const validator = schemaShield.compile(schema);
+
+// Create some data to validate
+const employee1 = new Employee("Employee 1", ["A", "B", "C"]);
+
+const project1 = new Project("Project 1", ["A", "B"]);
+
+const dataToValidate = {
+  assignment: "Assignment 1 for Project 1",
+  project: project1,
+  employee: employee1
+};
+
+// Validate the data
+const validationResult = validator(schema);
+
+if (validationResult.valid) {
+  console.log("Assignment is valid:", validationResult.data);
+} else {
+  console.error("Validation error:", validationResult.error.message);
+}
+```
+
+In this example, SchemaShield safely accesses instances of custom classes and utilizes them in the validation process. This level of complexity and flexibility would not be possible or would require a lot of boilerplate code with other libraries that rely on code generation.
+
+## Immutable Mode
+
+SchemaShield offers an optional immutable mode to prevent modifications to the input data during validation. In some cases, SchemaShield may mutate the data when using the `default` keyword or within custom added keywords.
+
+By enabling immutable mode, the library creates a deep copy of the input data before performing any validation checks, ensuring that the original data remains unchanged throughout the process. This feature can be useful in situations where preserving the integrity of the input data is essential.
+
+To enable immutable mode, simply pass the `immutable` option when creating a new `SchemaShield` instance:
+
+```javascript
+const schemaShield = new SchemaShield({ immutable: true });
+```
+
+By default, the immutable mode is disabled. If you don't need the immutability guarantee, you can leave it disabled to optimize performance.
+
+However, there are some caveats to consider when using immutable mode. The deep copy may not accurately reproduce complex objects such as instantiated classes. In such cases, you can handle the cloning process yourself using a custom keyword to ensure the proper preservation of your data's structure.
+
+## TypeScript Support
+
+SchemaShield offers comprehensive TypeScript support, enhancing the library's usability for TypeScript projects. Type definitions are included in the package, so you can import the library and use it in your TypeScript projects without any additional configuration.
+
+With the built in TypeScript support, you can take advantage of features like strong typing, autocompletion, and compile-time error checking, which can help you catch potential issues early and improve the overall quality of your code.
+
+## Known Limitations
+
+SchemaShield is a powerful and flexible library, but there are some limitations to be aware of when using it. Some features are not yet supported in the current version.
+
+### Schema References and Schema Definitions
+
+SchemaShield currently does not support schema references and schema definitions (i.e. `$ref` and `definitions`). This is planned to be addressed in future updates of SchemaShield.
+
+For now, consider using custom implementations using the `addKeyword` method or use alternative libraries to handle these specific features if you need them.
+
+### Unsupported Formats
+
+SchemaShield currently does not support the following formats, but they are planned to be addressed in future updates of SchemaShield. For now, consider using custom implementations using the `addFormat` method to handle these formats.
+
+- `duration`
+- `uuid`
+- `uri-reference`
+- `uri-template`
+
+### Internationalized formats
+
+There is no plan to support the following formats in SchemaShield, as they are not relevant to the majority of use cases. If you need to use these formats, consider using custom implementations using the `addFormat` method to handle them.
+
+- `idn-email`
+- `idn-hostname`
+- `iri`
+- `iri-reference`
+
+Also you can contribute to SchemaShield and add support for these keywords and formats or leve a comment requesting support for them.
+
+## Testing
+
+SchemaShield prioritizes reliability and accuracy in JSON Schema validation by using the [JSON Schema Test Suite](https://github.com/json-schema-org/JSON-Schema-Test-Suite).
+
+This comprehensive test suite ensures compliance with the JSON Schema standard, providing developers with a dependable and consistent validation experience.
+
+## Contribute
+
+SchemaShield is an open-source project, and we welcome contributions from the community. By contributing to SchemaShield, you can help improve the library and expand its feature set.
+
+If you are interested in contributing, please follow these steps:
+
+- **Fork the repository:** Fork the SchemaShield repository on GitHub and clone it to your local machine.
+
+- **Create a feature branch:** Create a new branch for your feature or bugfix. Make sure to give it a descriptive name.
+
+- **Implement your changes:** Make the necessary changes to the codebase. Be sure to add or update the relevant tests and documentation.
+
+- **Test your changes:** Before submitting your pull request, make sure your changes pass all existing tests and any new tests you've added. It's also a good idea to ensure that your changes do not introduce any performance regressions or new issues.
+
+- **Submit a pull request:** Once your changes are complete and tested, submit a pull request to the main SchemaShield repository. In your pull request description, please provide a brief summary of your changes and any relevant context.
+
+- **Code review:** Your pull request will be reviewed and may request changes or provide feedback. Be prepared to engage in a discussion and possibly make further changes to your code based on the feedback.
+
+- **Merge:** Once your pull request is approved, it will be merged into the main SchemaShield repository.
+
+We appreciate your interest in contributing to SchemaShield and look forward to your valuable input. Together, we can make SchemaShield an even better library for the community.
+
+## Legal
+
+Author: [Masquerade Circus](http://masquerade-circus.net).  
+License [Apache-2.0](https://opensource.org/licenses/Apache-2.0)
