@@ -11,7 +11,7 @@ Despite its feature-rich and easy extendable nature, SchemaShield is designed to
 - [Table of Contents](#table-of-contents)
 - [Features](#features)
 - [Usage](#usage)
-- [About No Code Generation](#about-no-code-generation)
+- [No Code Generation](#no-code-generation)
 - [Error Handling](#error-handling)
   - [ValidationError Properties](#validationerror-properties)
   - [Get the cause of the error](#get-the-cause-of-the-error)
@@ -23,17 +23,15 @@ Despite its feature-rich and easy extendable nature, SchemaShield is designed to
   - [Example: Adding a Custom Format](#example-adding-a-custom-format)
 - [Adding Custom Keywords](#adding-custom-keywords)
   - [Method Signature](#method-signature-2)
-    - [About the `defineError` Function](#about-the-defineerror-function)
-    - [About the `instance` Argument](#about-the-instance-argument)
   - [Example: Adding a Custom Keyword](#example-adding-a-custom-keyword)
   - [Complex example: Adding a Custom Keyword that uses the instance](#complex-example-adding-a-custom-keyword-that-uses-the-instance)
-- [No Code Generation opened possibilities](#no-code-generation-opened-possibilities)
+- [No Code Generation Opened Possibilities](#no-code-generation-opened-possibilities)
 - [Immutable Mode](#immutable-mode)
 - [TypeScript Support](#typescript-support)
 - [Known Limitations](#known-limitations)
   - [Schema References and Schema Definitions](#schema-references-and-schema-definitions)
   - [Unsupported Formats](#unsupported-formats)
-  - [Internationalized formats](#internationalized-formats)
+  - [Internationalized Formats](#internationalized-formats)
 - [Testing](#testing)
 - [Contribute](#contribute)
 - [Legal](#legal)
@@ -130,7 +128,7 @@ if (validationResult.valid) {
 - `error`: A `ValidationError` instance if validation failed, otherwise null
 - `valid`: true if validation was successful, otherwise false
 
-## About No Code Generation
+## No Code Generation
 
 Unlike some other validation libraries that rely on code generation to achieve fast performance, SchemaShield does not use code generation.
 
@@ -535,7 +533,7 @@ if (validationResult.valid) {
 }
 ```
 
-## No Code Generation opened possibilities
+## No Code Generation Opened Possibilities
 
 With the no code generation nature of SchemaShield, you can create complex validation logic that incorporates custom classes, objects, or variables. This flexibility allows you to seamlessly integrate the validation process into your application's unique requirements and data structures.
 
@@ -694,7 +692,7 @@ SchemaShield currently does not support the following formats, but they are plan
 - `uri-reference`
 - `uri-template`
 
-### Internationalized formats
+### Internationalized Formats
 
 There is no plan to support the following formats in SchemaShield, as they are not relevant to the majority of use cases. If you need to use these formats, consider using custom implementations using the `addFormat` method to handle them.
 
