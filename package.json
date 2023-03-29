@@ -1,6 +1,6 @@
 {
   "name": "schema-shield",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "A fast library that protects your JSON schema from invalid data.",
   "repository": "git@github.com:Masquerade-Circus/schema-shield.git",
   "author": "Masquerade <christian@masquerade-circus.net>",
