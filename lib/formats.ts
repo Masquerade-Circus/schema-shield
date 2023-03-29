@@ -15,12 +15,7 @@ const RegExps = {
   'relative-json-pointer': /^([0-9]+)(#|\/(?:[^~]|~0|~1)*)?$/,
 };
 
-function notImplementedFormat(data: any) {
-  throw new ValidationError(`Format "${data}" is not implemented yet. Please open an issue on GitHub.`);
-  return false;
-}
-
-export const Formats: Record<string, FormatFunction> = {
+export const Formats: Record<string, FormatFunction | false> = {
   ['date-time'](data) {
     const upperCaseData = data.toUpperCase();
     if (!RegExps['date-time'].test(upperCaseData)) {
@@ -94,13 +89,12 @@ export const Formats: Record<string, FormatFunction> = {
   },
 
   // Not supported yet
-
-  duration: notImplementedFormat,
-  'idn-email': notImplementedFormat,
-  'idn-hostname': notImplementedFormat,
-  uuid: notImplementedFormat,
-  'uri-reference': notImplementedFormat,
-  iri: notImplementedFormat,
-  'iri-reference': notImplementedFormat,
-  'uri-template': notImplementedFormat,
+  duration: false,
+  'idn-email': false,
+  'idn-hostname': false,
+  uuid: false,
+  'uri-reference': false,
+  iri: false,
+  'iri-reference': false,
+  'uri-template': false,
 };

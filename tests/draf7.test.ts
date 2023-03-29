@@ -1,144 +1,76 @@
-import { describe, it } from 'mocha';
+import { ValidationError, deepClone } from "../lib/utils";
+import { describe, it } from "mocha";
 
-import { SchemaShield } from '../lib';
-import expect from 'expect';
-import fs from 'fs';
-import { stringifySchema } from './test-utils';
+import { SchemaShield } from "../lib";
+import expect from "expect";
+import fs from "fs";
+import { stringifySchema } from "./test-utils";
 
-// Read the test/draft4 directory to get all the test files
-const files = fs.readdirSync('./node_modules/json-schema-test-suite/tests/draft7');
+const files = fs.readdirSync(
+  "./node_modules/json-schema-test-suite/tests/draft6"
+);
 
-const jsonTests = files.reduce((acc, file) => {
-  if (!file.endsWith('.json')) {
+const jsonTestFiles = files.reduce((acc, file) => {
+  if (!file.endsWith(".json")) {
     return acc;
   }
-  acc[file.replace('.json', '')] = require(`json-schema-test-suite/tests/draft7/${file}`);
+  acc[
+    file.replace(".json", "")
+  ] = require(`json-schema-test-suite/tests/draft7/${file}`);
   return acc;
 }, {});
 
 const jsonTestsToSkip = {
-  // Failed tests
-  definitions: 'Not implemented',
-  id: 'Not implemented',
-  'infinite-loop-detection': 'Not implemented',
-  not: 'Not implemented',
-  ref: 'Not implemented',
-  refRemote: 'Not implemented',
-  // Passed tests
-  // Object
-  properties: false,
-  maxProperties: false,
-  minProperties: false,
-  additionalProperties: false,
-  patternProperties: false,
-  // // Array
-  items: {
-    skip: false,
-    'a schema given for items': {
-      'JavaScript pseudo-array is valid':
-        'Pseudo array is validated correctly but the data is invalid because the first item is not an integer',
-    },
-    'an array of schemas for items': {
-      'JavaScript pseudo-array is valid':
-        'Pseudo array is validated correctly but the data is invalid because the first item is not an integer',
-    },
-    'items and subitems': 'Not implemented',
+  "validate definition against metaschema": "Not implemented",
+  "maxLength validation": {
+    "two supplementary Unicode code points is long enough":
+      "No one supports this"
   },
-  maxItems: false,
-  minItems: false,
-  uniqueItems: false,
-  additionalItems: false,
-  // // String
-  format: false,
-  maxLength: {
-    skip: false,
-    'maxLength validation': {
-      'two supplementary Unicode code points is long enough': 'Not implemented',
-    },
+  "minLength validation": {
+    "one supplementary Unicode code point is not long enough":
+      "No one supports this"
   },
-  minLength: {
-    skip: false,
-    'minLength validation': {
-      'one supplementary Unicode code point is not long enough': 'Not implemented',
-    },
-  },
-  pattern: false,
-  // // Number & Integer
-  maximum: false,
-  minimum: false,
-  multipleOf: {
-    'float division = inf': {
-      'always invalid, but naive implementations may raise an overflow error': 'Needs investigation',
-    },
-  },
-  // // All
-  required: false,
-  type: false,
-  enum: false,
-  oneOf: false,
-  anyOf: false,
-  allOf: false,
-  dependencies: false,
-  default: false,
+
+  // Sub items
+  "items and subitems": "Not implemented",
+
+  // Ref
+  "$id inside an unknown keyword is not a real identifier": "Not implemented",
+
+  // Needs investigation
+  "evaluating the same schema location against the same data location twice is not a sign of an infinite loop":
+    "Needs investigation",
+  "float division = inf": {
+    "always invalid, but naive implementations may raise an overflow error":
+      "Needs investigation"
+  }
 };
 
-const logData = false;
-const logSchema = false;
+const filesToSkip: string[] = [
+  // References
+  "refRemote",
+  "id",
+  "ref"
+];
 
 const schemaShield = new SchemaShield();
 
-for (let testGroup in jsonTests) {
-  if (
-    typeof jsonTestsToSkip[testGroup] === 'string' ||
-    jsonTestsToSkip[testGroup] === true ||
-    jsonTestsToSkip[testGroup]?.skip ||
-    testGroup in jsonTestsToSkip === false
-  ) {
-    let message = `Skipping test group "${testGroup}" because`;
-    if (testGroup in jsonTestsToSkip === false) {
-      message += ' it is not in jsonTestsToSkip';
-    } else if (jsonTestsToSkip[testGroup] === true) {
-      message += ' it is marked as true in jsonTestsToSkip';
-    } else if (typeof jsonTestsToSkip[testGroup] === 'string') {
-      message += ` it is marked as "${jsonTestsToSkip[testGroup]}" in jsonTestsToSkip`;
-    } else if (jsonTestsToSkip[testGroup]?.skip) {
-      message += ' it is marked as skip in jsonTestsToSkip';
-    }
-
-    describe.skip(message, () => {
-      it('should be skipped', () => {});
+for (let file in jsonTestFiles) {
+  if (filesToSkip.includes(file)) {
+    describe.skip(file, () => {
+      it("Not implemented", () => {});
     });
     continue;
   }
 
-  for (let i = 0; i < jsonTests[testGroup].length; i++) {
-    const { description: groupDescription, schema, tests } = jsonTests[testGroup][i];
+  const jsonTests = jsonTestFiles[file];
 
-    let validate;
+  for (let i = 0; i < jsonTests.length; i++) {
+    const { description: groupDescription, schema, tests } = jsonTests[i];
 
-    function setup() {
-      if (validate) {
-        return { validate };
-      }
-      validate = schemaShield.compile(schema);
-      if (logSchema) {
-        console.log(JSON.stringify(schema, null, 2));
-        console.log(stringifySchema(validate));
-      }
-      return { validate };
-    }
-
-    if (jsonTestsToSkip[testGroup][groupDescription] === true) {
-      describe.skip(`Skipping test group  "${testGroup}/${groupDescription}" because it is marked as true in jsonTestsToSkip`, () => {
-        it('should be skipped', () => {});
-      });
-      continue;
-    }
-
-    if (typeof jsonTestsToSkip[testGroup][groupDescription] === 'string') {
-      console.log('Skipping test group', groupDescription, 'because', jsonTestsToSkip[testGroup][groupDescription]);
-      describe.skip(`Skipping test group "${testGroup}/${groupDescription}" because it is marked as "${jsonTestsToSkip[testGroup][groupDescription]}" in jsonTestsToSkip`, () => {
-        it('should be skipped', () => {});
+    if (typeof jsonTestsToSkip[groupDescription] === "string") {
+      describe.skip(groupDescription, () => {
+        it(jsonTestsToSkip[groupDescription], () => {});
       });
       continue;
     }
@@ -148,28 +80,42 @@ for (let testGroup in jsonTests) {
         const { description, data, valid } = tests[j];
 
         if (
-          typeof jsonTestsToSkip[testGroup] === 'object' &&
-          typeof jsonTestsToSkip[testGroup][groupDescription] === 'object' &&
-          jsonTestsToSkip[testGroup][groupDescription][description]
+          typeof jsonTestsToSkip[groupDescription] === "object" &&
+          typeof jsonTestsToSkip[groupDescription][description] === "string"
         ) {
-          it.skip(`Skipping test "${description}" because it is marked as "${jsonTestsToSkip[testGroup][groupDescription][description]}" in jsonTestsToSkip`, () => {});
+          it.skip(`${description} - ${jsonTestsToSkip[groupDescription][description]}`, () => {});
           continue;
         }
 
         it(description, () => {
-          const { validate } = setup();
-          if (logData) {
-            console.log('data', data);
-          }
+          let validate;
+          let result;
+          try {
+            let clonedSchema = deepClone(schema);
+            validate = schemaShield.compile(schema);
+            result = validate(data);
 
-          const result = validate(data);
-
-          expect(result).toEqual(
-            expect.objectContaining({
+            expect(result).toEqual({
               valid,
-              errors: valid ? [] : expect.any(Array),
-            })
-          );
+              error: valid ? null : expect.any(ValidationError),
+              data: data === null ? null : expect.anything()
+            });
+
+            expect(clonedSchema).toEqual(schema);
+          } catch (e) {
+            console.log("schema", JSON.stringify(schema, null, 2));
+            console.log("compiledSchema", stringifySchema(validate));
+            console.log("data", data);
+            console.log("valid", valid);
+            console.log("result", result);
+            console.log(
+              "e",
+              result.error?.getCause ? result.error.getCause() : e
+            );
+            console.log("file", file);
+
+            throw e;
+          }
         });
       }
     });

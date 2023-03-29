@@ -1,40 +1,70 @@
-import { SchemaShield, ValidationErrorProps } from './index';
+import { CompiledSchema } from "./index";
 
 export class ValidationError extends Error {
-  name: string;
-  pointer: string;
   message: string;
-  value: any;
-  code: string;
+  item: string | number;
+  keyword: string;
+  cause: ValidationError;
+  path: string = "";
+  data?: any;
+  schema?: CompiledSchema;
 
-  constructor(
-    message: string,
-    options: ValidationErrorProps = {
-      pointer: '',
-      value: null,
-      code: '',
+  private _getCause(pointer = "#") {
+    const path =
+      pointer +
+      "/" +
+      this.keyword +
+      (typeof this.item !== "undefined" ? "/" + this.item : "");
+
+    if (!this.cause) {
+      this.path = path;
+      return this;
     }
-  ) {
-    super(message);
-    this.name = 'ValidationError';
-    this.pointer = options.pointer;
-    this.message = message;
-    this.value = options.value;
-    this.code = options.code;
+
+    return this.cause._getCause(path);
+  }
+
+  getCause() {
+    return this._getCause();
   }
 }
 
-export const defaultValidator = (schema, data, pointer) => {
-  return [
-    new ValidationError('No validator for this schema', {
-      pointer,
-      value: data,
-      code: 'NO_VALIDATOR',
-    }),
-  ];
-};
+export interface DefineErrorOptions {
+  item?: any; // Final item in the path
+  cause?: ValidationError; // Cause of the error
+  data?: any; // Data that caused the error
+}
 
-export function deepEqual(obj: Array<any> | Record<string, any>, other: Array<any> | Record<string, any>) {
+export interface DefineErrorFunction {
+  (message: string, options?: DefineErrorOptions): ValidationError;
+}
+
+export function getDefinedErrorFunctionForKey(
+  key: string,
+  schema: CompiledSchema
+) {
+  const KeywordError = new ValidationError(`Invalid ${key}`);
+  KeywordError.keyword = key;
+  KeywordError.schema = schema;
+
+  const defineError: DefineErrorFunction = (message, options = {}) => {
+    KeywordError.message = message;
+    KeywordError.item = options.item;
+    KeywordError.cause = options.cause;
+    KeywordError.data = options.data;
+    return KeywordError;
+  };
+
+  return getNamedFunction<DefineErrorFunction>(
+    `defineError_${key}`,
+    defineError
+  );
+}
+
+export function deepEqual(
+  obj: Array<any> | Record<string, any>,
+  other: Array<any> | Record<string, any>
+) {
   if (Array.isArray(obj) && Array.isArray(other)) {
     if (obj.length !== other.length) {
       return false;
@@ -49,7 +79,7 @@ export function deepEqual(obj: Array<any> | Record<string, any>, other: Array<an
     return true;
   }
 
-  if (typeof obj === 'object' && typeof other === 'object') {
+  if (typeof obj === "object" && typeof other === "object") {
     if (obj === null || other === null) {
       return obj === other;
     }
@@ -72,7 +102,7 @@ export function deepEqual(obj: Array<any> | Record<string, any>, other: Array<an
 }
 
 export function isObject(data) {
-  return typeof data === 'object' && data !== null && !Array.isArray(data);
+  return typeof data === "object" && data !== null && !Array.isArray(data);
 }
 
 export function areCloseEnough(a, b, epsilon = 1e-15) {
@@ -100,8 +130,15 @@ export function deepClone(obj: any): any {
     return result;
   }
 
+  // Is class instance of any kind
+  if (obj && obj.constructor && obj.constructor.name !== "Object") {
+    return obj;
+  }
+
   if (isObject(obj)) {
-    const result = {};
+    const result = {
+      ...obj
+    };
     for (const key in obj) {
       result[key] = deepClone(obj[key]);
     }
@@ -109,4 +146,12 @@ export function deepClone(obj: any): any {
   }
 
   return obj;
+}
+
+export function isCompiledSchema(subSchema: any): subSchema is CompiledSchema {
+  return isObject(subSchema) && "$validate" in subSchema;
+}
+
+export function getNamedFunction<T>(name: string, fn: T): T {
+  return Object.defineProperty(fn, "name", { value: name });
 }

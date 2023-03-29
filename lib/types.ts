@@ -1,177 +1,49 @@
-import { isObject, ValidationError } from './utils';
-import { ValidatorFunction } from './index';
+import { TypeFunction } from "./index";
+import { isObject } from "./utils";
 
-export const Types: Record<string, ValidatorFunction> = {
-  object(schema, data, pointer) {
-    if (isObject(data)) {
-      return {
-        valid: true,
-        errors: [],
-        data,
-      };
-    }
-
-    return {
-      valid: false,
-      errors: [
-        new ValidationError('Data is not an object', {
-          pointer,
-          value: data,
-          code: 'NOT_AN_OBJECT',
-        }),
-      ],
-      data,
-    };
+export const Types: Record<string, TypeFunction | false> = {
+  object(data) {
+    return isObject(data);
   },
-  array(schema, data, pointer) {
+  array(data) {
     if (Array.isArray(data)) {
-      return {
-        valid: true,
-        errors: [],
-        data,
-      };
+      return true;
     }
 
-    if (typeof data === 'object' && data !== null && 'length' in data) {
-      // Check if the first key is a number and the length is the same as the number of keys - 1 (length)
-      const keys = Object.keys(data);
-      if (keys.length > 0 && (keys[0] !== '0' || keys.length !== data.length)) {
-        return {
-          valid: false,
-          errors: [
-            new ValidationError('Data is not an array', {
-              pointer,
-              value: data,
-              code: 'NOT_AN_ARRAY',
-            }),
-          ],
-          data,
-        };
-      }
-
-      return {
-        valid: true,
-        errors: [],
-        data,
-      };
-    }
-
-    return {
-      valid: false,
-      errors: [
-        new ValidationError('Data is not an array', {
-          pointer,
-          value: data,
-          code: 'NOT_AN_ARRAY',
-        }),
-      ],
-      data,
-    };
+    return (
+      typeof data === "object" &&
+      data !== null &&
+      "length" in data &&
+      "0" in data &&
+      Object.keys(data).length - 1 === data.length
+    );
   },
-  string(schema, data, pointer) {
-    if (typeof data === 'string') {
-      return {
-        valid: true,
-        errors: [],
-        data,
-      };
-    }
-
-    return {
-      valid: false,
-      errors: [
-        new ValidationError('Data is not a string', {
-          pointer,
-          value: data,
-          code: 'NOT_A_STRING',
-        }),
-      ],
-      data,
-    };
+  string(data) {
+    return typeof data === "string";
   },
-  number(schema, data, pointer) {
-    if (typeof data === 'number') {
-      return {
-        valid: true,
-        errors: [],
-        data,
-      };
-    }
-
-    return {
-      valid: false,
-      errors: [
-        new ValidationError('Data is not a number', {
-          pointer,
-          value: data,
-          code: 'NOT_A_NUMBER',
-        }),
-      ],
-      data,
-    };
+  number(data) {
+    return typeof data === "number";
   },
-  integer(schema, data, pointer) {
-    if (typeof data === 'number' && Number.isInteger(data)) {
-      return {
-        valid: true,
-        errors: [],
-        data,
-      };
-    }
-
-    return {
-      valid: false,
-      errors: [
-        new ValidationError('Data is not an integer', {
-          pointer,
-          value: data,
-          code: 'NOT_AN_INTEGER',
-        }),
-      ],
-      data,
-    };
+  integer(data) {
+    return typeof data === "number" && data % 1 === 0;
   },
-  boolean(schema, data, pointer) {
-    // Check if data is a boolean like value
-    if (typeof data === 'boolean') {
-      return {
-        valid: true,
-        errors: [],
-        data,
-      };
-    }
-
-    return {
-      valid: false,
-      errors: [
-        new ValidationError('Data is not a boolean', {
-          pointer,
-          value: data,
-          code: 'NOT_A_BOOLEAN',
-        }),
-      ],
-      data,
-    };
+  boolean(data) {
+    return typeof data === "boolean";
   },
-  null(schema, data, pointer) {
-    if (data === null) {
-      return {
-        valid: true,
-        errors: [],
-        data,
-      };
-    }
-
-    return {
-      valid: false,
-      errors: [
-        new ValidationError('Data is not null', {
-          pointer,
-          value: data,
-          code: 'NOT_NULL',
-        }),
-      ],
-      data,
-    };
+  null(data) {
+    return data === null;
   },
+
+  // Not implemented yet
+  timestamp: false,
+  int8: false,
+  unit8: false,
+  int16: false,
+  unit16: false,
+  int32: false,
+  unit32: false,
+  float32: false,
+  float64: false
+
+
 };

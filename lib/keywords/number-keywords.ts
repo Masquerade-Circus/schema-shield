@@ -1,135 +1,95 @@
-import { areCloseEnough, ValidationError } from '../utils';
-import { ValidatorFunction } from '../index';
+import { KeywordFunction } from "../index";
+import { areCloseEnough } from "../utils";
 
-export const NumberKeywords: Record<string, ValidatorFunction> = {
-  minimum(schema, data, pointer, schemaShieldInstance) {
-    if (typeof data !== 'number') {
-      return { valid: true, errors: [], data };
+export const NumberKeywords: Record<string, KeywordFunction> = {
+  minimum(schema, data, defineError, instance) {
+    if (typeof data !== "number") {
+      return;
     }
 
     let min = schema.minimum;
-    if (typeof schema.exclusiveMinimum === 'number') {
+    if (typeof schema.exclusiveMinimum === "number") {
       min = schema.exclusiveMinimum + 1e-15;
     } else if (schema.exclusiveMinimum === true) {
       min += 1e-15;
     }
 
-    const valid = data >= min;
+    if (data < min) {
+      return defineError("Value is less than the minimum", { data });
+    }
 
-    return {
-      valid,
-      errors: valid
-        ? []
-        : [
-            new ValidationError('Number is too small', {
-              pointer,
-              value: data,
-              code: 'NUMBER_TOO_SMALL',
-            }),
-          ],
-      data,
-    };
+    return;
   },
 
-  maximum(schema, data, pointer, schemaShieldInstance) {
-    if (typeof data !== 'number') {
-      return { valid: true, errors: [], data };
+  maximum(schema, data, defineError, instance) {
+    if (typeof data !== "number") {
+      return;
     }
 
     let max = schema.maximum;
-    if (typeof schema.exclusiveMaximum === 'number') {
+    if (typeof schema.exclusiveMaximum === "number") {
       max = schema.exclusiveMaximum - 1e-15;
     } else if (schema.exclusiveMaximum === true) {
       max -= 1e-15;
     }
 
-    const valid = data <= max;
+    if (data > max) {
+      return defineError("Value is greater than the maximum", { data });
+    }
 
-    return {
-      valid,
-      errors: valid
-        ? []
-        : [
-            new ValidationError('Number is too big', {
-              pointer,
-              value: data,
-              code: 'NUMBER_TOO_BIG',
-            }),
-          ],
-      data,
-    };
+    return;
   },
 
-  multipleOf(schema, data, pointer) {
-    if (typeof data !== 'number') {
-      return { valid: true, errors: [], data };
+  multipleOf(schema, data, defineError, instance) {
+    if (typeof data !== "number") {
+      return;
     }
 
     const quotient = data / schema.multipleOf;
 
-    // Detect overflow handling in JS
     if (!isFinite(quotient)) {
-      return { valid: true, errors: [], data };
+      return;
     }
 
-    const areMultiples = areCloseEnough(quotient, Math.round(quotient));
-
-    return {
-      valid: areMultiples,
-      errors: areMultiples
-        ? []
-        : [
-            new ValidationError('Number is not a multiple of', {
-              pointer,
-              value: data,
-              code: 'NUMBER_NOT_MULTIPLE_OF',
-            }),
-          ],
-      data,
-    };
-  },
-
-  exclusiveMinimum(schema, data, pointer) {
-    if (typeof data !== 'number' || typeof schema.exclusiveMinimum !== 'number' || 'minimum' in schema) {
-      return { valid: true, errors: [], data };
+    if (!areCloseEnough(quotient, Math.round(quotient))) {
+      return defineError("Value is not a multiple of the multipleOf", { data });
     }
 
-    const valid = data > schema.exclusiveMinimum + 1e-15;
-
-    return {
-      valid,
-      errors: valid
-        ? []
-        : [
-            new ValidationError('Number is too small', {
-              pointer,
-              value: data,
-              code: 'NUMBER_TOO_SMALL',
-            }),
-          ],
-      data,
-    };
+    return;
   },
 
-  exclusiveMaximum(schema, data, pointer) {
-    if (typeof data !== 'number' || typeof schema.exclusiveMaximum !== 'number' || 'maximum' in schema) {
-      return { valid: true, errors: [], data };
+  exclusiveMinimum(schema, data, defineError, instance) {
+    if (
+      typeof data !== "number" ||
+      typeof schema.exclusiveMinimum !== "number" ||
+      "minimum" in schema
+    ) {
+      return;
     }
 
-    const valid = data < schema.exclusiveMaximum - 1e-15;
+    if (data <= schema.exclusiveMinimum + 1e-15) {
+      return defineError("Value is less than or equal to the exclusiveMinimum");
+    }
 
-    return {
-      valid,
-      errors: valid
-        ? []
-        : [
-            new ValidationError('Number is too big', {
-              pointer,
-              value: data,
-              code: 'NUMBER_TOO_BIG',
-            }),
-          ],
-      data,
-    };
+    return;
   },
+
+  exclusiveMaximum(schema, data, defineError, instance) {
+    if (
+      typeof data !== "number" ||
+      typeof schema.exclusiveMaximum !== "number" ||
+      "maximum" in schema
+    ) {
+      return;
+    }
+
+    if (data >= schema.exclusiveMaximum) {
+      return defineError(
+        "Value is greater than or equal to the exclusiveMaximum",
+        { data }
+      );
+    }
+
+    return;
+  }
 };

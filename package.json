@@ -69,7 +69,7 @@
     "node": ">=12.0.0"
   },
   "scripts": {
-    "test": "mocha --bail --recursive --no-timeouts --exit --require ts-node/register --enable-source-maps tests/**/*.test.ts",
+    "test": "mocha --bail --recursive --no-timeouts  --forbid-only --exit --require ts-node/register --enable-source-maps tests/**/*.test.ts",
     "dev:test": "nodemon -e ts,js -w ./tests -w ./lib --exec npm run test",
     "dev:source": "NODE_ENV=development nodemon --enable-source-maps -e tsx,ts,json,css -w ./lib -w ./www source.js",
     "build": "node source.js",

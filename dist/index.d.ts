@@ -1,46 +1,42 @@
-import { ValidationError } from './utils';
-export interface ValidationErrorProps {
-    pointer: string;
-    value: any;
-    code: string;
+import { DefineErrorFunction, ValidationError } from "./utils";
+export type Result = void | ValidationError;
+export interface KeywordFunction {
+    (schema: CompiledSchema, data: any, defineError: DefineErrorFunction, instance: SchemaShield): Result;
 }
-export interface Result {
-    valid: boolean;
-    errors: ValidationError[];
-    data: any;
-}
-export interface ValidatorFunction {
-    (schema: CompiledSchema, data: any, pointer: string, schemaShieldInstance: SchemaShield): Result;
+export interface TypeFunction {
+    (data: any): boolean;
 }
 export interface FormatFunction {
     (data: any): boolean;
 }
+export interface ValidateFunction {
+    (data: any): Result;
+}
 export interface CompiledSchema {
-    pointer: string;
-    validator?: ValidatorFunction;
-    type?: string;
-    validators?: ValidatorFunction[];
-    keywords?: Record<string, ValidatorFunction>;
+    $validate?: ValidateFunction;
     [key: string]: any;
 }
 export interface Validator {
-    (data: any): Result;
+    (data: any): {
+        data: any;
+        error: ValidationError | null;
+        valid: boolean;
+    };
     compiledSchema: CompiledSchema;
 }
 export declare class SchemaShield {
-    types: Map<string, ValidatorFunction>;
-    formats: Map<string, FormatFunction>;
-    keywords: Map<string, ValidatorFunction>;
-    constructor();
-    addType(name: string, validator: ValidatorFunction): void;
+    types: Map<string, false | TypeFunction>;
+    formats: Map<string, false | FormatFunction>;
+    keywords: Map<string, false | KeywordFunction>;
+    immutable: boolean;
+    constructor({ immutable }?: {
+        immutable?: boolean;
+    });
+    addType(name: string, validator: TypeFunction): void;
     addFormat(name: string, validator: FormatFunction): void;
-    addKeyword(name: string, validator: ValidatorFunction): void;
+    addKeyword(name: string, validator: KeywordFunction): void;
     compile(schema: any): Validator;
     private compileSchema;
-    private handleSubSchema;
-    private validateTypes;
-    private validateKeywords;
-    private isSchemaOrKeywordPresent;
-    private isSchemaLike;
+    isSchemaLike(subSchema: any): boolean;
 }
 //# sourceMappingURL=index.d.ts.map

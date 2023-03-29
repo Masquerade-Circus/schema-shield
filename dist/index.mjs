@@ -115,24 +115,41 @@ var require_is_my_ip_valid = __commonJS({
 
 // lib/utils.ts
 var ValidationError = class extends Error {
-  name;
-  pointer;
   message;
-  value;
-  code;
-  constructor(message, options = {
-    pointer: "",
-    value: null,
-    code: ""
-  }) {
-    super(message);
-    this.name = "ValidationError";
-    this.pointer = options.pointer;
-    this.message = message;
-    this.value = options.value;
-    this.code = options.code;
+  item;
+  keyword;
+  cause;
+  path = "";
+  data;
+  schema;
+  _getCause(pointer = "#") {
+    const path = pointer + "/" + this.keyword + (typeof this.item !== "undefined" ? "/" + this.item : "");
+    if (!this.cause) {
+      this.path = path;
+      return this;
+    }
+    return this.cause._getCause(path);
+  }
+  getCause() {
+    return this._getCause();
   }
 };
+function getDefinedErrorFunctionForKey(key, schema) {
+  const KeywordError = new ValidationError(`Invalid ${key}`);
+  KeywordError.keyword = key;
+  KeywordError.schema = schema;
+  const defineError = (message, options = {}) => {
+    KeywordError.message = message;
+    KeywordError.item = options.item;
+    KeywordError.cause = options.cause;
+    KeywordError.data = options.data;
+    return KeywordError;
+  };
+  return getNamedFunction(
+    `defineError_${key}`,
+    defineError
+  );
+}
 function deepEqual(obj, other) {
   if (Array.isArray(obj) && Array.isArray(other)) {
     if (obj.length !== other.length) {
@@ -168,6 +185,34 @@ function isObject(data) {
 function areCloseEnough(a, b, epsilon = 1e-15) {
   return Math.abs(a - b) <= epsilon * Math.max(Math.abs(a), Math.abs(b));
 }
+function deepClone(obj) {
+  if (Array.isArray(obj)) {
+    const result = [];
+    for (let i = 0; i < obj.length; i++) {
+      result[i] = deepClone(obj[i]);
+    }
+    return result;
+  }
+  if (obj && obj.constructor && obj.constructor.name !== "Object") {
+    return obj;
+  }
+  if (isObject(obj)) {
+    const result = {
+      ...obj
+    };
+    for (const key in obj) {
+      result[key] = deepClone(obj[key]);
+    }
+    return result;
+  }
+  return obj;
+}
+function isCompiledSchema(subSchema) {
+  return isObject(subSchema) && "$validate" in subSchema;
+}
+function getNamedFunction(name, fn) {
+  return Object.defineProperty(fn, "name", { value: name });
+}
 
 // lib/formats.ts
 var import_is_my_ip_valid = __toESM(require_is_my_ip_valid());
@@ -181,10 +226,6 @@ var RegExps = {
   "json-pointer": /^\/(?:[^~]|~0|~1)*$/,
   "relative-json-pointer": /^([0-9]+)(#|\/(?:[^~]|~0|~1)*)?$/
 };
-function notImplementedFormat(data) {
-  throw new ValidationError(`Format "${data}" is not implemented yet. Please open an issue on GitHub.`);
-  return false;
-}
 var Formats = {
   ["date-time"](data) {
     const upperCaseData = data.toUpperCase();
@@ -248,350 +289,221 @@ var Formats = {
     return RegExps.time.test(data);
   },
   // Not supported yet
-  duration: notImplementedFormat,
-  "idn-email": notImplementedFormat,
-  "idn-hostname": notImplementedFormat,
-  uuid: notImplementedFormat,
-  "uri-reference": notImplementedFormat,
-  iri: notImplementedFormat,
-  "iri-reference": notImplementedFormat,
-  "uri-template": notImplementedFormat
+  duration: false,
+  "idn-email": false,
+  "idn-hostname": false,
+  uuid: false,
+  "uri-reference": false,
+  iri: false,
+  "iri-reference": false,
+  "uri-template": false
 };
 
 // lib/types.ts
 var Types = {
-  object(schema, data, pointer) {
-    if (isObject(data)) {
-      return {
-        valid: true,
-        errors: [],
-        data
-      };
-    }
-    return {
-      valid: false,
-      errors: [
-        new ValidationError("Data is not an object", {
-          pointer,
-          value: data,
-          code: "NOT_AN_OBJECT"
-        })
-      ],
-      data
-    };
+  object(data) {
+    return isObject(data);
   },
-  array(schema, data, pointer) {
+  array(data) {
     if (Array.isArray(data)) {
-      return {
-        valid: true,
-        errors: [],
-        data
-      };
+      return true;
     }
-    if (typeof data === "object" && data !== null && "length" in data) {
-      const keys = Object.keys(data);
-      if (keys.length > 0 && (keys[0] !== "0" || keys.length !== data.length)) {
-        return {
-          valid: false,
-          errors: [
-            new ValidationError("Data is not an array", {
-              pointer,
-              value: data,
-              code: "NOT_AN_ARRAY"
-            })
-          ],
-          data
-        };
-      }
-      return {
-        valid: true,
-        errors: [],
-        data
-      };
-    }
-    return {
-      valid: false,
-      errors: [
-        new ValidationError("Data is not an array", {
-          pointer,
-          value: data,
-          code: "NOT_AN_ARRAY"
-        })
-      ],
-      data
-    };
+    return typeof data === "object" && data !== null && "length" in data && "0" in data && Object.keys(data).length - 1 === data.length;
   },
-  string(schema, data, pointer) {
-    if (typeof data === "string") {
-      return {
-        valid: true,
-        errors: [],
-        data
-      };
-    }
-    return {
-      valid: false,
-      errors: [
-        new ValidationError("Data is not a string", {
-          pointer,
-          value: data,
-          code: "NOT_A_STRING"
-        })
-      ],
-      data
-    };
+  string(data) {
+    return typeof data === "string";
   },
-  number(schema, data, pointer) {
-    if (typeof data === "number") {
-      return {
-        valid: true,
-        errors: [],
-        data
-      };
-    }
-    return {
-      valid: false,
-      errors: [
-        new ValidationError("Data is not a number", {
-          pointer,
-          value: data,
-          code: "NOT_A_NUMBER"
-        })
-      ],
-      data
-    };
+  number(data) {
+    return typeof data === "number";
   },
-  integer(schema, data, pointer) {
-    if (typeof data === "number" && Number.isInteger(data)) {
-      return {
-        valid: true,
-        errors: [],
-        data
-      };
-    }
-    return {
-      valid: false,
-      errors: [
-        new ValidationError("Data is not an integer", {
-          pointer,
-          value: data,
-          code: "NOT_AN_INTEGER"
-        })
-      ],
-      data
-    };
+  integer(data) {
+    return typeof data === "number" && data % 1 === 0;
   },
-  boolean(schema, data, pointer) {
-    if (typeof data === "boolean") {
-      return {
-        valid: true,
-        errors: [],
-        data
-      };
-    }
-    return {
-      valid: false,
-      errors: [
-        new ValidationError("Data is not a boolean", {
-          pointer,
-          value: data,
-          code: "NOT_A_BOOLEAN"
-        })
-      ],
-      data
-    };
+  boolean(data) {
+    return typeof data === "boolean";
   },
-  null(schema, data, pointer) {
-    if (data === null) {
-      return {
-        valid: true,
-        errors: [],
-        data
-      };
-    }
-    return {
-      valid: false,
-      errors: [
-        new ValidationError("Data is not null", {
-          pointer,
-          value: data,
-          code: "NOT_NULL"
-        })
-      ],
-      data
-    };
-  }
+  null(data) {
+    return data === null;
+  },
+  // Not implemented yet
+  timestamp: false,
+  int8: false,
+  unit8: false,
+  int16: false,
+  unit16: false,
+  int32: false,
+  unit32: false,
+  float32: false,
+  float64: false
 };
 
 // lib/keywords/array-keywords.ts
 var ArrayKeywords = {
-  items(schema, data, pointer, schemaShieldInstance) {
+  items(schema, data, defineError) {
     if (!Array.isArray(data)) {
-      return { valid: true, errors: [], data };
+      return;
     }
-    const errors = [];
-    const finalData = [...data];
     const schemaItems = schema.items;
-    const schemaItemsLength = Array.isArray(schemaItems) ? schemaItems.length : 0;
     const dataLength = data.length;
+    if (typeof schemaItems === "boolean") {
+      if (schemaItems === false && dataLength > 0) {
+        return defineError("Array items are not allowed", { data });
+      }
+      return;
+    }
     if (Array.isArray(schemaItems)) {
+      const schemaItemsLength = schemaItems.length;
       const itemsLength = Math.min(schemaItemsLength, dataLength);
       for (let i = 0; i < itemsLength; i++) {
-        if (typeof schemaItems[i] === "boolean") {
-          if (schemaItems[i] === false && typeof data[i] !== "undefined") {
-            errors.push(
-              new ValidationError("Array item is not allowed", {
-                pointer: `${pointer}/${i}`,
-                value: data[i],
-                code: "ARRAY_ITEM_NOT_ALLOWED"
-              })
-            );
+        const schemaItem = schemaItems[i];
+        if (typeof schemaItem === "boolean") {
+          if (schemaItem === false && typeof data[i] !== "undefined") {
+            return defineError("Array item is not allowed", {
+              item: i,
+              data: data[i]
+            });
           }
           continue;
         }
-        const { validator } = schemaItems[i];
-        if (!validator) {
-          continue;
+        if (isCompiledSchema(schemaItem)) {
+          const error = schemaItem.$validate(data[i]);
+          if (error) {
+            return defineError("Array item is invalid", {
+              item: i,
+              cause: error,
+              data: data[i]
+            });
+          }
         }
-        const validatorResult = validator(schemaItems[i], finalData[i], `${pointer}/${i}`, schemaShieldInstance);
-        finalData[i] = validatorResult.data;
-        if (!validatorResult.valid) {
-          errors.push(...validatorResult.errors);
-        }
       }
-    } else if (typeof schemaItems === "boolean") {
-      if (schemaItems === false && dataLength > 0) {
-        errors.push(
-          new ValidationError("Array is not allowed", {
-            pointer,
-            value: data,
-            code: "ARRAY_NOT_ALLOWED"
-          })
-        );
-      }
-    } else {
-      const { validator } = schemaItems;
-      if (!validator) {
-        return { valid: true, errors: [], data };
-      }
+      return;
+    }
+    if (isCompiledSchema(schemaItems)) {
       for (let i = 0; i < dataLength; i++) {
-        const validatorErrors = validator(schemaItems, finalData[i], `${pointer}/${i}`, schemaShieldInstance);
-        finalData[i] = validatorErrors.data;
-        if (!validatorErrors.valid) {
-          errors.push(...validatorErrors.errors);
+        const error = schemaItems.$validate(data[i]);
+        if (error) {
+          return defineError("Array item is invalid", {
+            item: i,
+            cause: error,
+            data: data[i]
+          });
         }
       }
     }
-    return { valid: errors.length === 0, errors, data: finalData };
+    return;
   },
-  minItems(schema, data, pointer) {
+  elements(schema, data, defineError) {
+    if (!Array.isArray(data) || !isCompiledSchema(schema.elements)) {
+      return;
+    }
+    for (let i = 0; i < data.length; i++) {
+      const error = schema.elements.$validate(data[i]);
+      if (error) {
+        return defineError("Array item is invalid", {
+          item: i,
+          cause: error,
+          data: data[i]
+        });
+      }
+    }
+    return;
+  },
+  minItems(schema, data, defineError) {
     if (!Array.isArray(data) || data.length >= schema.minItems) {
-      return { valid: true, errors: [], data };
+      return;
     }
-    return {
-      valid: false,
-      errors: [
-        new ValidationError("Array is too short", {
-          pointer,
-          value: data,
-          code: "ARRAY_TOO_SHORT"
-        })
-      ],
-      data
-    };
+    return defineError("Array is too short", { data });
   },
-  maxItems(schema, data, pointer) {
+  maxItems(schema, data, defineError) {
     if (!Array.isArray(data) || data.length <= schema.maxItems) {
-      return { valid: true, errors: [], data };
+      return;
     }
-    return {
-      valid: false,
-      errors: [
-        new ValidationError("Array is too long", {
-          pointer,
-          value: data,
-          code: "ARRAY_TOO_LONG"
-        })
-      ],
-      data
-    };
+    return defineError("Array is too long", { data });
   },
-  additionalItems(schema, data, pointer, schemaShieldInstance) {
+  additionalItems(schema, data, defineError) {
     if (!Array.isArray(data) || !schema.items || !Array.isArray(schema.items)) {
-      return { valid: true, errors: [], data };
+      return;
     }
     if (schema.additionalItems === false) {
       if (data.length > schema.items.length) {
-        return {
-          valid: false,
-          errors: [
-            new ValidationError("Array has too many items", {
-              pointer,
-              value: data,
-              code: "ARRAY_TOO_MANY_ITEMS"
-            })
-          ],
-          data
-        };
+        return defineError("Array is too long", { data });
       }
-      return { valid: true, errors: [], data };
+      return;
     }
-    const errors = [];
-    let finalData = [...data];
-    if (typeof schema.additionalItems === "object") {
-      for (let i = schema.items.length; i < finalData.length; i++) {
-        const { validator } = schema.additionalItems;
-        const validatorResult = validator(schema.additionalItems, finalData[i], `${pointer}/${i}`, schemaShieldInstance);
-        if (!validatorResult.valid) {
-          errors.push(...validatorResult.errors);
+    if (isObject(schema.additionalItems)) {
+      if (isCompiledSchema(schema.additionalItems)) {
+        for (let i = schema.items.length; i < data.length; i++) {
+          const error = schema.additionalItems.$validate(data[i]);
+          if (error) {
+            return defineError("Array item is invalid", {
+              item: i,
+              cause: error,
+              data: data[i]
+            });
+          }
         }
-        finalData[i] = validatorResult.data;
+        return;
       }
+      return;
     }
-    return { valid: errors.length === 0, errors, data: finalData };
+    return;
   },
-  uniqueItems(schema, data, pointer) {
+  uniqueItems(schema, data, defineError) {
     if (!Array.isArray(data) || !schema.uniqueItems) {
-      return { valid: true, errors: [], data };
+      return;
     }
-    const unique = /* @__PURE__ */ new Map();
+    const unique = /* @__PURE__ */ new Set();
     for (const item of data) {
       let itemStr;
       if (typeof item === "string") {
-        itemStr = `"${item}"`;
+        itemStr = `s:${item}`;
       } else if (isObject(item)) {
-        const sorted = Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b)));
-        itemStr = JSON.stringify(sorted);
+        itemStr = `o:${JSON.stringify(
+          Object.fromEntries(
+            Object.entries(item).sort(([a], [b]) => a.localeCompare(b))
+          )
+        )}`;
       } else if (Array.isArray(item)) {
         itemStr = JSON.stringify(item);
       } else {
-        itemStr = item;
+        itemStr = String(item);
       }
       if (unique.has(itemStr)) {
-        return {
-          valid: false,
-          errors: [
-            new ValidationError("Array items are not unique", {
-              pointer,
-              value: data,
-              code: "ARRAY_ITEMS_NOT_UNIQUE"
-            })
-          ],
-          data
-        };
-      } else {
-        unique.set(itemStr, true);
+        return defineError("Array items are not unique", { data: item });
       }
+      unique.add(itemStr);
     }
-    return { valid: true, errors: [], data };
+    return;
+  },
+  contains(schema, data, defineError) {
+    if (!Array.isArray(data)) {
+      return;
+    }
+    if (typeof schema.contains === "boolean") {
+      if (schema.contains) {
+        if (data.length === 0) {
+          return defineError("Array must contain at least one item", { data });
+        }
+        return;
+      }
+      return defineError("Array must not contain any items", { data });
+    }
+    for (let i = 0; i < data.length; i++) {
+      const error = schema.contains.$validate(data[i]);
+      if (!error) {
+        return;
+      }
+      continue;
+    }
+    return defineError("Array must contain at least one item", { data });
   }
 };
 
 // lib/keywords/number-keywords.ts
 var NumberKeywords = {
-  minimum(schema, data, pointer, schemaShieldInstance) {
+  minimum(schema, data, defineError, instance) {
     if (typeof data !== "number") {
-      return { valid: true, errors: [], data };
+      return;
     }
     let min = schema.minimum;
     if (typeof schema.exclusiveMinimum === "number") {
@@ -599,22 +511,14 @@ var NumberKeywords = {
     } else if (schema.exclusiveMinimum === true) {
       min += 1e-15;
     }
-    const valid = data >= min;
-    return {
-      valid,
-      errors: valid ? [] : [
-        new ValidationError("Number is too small", {
-          pointer,
-          value: data,
-          code: "NUMBER_TOO_SMALL"
-        })
-      ],
-      data
-    };
+    if (data < min) {
+      return defineError("Value is less than the minimum", { data });
+    }
+    return;
   },
-  maximum(schema, data, pointer, schemaShieldInstance) {
+  maximum(schema, data, defineError, instance) {
     if (typeof data !== "number") {
-      return { valid: true, errors: [], data };
+      return;
     }
     let max = schema.maximum;
     if (typeof schema.exclusiveMaximum === "number") {
@@ -622,178 +526,134 @@ var NumberKeywords = {
     } else if (schema.exclusiveMaximum === true) {
       max -= 1e-15;
     }
-    const valid = data <= max;
-    return {
-      valid,
-      errors: valid ? [] : [
-        new ValidationError("Number is too big", {
-          pointer,
-          value: data,
-          code: "NUMBER_TOO_BIG"
-        })
-      ],
-      data
-    };
+    if (data > max) {
+      return defineError("Value is greater than the maximum", { data });
+    }
+    return;
   },
-  multipleOf(schema, data, pointer) {
+  multipleOf(schema, data, defineError, instance) {
     if (typeof data !== "number") {
-      return { valid: true, errors: [], data };
+      return;
     }
     const quotient = data / schema.multipleOf;
     if (!isFinite(quotient)) {
-      return { valid: true, errors: [], data };
+      return;
     }
-    const areMultiples = areCloseEnough(quotient, Math.round(quotient));
-    return {
-      valid: areMultiples,
-      errors: areMultiples ? [] : [
-        new ValidationError("Number is not a multiple of", {
-          pointer,
-          value: data,
-          code: "NUMBER_NOT_MULTIPLE_OF"
-        })
-      ],
-      data
-    };
+    if (!areCloseEnough(quotient, Math.round(quotient))) {
+      return defineError("Value is not a multiple of the multipleOf", { data });
+    }
+    return;
   },
-  exclusiveMinimum(schema, data, pointer) {
+  exclusiveMinimum(schema, data, defineError, instance) {
     if (typeof data !== "number" || typeof schema.exclusiveMinimum !== "number" || "minimum" in schema) {
-      return { valid: true, errors: [], data };
+      return;
     }
-    const valid = data > schema.exclusiveMinimum + 1e-15;
-    return {
-      valid,
-      errors: valid ? [] : [
-        new ValidationError("Number is too small", {
-          pointer,
-          value: data,
-          code: "NUMBER_TOO_SMALL"
-        })
-      ],
-      data
-    };
+    if (data <= schema.exclusiveMinimum + 1e-15) {
+      return defineError("Value is less than or equal to the exclusiveMinimum");
+    }
+    return;
   },
-  exclusiveMaximum(schema, data, pointer) {
+  exclusiveMaximum(schema, data, defineError, instance) {
     if (typeof data !== "number" || typeof schema.exclusiveMaximum !== "number" || "maximum" in schema) {
-      return { valid: true, errors: [], data };
+      return;
     }
-    const valid = data < schema.exclusiveMaximum - 1e-15;
-    return {
-      valid,
-      errors: valid ? [] : [
-        new ValidationError("Number is too big", {
-          pointer,
-          value: data,
-          code: "NUMBER_TOO_BIG"
-        })
-      ],
-      data
-    };
+    if (data >= schema.exclusiveMaximum) {
+      return defineError(
+        "Value is greater than or equal to the exclusiveMaximum",
+        { data }
+      );
+    }
+    return;
   }
 };
 
 // lib/keywords/object-keywords.ts
 var ObjectKeywords = {
   // Object
-  required(schema, data, pointer) {
+  required(schema, data, defineError) {
     if (!isObject(data)) {
-      return {
-        valid: true,
-        errors: [],
-        data
-      };
+      return;
     }
-    const errors = [];
     for (let i = 0; i < schema.required.length; i++) {
       const key = schema.required[i];
       if (!data.hasOwnProperty(key)) {
-        errors.push(
-          new ValidationError("Missing required property", {
-            pointer: `${pointer}/${key}`,
-            value: data,
-            code: "MISSING_REQUIRED_PROPERTY"
-          })
-        );
+        return defineError("Required property is missing", {
+          item: key,
+          data: data[key]
+        });
       }
     }
-    return { valid: errors.length === 0, errors, data };
+    return;
   },
-  properties(schema, data, pointer, schemaShieldInstance) {
+  properties(schema, data, defineError) {
     if (!isObject(data)) {
-      return { valid: true, errors: [], data };
+      return;
     }
-    const errors = [];
-    let finalData = { ...data };
-    for (let key in schema.properties) {
-      if (!data.hasOwnProperty(key) || typeof data[key] === "undefined") {
-        if (isObject(schema.properties[key]) && "default" in schema.properties[key]) {
-          finalData[key] = schema.properties[key].default;
+    for (const key of Object.keys(schema.properties)) {
+      if (!data.hasOwnProperty(key)) {
+        const schemaProp = schema.properties[key];
+        if (isObject(schemaProp) && "default" in schemaProp) {
+          data[key] = schemaProp.default;
         }
         continue;
       }
       if (typeof schema.properties[key] === "boolean") {
         if (schema.properties[key] === false) {
-          errors.push(
-            new ValidationError("Property is not allowed", {
-              pointer: `${pointer}/${key}`,
-              value: data[key],
-              code: "PROPERTY_NOT_ALLOWED"
-            })
-          );
+          return defineError("Property is not allowed", {
+            item: key,
+            data: data[key]
+          });
         }
         continue;
       }
-      const { validator } = schema.properties[key];
-      if (!validator) {
-        continue;
+      if ("$validate" in schema.properties[key]) {
+        const error = schema.properties[key].$validate(data[key]);
+        if (error) {
+          return defineError("Property is invalid", {
+            item: key,
+            cause: error,
+            data: data[key]
+          });
+        }
       }
-      const validatorResult = validator(schema.properties[key], finalData[key], `${pointer}/${key}`, schemaShieldInstance);
-      finalData[key] = validatorResult.data;
-      if (!validatorResult.valid) {
-        errors.push(...validatorResult.errors);
-      }
     }
-    return { valid: errors.length === 0, errors, data: finalData };
+    return;
   },
-  maxProperties(schema, data, pointer) {
-    if (!isObject(data) || Object.keys(data).length <= schema.maxProperties) {
-      return { valid: true, errors: [], data };
+  values(schema, data, defineError) {
+    if (!isObject(data) || !isCompiledSchema(schema.values)) {
+      return;
     }
-    return {
-      valid: false,
-      errors: [
-        new ValidationError("Object has too many properties", {
-          pointer,
-          value: data,
-          code: "OBJECT_TOO_MANY_PROPERTIES"
-        })
-      ],
-      data
-    };
-  },
-  minProperties(schema, data, pointer) {
-    if (!isObject(data) || Object.keys(data).length >= schema.minProperties) {
-      return { valid: true, errors: [], data };
-    }
-    return {
-      valid: false,
-      errors: [
-        new ValidationError("Object has too few properties", {
-          pointer,
-          value: data,
-          code: "OBJECT_TOO_FEW_PROPERTIES"
-        })
-      ],
-      data
-    };
-  },
-  additionalProperties(schema, data, pointer, schemaShieldInstance) {
-    if (!isObject(data)) {
-      return { valid: true, errors: [], data };
-    }
-    const errors = [];
-    let finalData = { ...data };
     const keys = Object.keys(data);
+    for (const key of keys) {
+      const error = schema.values.$validate(data[key]);
+      if (error) {
+        return defineError("Property is invalid", {
+          item: key,
+          cause: error,
+          data: data[key]
+        });
+      }
+    }
+    return;
+  },
+  maxProperties(schema, data, defineError) {
+    if (!isObject(data) || Object.keys(data).length <= schema.maxProperties) {
+      return;
+    }
+    return defineError("Too many properties", { data });
+  },
+  minProperties(schema, data, defineError) {
+    if (!isObject(data) || Object.keys(data).length >= schema.minProperties) {
+      return;
+    }
+    return defineError("Too few properties", { data });
+  },
+  additionalProperties(schema, data, defineError) {
+    if (!isObject(data)) {
+      return;
+    }
+    const keys = Object.keys(data);
+    const isCompiled = isCompiledSchema(schema.additionalProperties);
     for (const key of keys) {
       if (schema.properties && schema.properties.hasOwnProperty(key)) {
         continue;
@@ -811,216 +671,228 @@ var ObjectKeywords = {
         }
       }
       if (schema.additionalProperties === false) {
-        errors.push(
-          new ValidationError("Additional property not allowed", {
-            pointer: `${pointer}/${key}`,
-            value: data,
-            code: "ADDITIONAL_PROPERTY_NOT_ALLOWED"
-          })
-        );
-        continue;
+        return defineError("Additional properties are not allowed", {
+          item: key,
+          data: data[key]
+        });
       }
-      const { validator } = schema.additionalProperties;
-      if (!validator) {
-        continue;
-      }
-      const validatorResult = validator(schema.additionalProperties, finalData[key], `${pointer}/${key}`, schemaShieldInstance);
-      finalData[key] = validatorResult.data;
-      if (!validatorResult.valid) {
-        errors.push(...validatorResult.errors);
+      if (isCompiled) {
+        const error = schema.additionalProperties.$validate(data[key]);
+        if (error) {
+          return defineError("Additional properties are invalid", {
+            item: key,
+            cause: error,
+            data: data[key]
+          });
+        }
       }
     }
-    return { valid: errors.length === 0, errors, data: finalData };
+    return;
   },
-  patternProperties(schema, data, pointer, schemaShieldInstance) {
+  patternProperties(schema, data, defineError) {
     if (!isObject(data)) {
-      return { valid: true, errors: [], data };
+      return;
     }
-    const errors = [];
-    let finalData = { ...data };
     const patterns = Object.keys(schema.patternProperties);
     for (const pattern of patterns) {
       const regex = new RegExp(pattern, "u");
       if (typeof schema.patternProperties[pattern] === "boolean") {
         if (schema.patternProperties[pattern] === false) {
-          for (const key in finalData) {
+          for (const key in data) {
             if (regex.test(key)) {
-              errors.push(
-                new ValidationError("Property is not allowed", {
-                  pointer: `${pointer}/${key}`,
-                  value: data[key],
-                  code: "PROPERTY_NOT_ALLOWED"
-                })
-              );
+              return defineError("Property is not allowed", {
+                item: key,
+                data: data[key]
+              });
             }
           }
         }
         continue;
       }
-      const { validator } = schema.patternProperties[pattern];
-      if (!validator) {
-        continue;
-      }
-      const keys = Object.keys(finalData);
+      const keys = Object.keys(data);
       for (const key of keys) {
         if (regex.test(key)) {
-          const validatorResult = validator(schema.patternProperties[pattern], finalData[key], `${pointer}/${key}`, schemaShieldInstance);
-          finalData[key] = validatorResult.data;
-          if (!validatorResult.valid) {
-            errors.push(...validatorResult.errors);
+          if ("$validate" in schema.patternProperties[pattern]) {
+            const error = schema.patternProperties[pattern].$validate(
+              data[key]
+            );
+            if (error) {
+              return defineError("Property is invalid", {
+                item: key,
+                cause: error,
+                data: data[key]
+              });
+            }
           }
         }
       }
     }
-    return { valid: errors.length === 0, errors, data: finalData };
+    return;
   },
-  propertyNames(schema, data, pointer, schemaShieldInstance) {
+  propertyNames(schema, data, defineError) {
     if (!isObject(data)) {
-      return { valid: true, errors: [], data };
+      return;
     }
     if (typeof schema.propertyNames === "boolean") {
       if (schema.propertyNames === false && Object.keys(data).length > 0) {
-        return {
-          valid: false,
-          errors: [
-            new ValidationError("Property names are not allowed", {
-              pointer,
-              value: data,
-              code: "PROPERTY_NAMES_NOT_ALLOWED"
-            })
-          ],
+        return defineError("Properties are not allowed", { data });
+      }
+    }
+    if (isCompiledSchema(schema.propertyNames)) {
+      for (let key in data) {
+        const error = schema.propertyNames.$validate(key);
+        if (error) {
+          return defineError("Property name is invalid", {
+            item: key,
+            cause: error,
+            data: data[key]
+          });
+        }
+      }
+    }
+    return;
+  },
+  dependencies(schema, data, defineError) {
+    if (!isObject(data)) {
+      return;
+    }
+    for (const key in schema.dependencies) {
+      if (key in data === false) {
+        continue;
+      }
+      const dependency = schema.dependencies[key];
+      if (Array.isArray(dependency)) {
+        for (let i = 0; i < dependency.length; i++) {
+          if (!(dependency[i] in data)) {
+            return defineError("Dependency is not satisfied", {
+              item: i,
+              data: dependency[i]
+            });
+          }
+        }
+        continue;
+      }
+      if (typeof dependency === "boolean") {
+        if (dependency) {
+          continue;
+        }
+        return defineError("Dependency is not satisfied", { data: dependency });
+      }
+      if (typeof dependency === "string") {
+        if (dependency in data) {
+          continue;
+        }
+        return defineError("Dependency is not satisfied", { data: dependency });
+      }
+      const error = dependency.$validate(data);
+      if (error) {
+        return defineError("Dependency is not satisfied", {
+          cause: error,
           data
-        };
+        });
       }
     }
-    const errors = [];
-    let finalData = { ...data };
-    const { validator } = schema.propertyNames;
-    if (!validator) {
-      return { valid: true, errors: [], data };
-    }
-    for (let key in finalData) {
-      const validatorResult = validator(schema.propertyNames, key, pointer, schemaShieldInstance);
-      if (!validatorResult.valid) {
-        errors.push(...validatorResult.errors);
-      }
-    }
-    return { valid: errors.length === 0, errors, data: finalData };
-  }
+    return;
+  },
+  // Required by other keywords but not used as a function itself
+  then: false,
+  else: false,
+  default: false,
+  // Not implemented yet
+  $ref: false,
+  definitions: false,
+  $id: false,
+  $schema: false,
+  // Metadata keywords (not used as a function)
+  title: false,
+  description: false,
+  $comment: false,
+  examples: false,
+  contentMediaType: false,
+  contentEncoding: false,
+  // Not supported Open API keywords
+  discriminator: false,
+  nullable: false
 };
 
 // lib/keywords/other-keywords.ts
 var OtherKeywords = {
-  nullable(schema, data, pointer) {
-    if (schema.nullable && data !== null) {
-      return {
-        valid: false,
-        errors: [
-          new ValidationError("Value must be null to be empty", {
-            pointer,
-            value: data,
-            code: "VALUE_NOT_NULL"
-          })
-        ],
-        data
-      };
-    }
-    return { valid: true, errors: [], data };
-  },
-  allOf(schema, data, pointer, schemaShieldInstance) {
-    const errors = [];
-    let finalData = data;
-    for (let i = 0; i < schema.allOf.length; i++) {
-      if (isObject(schema.allOf[i])) {
-        const { validator } = schema.allOf[i];
-        if (!validator) {
-          continue;
-        }
-        const validatorResult = validator(schema.allOf[i], finalData, pointer, schemaShieldInstance);
-        if (!validatorResult.valid) {
-          errors.push(...validatorResult.errors);
-        }
-        finalData = validatorResult.data;
-      } else {
-        if (typeof schema.allOf[i] === "boolean") {
-          if (Boolean(data) !== schema.allOf[i]) {
-            errors.push(
-              new ValidationError(`Value must match all schemas in allOf`, {
-                pointer,
-                value: data,
-                code: "VALUE_DOES_NOT_MATCH_ALL_OF"
-              })
-            );
-          }
-          continue;
-        }
-        if (data !== schema.allOf[i]) {
-          errors.push(
-            new ValidationError(`Value must match all schemas in allOf`, {
-              pointer,
-              value: data,
-              code: "VALUE_DOES_NOT_MATCH_ALL_OF"
-            })
-          );
+  enum(schema, data, defineError) {
+    const isArray = Array.isArray(data);
+    const isObject2 = typeof data === "object" && data !== null;
+    for (let i = 0; i < schema.enum.length; i++) {
+      const enumItem = schema.enum[i];
+      if (enumItem === data) {
+        return;
+      }
+      if (isArray && Array.isArray(enumItem) || isObject2 && typeof enumItem === "object" && enumItem !== null) {
+        if (deepEqual(enumItem, data)) {
+          return;
         }
       }
     }
-    return { valid: errors.length === 0, errors, data: finalData };
+    return defineError("Value is not one of the allowed values", { data });
   },
-  anyOf(schema, data, pointer, schemaShieldInstance) {
-    let finalData = data;
+  allOf(schema, data, defineError) {
+    for (let i = 0; i < schema.allOf.length; i++) {
+      if (isObject(schema.allOf[i])) {
+        if ("$validate" in schema.allOf[i]) {
+          const error = schema.allOf[i].$validate(data);
+          if (error) {
+            return defineError("Value is not valid", { cause: error, data });
+          }
+        }
+        continue;
+      }
+      if (typeof schema.allOf[i] === "boolean") {
+        if (Boolean(data) !== schema.allOf[i]) {
+          return defineError("Value is not valid", { data });
+        }
+        continue;
+      }
+      if (data !== schema.allOf[i]) {
+        return defineError("Value is not valid", { data });
+      }
+    }
+    return;
+  },
+  anyOf(schema, data, defineError) {
     for (let i = 0; i < schema.anyOf.length; i++) {
       if (isObject(schema.anyOf[i])) {
-        const { validator } = schema.anyOf[i];
-        if (!validator) {
-          return { valid: true, errors: [], data };
+        if ("$validate" in schema.anyOf[i]) {
+          const error = schema.anyOf[i].$validate(data);
+          if (!error) {
+            return;
+          }
+          continue;
         }
-        const validationResult = validator(schema.anyOf[i], finalData, pointer, schemaShieldInstance);
-        finalData = validationResult.data;
-        if (validationResult.valid) {
-          return { valid: true, errors: [], data: finalData };
-        }
+        return;
       } else {
         if (typeof schema.anyOf[i] === "boolean") {
           if (Boolean(data) === schema.anyOf[i]) {
-            return { valid: true, errors: [], data: finalData };
+            return;
           }
         }
         if (data === schema.anyOf[i]) {
-          return { valid: true, errors: [], data: finalData };
+          return;
         }
       }
     }
-    return {
-      valid: false,
-      errors: [
-        new ValidationError(`Value must match at least one schema in anyOf`, {
-          pointer,
-          value: data,
-          code: "VALUE_DOES_NOT_MATCH_ANY_OF"
-        })
-      ],
-      data
-    };
+    return defineError("Value is not valid", { data });
   },
-  oneOf(schema, data, pointer, schemaShieldInstance) {
-    const errors = [];
+  oneOf(schema, data, defineError) {
     let validCount = 0;
-    let finalData = data;
     for (let i = 0; i < schema.oneOf.length; i++) {
       if (isObject(schema.oneOf[i])) {
-        const { validator } = schema.oneOf[i];
-        if (!validator) {
-          validCount++;
+        if ("$validate" in schema.oneOf[i]) {
+          const error = schema.oneOf[i].$validate(data);
+          if (!error) {
+            validCount++;
+          }
           continue;
         }
-        const validationResult = validator(schema.oneOf[i], finalData, pointer, schemaShieldInstance);
-        if (validationResult.valid) {
-          validCount++;
-        } else {
-          errors.push(...validationResult.errors);
-        }
-        finalData = validationResult.data;
+        validCount++;
+        continue;
       } else {
         if (typeof schema.oneOf[i] === "boolean") {
           if (Boolean(data) === schema.oneOf[i]) {
@@ -1034,374 +906,109 @@ var OtherKeywords = {
       }
     }
     if (validCount === 1) {
-      return { valid: true, errors: [], data: finalData };
+      return;
     }
-    return {
-      valid: false,
-      errors: [
-        new ValidationError(`Value must match exactly one schema in oneOf`, {
-          pointer,
-          value: data,
-          code: "VALUE_DOES_NOT_MATCH_ONE_OF"
-        })
-      ],
-      data: finalData
-    };
+    return defineError("Value is not valid", { data });
   },
-  dependencies(schema, data, pointer, schemaShieldInstance) {
-    if (!isObject(data)) {
-      return { valid: true, errors: [], data };
-    }
-    const errors = [];
-    let finalData = data;
-    for (const key in schema.dependencies) {
-      if (key in data === false) {
-        continue;
-      }
-      const dependency = schema.dependencies[key];
-      if (Array.isArray(dependency)) {
-        for (let i = 0; i < dependency.length; i++) {
-          if (!(dependency[i] in data)) {
-            errors.push(
-              new ValidationError(`Dependency ${dependency[i]} is missing`, {
-                pointer,
-                value: data,
-                code: "DEPENDENCY_MISSING"
-              })
-            );
-          }
-        }
-        continue;
-      }
-      if (typeof dependency === "boolean") {
-        if (dependency) {
-          continue;
-        }
-        errors.push(
-          new ValidationError(`Dependency ${key} is missing`, {
-            pointer,
-            value: data,
-            code: "DEPENDENCY_MISSING"
-          })
-        );
-        continue;
-      }
-      if (typeof dependency === "string") {
-        if (dependency in data) {
-          continue;
-        }
-        errors.push(
-          new ValidationError(`Dependency ${dependency} is missing`, {
-            pointer,
-            value: data,
-            code: "DEPENDENCY_MISSING"
-          })
-        );
-        continue;
-      }
-      const { validator } = dependency;
-      if (!validator) {
-        continue;
-      }
-      const validatorResult = validator(dependency, finalData, pointer, schemaShieldInstance);
-      if (!validatorResult.valid) {
-        errors.push(...validatorResult.errors);
-      }
-      finalData = validatorResult.data;
-    }
-    return { valid: errors.length === 0, errors, data: finalData };
-  },
-  const(schema, data, pointer) {
+  const(schema, data, defineError) {
     if (data === schema.const || isObject(data) && isObject(schema.const) && deepEqual(data, schema.const) || Array.isArray(data) && Array.isArray(schema.const) && deepEqual(data, schema.const)) {
-      return { valid: true, errors: [], data };
+      return;
     }
-    return {
-      valid: false,
-      errors: [
-        new ValidationError(`Value must be equal to const`, {
-          pointer,
-          value: data,
-          code: "VALUE_NOT_EQUAL_TO_CONST"
-        })
-      ],
-      data
-    };
+    return defineError("Value is not valid", { data });
   },
-  contains(schema, data, pointer, schemaShieldInstance) {
-    if (!Array.isArray(data)) {
-      return { valid: true, errors: [], data };
-    }
-    if (typeof schema.contains === "boolean") {
-      if (schema.contains) {
-        const valid = data.length > 0;
-        return {
-          valid,
-          errors: valid ? [] : [
-            new ValidationError(`Value must contain at least one item`, {
-              pointer,
-              value: data,
-              code: "VALUE_DOES_NOT_CONTAIN_ITEM"
-            })
-          ],
-          data
-        };
-      }
-      return {
-        valid: false,
-        errors: [
-          new ValidationError(`Value must not contain any items`, {
-            pointer,
-            value: data,
-            code: "VALUE_CONTAINS_ITEM"
-          })
-        ],
-        data
-      };
-    }
-    const { validator } = schema.contains;
-    if (!validator) {
-      return { valid: true, errors: [], data };
-    }
-    for (let i = 0; i < data.length; i++) {
-      const validatorResult = validator(schema.contains, data[i], `${pointer}/${i}`, schemaShieldInstance);
-      if (validatorResult.valid) {
-        return { valid: true, errors: [], data };
-      }
-    }
-    return {
-      valid: false,
-      errors: [
-        new ValidationError(`Value must contain at least one item that matches the contains schema`, {
-          pointer,
-          value: data,
-          code: "VALUE_DOES_NOT_CONTAIN_MATCHING_ITEM"
-        })
-      ],
-      data
-    };
-  },
-  if(schema, data, pointer, schemaShieldInstance) {
+  if(schema, data, defineError) {
     if ("then" in schema === false && "else" in schema === false) {
-      return { valid: true, errors: [], data };
+      return;
     }
     if (typeof schema.if === "boolean") {
       if (schema.if) {
-        if (schema.then) {
-          const { validator: thenValidator } = schema.then;
-          if (thenValidator) {
-            const thenResult = thenValidator(schema.then, data, pointer, schemaShieldInstance);
-            if (!thenResult.valid) {
-              return thenResult;
-            }
-          }
+        if (isCompiledSchema(schema.then)) {
+          return schema.then.$validate(data);
         }
-      } else if (schema.else) {
-        const { validator: elseValidator } = schema.else;
-        if (elseValidator) {
-          const elseResult = elseValidator(schema.else, data, pointer, schemaShieldInstance);
-          if (!elseResult.valid) {
-            return elseResult;
-          }
-        }
+      } else if (isCompiledSchema(schema.else)) {
+        return schema.else.$validate(data);
       }
-      return { valid: true, errors: [], data };
+      return;
     }
-    const { validator: ifValidator } = schema.if;
-    if (!ifValidator) {
-      return { valid: true, errors: [], data };
+    if (!isCompiledSchema(schema.if)) {
+      return;
     }
-    const ifResult = ifValidator(schema.if, data, pointer, schemaShieldInstance);
-    if (ifResult.valid) {
-      if (schema.then) {
-        const { validator: thenValidator } = schema.then;
-        if (thenValidator) {
-          const thenResult = thenValidator(schema.then, data, pointer, schemaShieldInstance);
-          if (!thenResult.valid) {
-            return thenResult;
-          }
-        }
+    const error = schema.if.$validate(data);
+    if (!error) {
+      if (isCompiledSchema(schema.then)) {
+        return schema.then.$validate(data);
       }
-    } else if (schema.else) {
-      const { validator: elseValidator } = schema.else;
-      if (elseValidator) {
-        const elseResult = elseValidator(schema.else, data, pointer, schemaShieldInstance);
-        if (!elseResult.valid) {
-          return elseResult;
-        }
+      return;
+    } else {
+      if (isCompiledSchema(schema.else)) {
+        return schema.else.$validate(data);
       }
+      return;
     }
-    return { valid: true, errors: [], data };
   },
-  not(schema, data, pointer, schemaShieldInstance) {
+  not(schema, data, defineError) {
     if (typeof schema.not === "boolean") {
       if (schema.not) {
-        return {
-          valid: false,
-          errors: [
-            new ValidationError(`Value must not be valid`, {
-              pointer,
-              value: data,
-              code: "VALUE_IS_VALID"
-            })
-          ],
-          data
-        };
+        return defineError("Value is not valid", { data });
       }
-      return { valid: true, errors: [], data };
+      return;
     }
-    const { validator } = schema.not;
-    if (!validator) {
-      return {
-        valid: false,
-        errors: [
-          new ValidationError(`Value must not be valid`, {
-            pointer,
-            value: data,
-            code: "VALUE_IS_VALID"
-          })
-        ],
-        data
-      };
+    if (isObject(schema.not)) {
+      if ("$validate" in schema.not) {
+        const error = schema.not.$validate(data);
+        if (!error) {
+          return defineError("Value is not valid", { cause: error, data });
+        }
+        return;
+      }
+      return defineError("Value is not valid", { data });
     }
-    const validatorResult = validator(schema.not, data, pointer, schemaShieldInstance);
-    if (validatorResult.valid) {
-      return {
-        valid: false,
-        errors: [
-          new ValidationError(`Value must not be valid`, {
-            pointer,
-            value: data,
-            code: "VALUE_IS_VALID"
-          })
-        ],
-        data
-      };
-    }
-    return { valid: true, errors: [], data };
+    return defineError("Value is not valid", { data });
   }
 };
 
 // lib/keywords/string-keywords.ts
 var StringKeywords = {
-  minLength(schema, data, pointer) {
+  minLength(schema, data, defineError) {
     if (typeof data !== "string" || data.length >= schema.minLength) {
-      return { valid: true, errors: [], data };
+      return;
     }
-    return {
-      valid: false,
-      errors: [
-        new ValidationError("String is too short", {
-          pointer,
-          value: data,
-          code: "STRING_TOO_SHORT"
-        })
-      ],
-      data
-    };
+    return defineError("Value is shorter than the minimum length", { data });
   },
-  maxLength(schema, data, pointer) {
+  maxLength(schema, data, defineError) {
     if (typeof data !== "string" || data.length <= schema.maxLength) {
-      return { valid: true, errors: [], data };
+      return;
     }
-    return {
-      valid: false,
-      errors: [
-        new ValidationError("String is too long", {
-          pointer,
-          value: data,
-          code: "STRING_TOO_LONG"
-        })
-      ],
-      data
-    };
+    return defineError("Value is longer than the maximum length", { data });
   },
-  pattern(schema, data, pointer) {
+  pattern(schema, data, defineError) {
     if (typeof data !== "string") {
-      return { valid: true, errors: [], data };
+      return;
     }
     const patternRegexp = new RegExp(schema.pattern, "u");
     if (patternRegexp instanceof RegExp === false) {
-      return {
-        valid: false,
-        errors: [
-          new ValidationError("Pattern is not a valid regular expression", {
-            pointer,
-            value: data,
-            code: "PATTERN_IS_NOT_REGEXP"
-          })
-        ],
-        data
-      };
+      return defineError("Invalid regular expression", { data });
     }
-    const valid = patternRegexp.test(data);
-    return {
-      valid,
-      errors: valid ? [] : [
-        new ValidationError("String does not match pattern", {
-          pointer,
-          value: data,
-          code: "STRING_DOES_NOT_MATCH_PATTERN"
-        })
-      ],
-      data
-    };
+    if (patternRegexp.test(data)) {
+      return;
+    }
+    return defineError("Value does not match the pattern", { data });
   },
-  format(schema, data, pointer, formatInstance) {
+  format(schema, data, defineError, formatInstance) {
     if (typeof data !== "string") {
-      return { valid: true, errors: [], data };
+      return;
     }
     const formatValidate = formatInstance.formats.get(schema.format);
-    if (!formatValidate) {
-      return {
-        valid: false,
-        errors: [
-          new ValidationError(`Unknown format ${schema.format}`, {
-            pointer,
-            value: data,
-            code: "UNKNOWN_FORMAT"
-          })
-        ],
-        data
-      };
+    if (formatValidate === false) {
+      return;
     }
-    const valid = formatValidate(data);
-    return {
-      valid,
-      errors: valid ? [] : [
-        new ValidationError(`String does not match format ${schema.format}`, {
-          pointer,
-          value: data,
-          code: "STRING_DOES_NOT_MATCH_FORMAT"
-        })
-      ],
-      data
-    };
-  },
-  enum(schema, data, pointer) {
-    const isArray = Array.isArray(data);
-    const isObject2 = typeof data === "object" && data !== null;
-    for (let i = 0; i < schema.enum.length; i++) {
-      const enumItem = schema.enum[i];
-      if (enumItem === data) {
-        return { valid: true, errors: [], data };
+    if (typeof formatValidate === "function") {
+      if (formatValidate(data)) {
+        return;
       }
-      if (isArray && Array.isArray(enumItem) || isObject2 && typeof enumItem === "object" && enumItem !== null) {
-        if (deepEqual(enumItem, data)) {
-          return { valid: true, errors: [], data };
-        }
-      }
+      return defineError("Value does not match the format", { data });
     }
-    return {
-      valid: false,
-      errors: [
-        new ValidationError(`Value must be one of ${schema.enum.join(", ")}`, {
-          pointer,
-          value: data,
-          code: "VALUE_NOT_IN_ENUM"
-        })
-      ],
-      data
-    };
+    return defineError("Format is not supported", { data });
   }
 };
 
@@ -1419,16 +1026,24 @@ var SchemaShield = class {
   types = /* @__PURE__ */ new Map();
   formats = /* @__PURE__ */ new Map();
   keywords = /* @__PURE__ */ new Map();
-  constructor() {
-    Object.keys(Types).forEach((type) => {
-      this.addType(type, Types[type]);
-    });
-    Object.keys(keywords).forEach((keyword) => {
-      this.addKeyword(keyword, keywords[keyword]);
-    });
-    Object.keys(Formats).forEach((format) => {
-      this.addFormat(format, Formats[format]);
-    });
+  immutable = false;
+  constructor({
+    immutable = false
+  } = {}) {
+    this.immutable = immutable;
+    for (const [type, validator] of Object.entries(Types)) {
+      if (validator) {
+        this.addType(type, validator);
+      }
+    }
+    for (const [keyword, validator] of Object.entries(keywords)) {
+      this.addKeyword(keyword, validator);
+    }
+    for (const [format, validator] of Object.entries(Formats)) {
+      if (validator) {
+        this.addFormat(format, validator);
+      }
+    }
   }
   addType(name, validator) {
     this.types.set(name, validator);
@@ -1440,151 +1055,151 @@ var SchemaShield = class {
     this.keywords.set(name, validator);
   }
   compile(schema) {
-    const compiledSchema = this.compileSchema(schema, "#");
+    const compiledSchema = this.compileSchema(schema);
+    if (!compiledSchema.$validate) {
+      if (this.isSchemaLike(schema) === false) {
+        throw new ValidationError("Invalid schema");
+      }
+      compiledSchema.$validate = getNamedFunction(
+        "any",
+        () => {
+        }
+      );
+    }
     const validate = (data) => {
-      return compiledSchema.validator(compiledSchema, data, "#", this);
+      const clonedData = this.immutable ? deepClone(data) : data;
+      const error = compiledSchema.$validate(clonedData);
+      return {
+        data: clonedData,
+        error: error ? error : null,
+        valid: !error
+      };
     };
     validate.compiledSchema = compiledSchema;
     return validate;
   }
-  compileSchema(schema, pointer) {
-    if (!this.isSchemaLike(schema)) {
+  compileSchema(schema) {
+    if (!isObject(schema)) {
       if (schema === true) {
         schema = {
-          anyOf: [{ type: "string" }, { type: "number" }, { type: "boolean" }, { type: "array" }, { type: "object" }, { type: "null" }]
+          anyOf: [{}]
         };
-      }
-      if (schema === false) {
+      } else if (schema === false) {
         schema = {
           oneOf: []
         };
+      } else {
+        schema = {
+          oneOf: [schema]
+        };
       }
     }
-    const compiledSchema = {
-      ...schema,
-      pointer
-    };
-    if ("type" in compiledSchema) {
-      const types = Array.isArray(compiledSchema.type) ? compiledSchema.type : compiledSchema.type.split(",").map((t) => t.trim());
-      compiledSchema.validators = types.map((type) => this.types.get(type)).filter((validator2) => validator2 !== void 0);
-    }
-    const validator = (schema2, data, pointer2) => {
-      if (typeof data === "undefined") {
-        if (pointer2 === "#") {
-          return {
-            valid: false,
-            errors: [
-              new ValidationError("Data is undefined", {
-                pointer: pointer2,
-                value: data,
-                code: "DATA_UNDEFINED"
-              })
-            ],
-            data
-          };
+    const compiledSchema = { ...schema };
+    const defineTypeError = getDefinedErrorFunctionForKey("type", schema);
+    const typeValidations = [];
+    let methodName = "";
+    if ("type" in schema) {
+      const types = Array.isArray(schema.type) ? schema.type : schema.type.split(",").map((t) => t.trim());
+      for (const type of types) {
+        const validator = this.types.get(type);
+        if (validator) {
+          typeValidations.push(validator);
+          methodName += (methodName ? "_OR_" : "") + validator.name;
         }
       }
-      let finalData = data;
-      const typeErrorsResult = this.validateTypes(schema2, finalData, pointer2);
-      if (typeErrorsResult.valid === false) {
-        return typeErrorsResult;
+      const typeValidationsLength = typeValidations.length;
+      if (typeValidationsLength === 0) {
+        throw defineTypeError("Invalid type for schema", { data: schema.type });
       }
-      finalData = typeErrorsResult.data;
-      return this.validateKeywords(schema2, finalData, pointer2);
-    };
-    compiledSchema.validator = validator;
-    for (let key in schema) {
+      if (typeValidationsLength === 1) {
+        const typeValidation = typeValidations[0];
+        compiledSchema.$validate = getNamedFunction(
+          methodName,
+          (data) => {
+            if (typeValidation(data)) {
+              return;
+            }
+            return defineTypeError("Invalid type", { data });
+          }
+        );
+      } else if (typeValidationsLength > 1) {
+        compiledSchema.$validate = getNamedFunction(
+          methodName,
+          (data) => {
+            for (let i = 0; i < typeValidationsLength; i++) {
+              if (typeValidations[i](data)) {
+                return;
+              }
+            }
+            return defineTypeError("Invalid type", { data });
+          }
+        );
+      }
+    }
+    for (const key of Object.keys(schema)) {
       if (key === "type") {
+        compiledSchema.type = schema.type;
         continue;
       }
-      if (this.keywords.has(key)) {
-        const validator2 = this.keywords.get(key);
-        compiledSchema.keywords = compiledSchema.keywords || {};
-        compiledSchema.keywords[key] = validator2;
+      const keywordValidator = this.keywords.get(key);
+      if (keywordValidator) {
+        const defineError = getDefinedErrorFunctionForKey(key, schema[key]);
+        const executeKeywordValidator = (data) => keywordValidator(
+          compiledSchema,
+          data,
+          defineError,
+          this
+        );
+        if (compiledSchema.$validate) {
+          const prevValidator = compiledSchema.$validate;
+          methodName += `_AND_${keywordValidator.name}`;
+          compiledSchema.$validate = getNamedFunction(
+            methodName,
+            (data) => {
+              const error = prevValidator(data);
+              if (error) {
+                return error;
+              }
+              const keywordError = executeKeywordValidator(data);
+              if (keywordError) {
+                return keywordError;
+              }
+            }
+          );
+        } else {
+          methodName = keywordValidator.name;
+          compiledSchema.$validate = getNamedFunction(
+            methodName,
+            executeKeywordValidator
+          );
+        }
       }
-      this.handleSubSchema(key, schema, pointer, compiledSchema);
+      if (isObject(schema[key])) {
+        compiledSchema[key] = this.compileSchema(schema[key]);
+        continue;
+      }
+      if (Array.isArray(schema[key])) {
+        compiledSchema[key] = schema[key].map(
+          (subSchema, index) => this.isSchemaLike(subSchema) ? this.compileSchema(subSchema) : subSchema
+        );
+        continue;
+      }
+      compiledSchema[key] = schema[key];
     }
     return compiledSchema;
   }
-  handleSubSchema(key, schema, pointer, compiledSchema) {
-    if (Array.isArray(schema[key])) {
-      compiledSchema[key] = schema[key].map((subSchema, index) => {
-        if (this.isSchemaLike(subSchema)) {
-          return this.compileSchema(subSchema, `${pointer}/${key}/${index}`);
-        }
-        return subSchema;
-      });
-      return;
-    }
-    if (isObject(schema[key])) {
-      if (this.isSchemaLike(schema[key]) && key !== "properties") {
-        compiledSchema[key] = this.compileSchema(schema[key], `${pointer}/${key}`);
-        return;
-      }
-      for (let subKey in schema[key]) {
-        if (this.isSchemaLike(schema[key][subKey])) {
-          compiledSchema[key] = compiledSchema[key] || {};
-          compiledSchema[key][subKey] = this.compileSchema(schema[key][subKey], `${pointer}/${key}/${subKey}`);
-        }
-      }
-    }
-  }
-  validateTypes(schema, data, pointer) {
-    if (typeof data === "undefined" || !Array.isArray(schema.validators) || schema.validators.length === 0) {
-      return {
-        valid: true,
-        errors: [],
-        data
-      };
-    }
-    let errors = [];
-    let finalData = data;
-    for (let schemaValidator of schema.validators) {
-      const schemaResult = schemaValidator(schema, data, pointer, this);
-      finalData = schemaResult.data;
-      if (schemaResult.valid) {
-        return schemaResult;
-      }
-      errors = schemaResult.errors;
-    }
-    return {
-      valid: errors.length === 0,
-      errors,
-      data: finalData
-    };
-  }
-  validateKeywords(schema, data, pointer) {
-    const errors = [];
-    let finalData = data;
-    if ("keywords" in schema) {
-      for (let keyword in schema.keywords) {
-        const keywordValidator = schema.keywords[keyword];
-        const keywordResult = keywordValidator(schema, finalData, pointer, this);
-        finalData = keywordResult.data;
-        if (!keywordResult.valid) {
-          errors.push(...keywordResult.errors);
-        }
-      }
-    }
-    return {
-      valid: errors.length === 0,
-      errors,
-      data: finalData
-    };
-  }
-  isSchemaOrKeywordPresent(subSchema) {
-    if ("type" in subSchema) {
-      return true;
-    }
-    for (let subKey in subSchema) {
-      if (this.keywords.has(subKey)) {
+  isSchemaLike(subSchema) {
+    if (isObject(subSchema)) {
+      if ("type" in subSchema) {
         return true;
+      }
+      for (let subKey in subSchema) {
+        if (this.keywords.has(subKey)) {
+          return true;
+        }
       }
     }
     return false;
-  }
-  isSchemaLike(subSchema) {
-    return isObject(subSchema) && this.isSchemaOrKeywordPresent(subSchema);
   }
 };
 export {
