@@ -8,7 +8,7 @@ export const StringKeywords: Record<string, KeywordFunction> = {
       return;
     }
 
-    return defineError("Value is shorter than the minimum length");
+    return defineError("Value is shorter than the minimum length", { data });
   },
 
   maxLength(schema, data, defineError) {
@@ -16,7 +16,7 @@ export const StringKeywords: Record<string, KeywordFunction> = {
       return;
     }
 
-    return defineError("Value is longer than the maximum length");
+    return defineError("Value is longer than the maximum length", { data });
   },
 
   pattern(schema, data, defineError) {
@@ -27,14 +27,14 @@ export const StringKeywords: Record<string, KeywordFunction> = {
     const patternRegexp = new RegExp(schema.pattern, "u");
 
     if (patternRegexp instanceof RegExp === false) {
-      return defineError("Invalid regular expression");
+      return defineError("Invalid regular expression", { data });
     }
 
     if (patternRegexp.test(data)) {
       return;
     }
 
-    return defineError("Value does not match the pattern");
+    return defineError("Value does not match the pattern", { data });
   },
 
   format(schema, data, defineError, formatInstance) {
@@ -52,9 +52,9 @@ export const StringKeywords: Record<string, KeywordFunction> = {
         return;
       }
 
-      return defineError("Value does not match the format");
+      return defineError("Value does not match the format", { data });
     }
 
-    return defineError("Format is not supported");
+    return defineError("Format is not supported", { data });
   }
 };

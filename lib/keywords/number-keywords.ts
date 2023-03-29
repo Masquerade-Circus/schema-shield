@@ -16,7 +16,7 @@ export const NumberKeywords: Record<string, KeywordFunction> = {
     }
 
     if (data < min) {
-      return defineError("Value is less than the minimum");
+      return defineError("Value is less than the minimum", { data });
     }
 
     return;
@@ -35,7 +35,7 @@ export const NumberKeywords: Record<string, KeywordFunction> = {
     }
 
     if (data > max) {
-      return defineError("Value is greater than the maximum");
+      return defineError("Value is greater than the maximum", { data });
     }
 
     return;
@@ -53,7 +53,7 @@ export const NumberKeywords: Record<string, KeywordFunction> = {
     }
 
     if (!areCloseEnough(quotient, Math.round(quotient))) {
-      return defineError("Value is not a multiple of the multipleOf");
+      return defineError("Value is not a multiple of the multipleOf", { data });
     }
 
     return;
@@ -86,7 +86,8 @@ export const NumberKeywords: Record<string, KeywordFunction> = {
 
     if (data >= schema.exclusiveMaximum) {
       return defineError(
-        "Value is greater than or equal to the exclusiveMaximum"
+        "Value is greater than or equal to the exclusiveMaximum",
+        { data }
       );
     }
 

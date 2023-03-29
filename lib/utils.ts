@@ -1,17 +1,5 @@
 import { CompiledSchema } from "./index";
 
-function defineError(error, pointer = "#") {
-  const path =
-    pointer + "/" + error.keyword + ("item" in error ? "/" + error.item : "");
-
-  if (!error.cause) {
-    error.path = path;
-    return error;
-  }
-
-  return defineError(error.cause, path);
-}
-
 export class ValidationError extends Error {
   message: string;
   item: string | number;

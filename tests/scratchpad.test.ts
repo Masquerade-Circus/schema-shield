@@ -115,3 +115,41 @@ describe("Scratchpad", () => {
     });
   }
 });
+
+describe.only("Scratchpad", () => {
+  it("should work", () => {
+    const schemaShield = new SchemaShield({ immutable: true });
+
+    const schema = {
+      type: "object",
+      properties: {
+        name: { type: "string" },
+        age: {
+          type: "number",
+          minimum: 18
+        }
+      }
+    };
+
+    const validator = schemaShield.compile(schema);
+
+    const invalidData = {
+      name: "John Doe",
+      age: 15
+    };
+
+    const validationResult = validator(invalidData);
+
+    if (validationResult.valid) {
+      console.log("Data is valid:", validationResult.data);
+    } else if (validationResult.error) {
+      console.error("Validation error:", validationResult.error.message); // "Invalid "
+      const errorCause = validationResult.error.getCause();
+      console.error("Root cause:", errorCause.message);
+      console.error("Error path:", errorCause.path);
+      console.error("Error data:", errorCause.data);
+      console.error("Error schema:", errorCause.schema);
+      console.error("Error keyword:", errorCause.keyword);
+    }
+  });
+});

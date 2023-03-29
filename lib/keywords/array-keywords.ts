@@ -12,7 +12,7 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
 
     if (typeof schemaItems === "boolean") {
       if (schemaItems === false && dataLength > 0) {
-        return defineError("Array items are not allowed");
+        return defineError("Array items are not allowed", { data });
       }
 
       return;
@@ -25,7 +25,10 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
         const schemaItem = schemaItems[i];
         if (typeof schemaItem === "boolean") {
           if (schemaItem === false && typeof data[i] !== "undefined") {
-            return defineError("Array item is not allowed", { item: i });
+            return defineError("Array item is not allowed", {
+              item: i,
+              data: data[i]
+            });
           }
           continue;
         }
@@ -35,7 +38,8 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
           if (error) {
             return defineError("Array item is invalid", {
               item: i,
-              cause: error
+              cause: error,
+              data: data[i]
             });
           }
         }
@@ -50,7 +54,8 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
         if (error) {
           return defineError("Array item is invalid", {
             item: i,
-            cause: error
+            cause: error,
+            data: data[i]
           });
         }
       }
@@ -67,7 +72,11 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
     for (let i = 0; i < data.length; i++) {
       const error = schema.elements.$validate(data[i]);
       if (error) {
-        return defineError("Array item is invalid", { item: i, cause: error });
+        return defineError("Array item is invalid", {
+          item: i,
+          cause: error,
+          data: data[i]
+        });
       }
     }
 
@@ -79,7 +88,7 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
       return;
     }
 
-    return defineError("Array is too short");
+    return defineError("Array is too short", { data });
   },
 
   maxItems(schema, data, defineError) {
@@ -87,7 +96,7 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
       return;
     }
 
-    return defineError("Array is too long");
+    return defineError("Array is too long", { data });
   },
 
   additionalItems(schema, data, defineError) {
@@ -97,7 +106,7 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
 
     if (schema.additionalItems === false) {
       if (data.length > schema.items.length) {
-        return defineError("Array is too long");
+        return defineError("Array is too long", { data });
       }
       return;
     }
@@ -109,7 +118,8 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
           if (error) {
             return defineError("Array item is invalid", {
               item: i,
-              cause: error
+              cause: error,
+              data: data[i]
             });
           }
         }
@@ -149,7 +159,7 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
       }
 
       if (unique.has(itemStr)) {
-        return defineError("Array items are not unique");
+        return defineError("Array items are not unique", { data: item });
       }
       unique.add(itemStr);
     }
@@ -164,12 +174,12 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
     if (typeof schema.contains === "boolean") {
       if (schema.contains) {
         if (data.length === 0) {
-          return defineError("Array must contain at least one item");
+          return defineError("Array must contain at least one item", { data });
         }
         return;
       }
 
-      return defineError("Array must not contain any items");
+      return defineError("Array must not contain any items", { data });
     }
 
     for (let i = 0; i < data.length; i++) {
@@ -180,6 +190,6 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
       continue;
     }
 
-    return defineError("Array must contain at least one item");
+    return defineError("Array must contain at least one item", { data });
   }
 };

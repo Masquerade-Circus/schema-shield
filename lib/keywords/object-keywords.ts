@@ -11,7 +11,10 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
     for (let i = 0; i < schema.required.length; i++) {
       const key = schema.required[i];
       if (!data.hasOwnProperty(key)) {
-        return defineError("Required property is missing", { item: key });
+        return defineError("Required property is missing", {
+          item: key,
+          data: data[key]
+        });
       }
     }
 
@@ -35,7 +38,10 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
 
       if (typeof schema.properties[key] === "boolean") {
         if (schema.properties[key] === false) {
-          return defineError("Property is not allowed", { item: key });
+          return defineError("Property is not allowed", {
+            item: key,
+            data: data[key]
+          });
         }
         continue;
       }
@@ -45,7 +51,8 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
         if (error) {
           return defineError("Property is invalid", {
             item: key,
-            cause: error
+            cause: error,
+            data: data[key]
           });
         }
       }
@@ -63,7 +70,11 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
     for (const key of keys) {
       const error = schema.values.$validate(data[key]);
       if (error) {
-        return defineError("Property is invalid", { item: key, cause: error });
+        return defineError("Property is invalid", {
+          item: key,
+          cause: error,
+          data: data[key]
+        });
       }
     }
 
@@ -75,7 +86,7 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
       return;
     }
 
-    return defineError("Too many properties");
+    return defineError("Too many properties", { data });
   },
 
   minProperties(schema, data, defineError) {
@@ -83,7 +94,7 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
       return;
     }
 
-    return defineError("Too few properties");
+    return defineError("Too few properties", { data });
   },
 
   additionalProperties(schema, data, defineError) {
@@ -113,7 +124,8 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
 
       if (schema.additionalProperties === false) {
         return defineError("Additional properties are not allowed", {
-          item: key
+          item: key,
+          data: data[key]
         });
       }
 
@@ -122,7 +134,8 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
         if (error) {
           return defineError("Additional properties are invalid", {
             item: key,
-            cause: error
+            cause: error,
+            data: data[key]
           });
         }
       }
@@ -143,7 +156,10 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
         if (schema.patternProperties[pattern] === false) {
           for (const key in data) {
             if (regex.test(key)) {
-              return defineError("Property is not allowed", { item: key });
+              return defineError("Property is not allowed", {
+                item: key,
+                data: data[key]
+              });
             }
           }
         }
@@ -160,7 +176,8 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
             if (error) {
               return defineError("Property is invalid", {
                 item: key,
-                cause: error
+                cause: error,
+                data: data[key]
               });
             }
           }
@@ -177,7 +194,7 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
     }
     if (typeof schema.propertyNames === "boolean") {
       if (schema.propertyNames === false && Object.keys(data).length > 0) {
-        return defineError("Properties are not allowed");
+        return defineError("Properties are not allowed", { data });
       }
     }
     if (isCompiledSchema(schema.propertyNames)) {
@@ -186,7 +203,8 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
         if (error) {
           return defineError("Property name is invalid", {
             item: key,
-            cause: error
+            cause: error,
+            data: data[key]
           });
         }
       }
@@ -209,7 +227,10 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
       if (Array.isArray(dependency)) {
         for (let i = 0; i < dependency.length; i++) {
           if (!(dependency[i] in data)) {
-            return defineError("Dependency is not satisfied", { item: i });
+            return defineError("Dependency is not satisfied", {
+              item: i,
+              data: dependency[i]
+            });
           }
         }
         continue;
@@ -218,18 +239,21 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
         if (dependency) {
           continue;
         }
-        return defineError("Dependency is not satisfied");
+        return defineError("Dependency is not satisfied", { data: dependency });
       }
 
       if (typeof dependency === "string") {
         if (dependency in data) {
           continue;
         }
-        return defineError("Dependency is not satisfied");
+        return defineError("Dependency is not satisfied", { data: dependency });
       }
       const error = dependency.$validate(data);
       if (error) {
-        return defineError("Dependency is not satisfied", { cause: error });
+        return defineError("Dependency is not satisfied", {
+          cause: error,
+          data
+        });
       }
     }
 
