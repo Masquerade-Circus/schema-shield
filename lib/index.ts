@@ -1,6 +1,8 @@
 import {
+  DefineErrorFunction,
   ValidationError,
   deepClone,
+  getDefinedErrorFunctionForKey,
   getNamedFunction,
   isObject
 } from "./utils";
@@ -15,7 +17,7 @@ export interface KeywordFunction {
   (
     schema: CompiledSchema,
     data: any,
-    error: ValidationError,
+    defineError: DefineErrorFunction,
     instance: SchemaShield
   ): Result;
 }
@@ -56,7 +58,9 @@ export class SchemaShield {
     this.immutable = immutable;
 
     for (const [type, validator] of Object.entries(Types)) {
-      this.addType(type, validator);
+      if (validator) {
+        this.addType(type, validator);
+      }
     }
 
     for (const [keyword, validator] of Object.entries(keywords)) {
@@ -129,8 +133,7 @@ export class SchemaShield {
     }
 
     const compiledSchema: CompiledSchema = {} as CompiledSchema;
-    const TypeError = new ValidationError(`Invalid type`);
-    TypeError.keyword = "type";
+    const defineTypeError = getDefinedErrorFunctionForKey("type", schema);
     const typeValidations: TypeFunction[] = [];
 
     let methodName = "";
@@ -151,7 +154,7 @@ export class SchemaShield {
       const typeValidationsLength = typeValidations.length;
 
       if (typeValidationsLength === 0) {
-        throw TypeError;
+        throw defineTypeError("Invalid type for schema", { data: schema.type });
       }
 
       if (typeValidationsLength === 1) {
@@ -162,7 +165,7 @@ export class SchemaShield {
             if (typeValidation(data)) {
               return;
             }
-            return TypeError;
+            return defineTypeError("Invalid type");
           }
         );
       } else if (typeValidationsLength > 1) {
@@ -174,7 +177,7 @@ export class SchemaShield {
                 return;
               }
             }
-            return TypeError;
+            return defineTypeError("Invalid type");
           }
         );
       }
@@ -188,13 +191,12 @@ export class SchemaShield {
 
       const keywordValidator = this.keywords.get(key);
       if (keywordValidator) {
-        const KeywordError = new ValidationError(`Invalid ${key}`);
-        KeywordError.keyword = key;
+        const defineError = getDefinedErrorFunctionForKey(key, schema[key]);
         const executeKeywordValidator = (data: any) =>
           (keywordValidator as KeywordFunction)(
             compiledSchema,
             data,
-            KeywordError,
+            defineError,
             this
           );
 

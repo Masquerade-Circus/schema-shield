@@ -2,7 +2,7 @@ import { CompiledSchema, KeywordFunction } from "../index";
 import { ValidationError, isCompiledSchema, isObject } from "../utils";
 
 export const ArrayKeywords: Record<string, KeywordFunction> = {
-  items(schema, data, KeywordError) {
+  items(schema, data, defineError) {
     if (!Array.isArray(data)) {
       return;
     }
@@ -12,7 +12,7 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
 
     if (typeof schemaItems === "boolean") {
       if (schemaItems === false && dataLength > 0) {
-        return KeywordError;
+        return defineError("Array items are not allowed");
       }
 
       return;
@@ -25,9 +25,7 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
         const schemaItem = schemaItems[i];
         if (typeof schemaItem === "boolean") {
           if (schemaItem === false && typeof data[i] !== "undefined") {
-            KeywordError.message = "Array item is not allowed";
-            KeywordError.item = i;
-            return KeywordError;
+            return defineError("Array item is not allowed", { item: i });
           }
           continue;
         }
@@ -35,9 +33,10 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
         if (isCompiledSchema(schemaItem)) {
           const error = schemaItem.$validate(data[i]);
           if (error) {
-            KeywordError.item = i;
-            KeywordError.cause = error;
-            return KeywordError;
+            return defineError("Array item is invalid", {
+              item: i,
+              cause: error
+            });
           }
         }
       }
@@ -49,9 +48,10 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
       for (let i = 0; i < dataLength; i++) {
         const error = schemaItems.$validate(data[i]);
         if (error) {
-          KeywordError.item = i;
-          KeywordError.cause = error;
-          return KeywordError;
+          return defineError("Array item is invalid", {
+            item: i,
+            cause: error
+          });
         }
       }
     }
@@ -59,30 +59,45 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
     return;
   },
 
-  minItems(schema, data, KeywordError) {
+  elements(schema, data, defineError) {
+    if (!Array.isArray(data) || !isCompiledSchema(schema.elements)) {
+      return;
+    }
+
+    for (let i = 0; i < data.length; i++) {
+      const error = schema.elements.$validate(data[i]);
+      if (error) {
+        return defineError("Array item is invalid", { item: i, cause: error });
+      }
+    }
+
+    return;
+  },
+
+  minItems(schema, data, defineError) {
     if (!Array.isArray(data) || data.length >= schema.minItems) {
       return;
     }
 
-    return KeywordError;
+    return defineError("Array is too short");
   },
 
-  maxItems(schema, data, KeywordError) {
+  maxItems(schema, data, defineError) {
     if (!Array.isArray(data) || data.length <= schema.maxItems) {
       return;
     }
 
-    return KeywordError;
+    return defineError("Array is too long");
   },
 
-  additionalItems(schema, data, KeywordError) {
+  additionalItems(schema, data, defineError) {
     if (!Array.isArray(data) || !schema.items || !Array.isArray(schema.items)) {
       return;
     }
 
     if (schema.additionalItems === false) {
       if (data.length > schema.items.length) {
-        return KeywordError;
+        return defineError("Array is too long");
       }
       return;
     }
@@ -92,9 +107,10 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
         for (let i = schema.items.length; i < data.length; i++) {
           const error = schema.additionalItems.$validate(data[i]);
           if (error) {
-            KeywordError.item = i;
-            KeywordError.cause = error;
-            return KeywordError;
+            return defineError("Array item is invalid", {
+              item: i,
+              cause: error
+            });
           }
         }
         return;
@@ -106,7 +122,7 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
     return;
   },
 
-  uniqueItems(schema, data, KeywordError) {
+  uniqueItems(schema, data, defineError) {
     if (!Array.isArray(data) || !schema.uniqueItems) {
       return;
     }
@@ -133,7 +149,7 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
       }
 
       if (unique.has(itemStr)) {
-        return KeywordError;
+        return defineError("Array items are not unique");
       }
       unique.add(itemStr);
     }
@@ -141,19 +157,19 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
     return;
   },
 
-  contains(schema, data, KeywordError) {
+  contains(schema, data, defineError) {
     if (!Array.isArray(data)) {
       return;
     }
     if (typeof schema.contains === "boolean") {
       if (schema.contains) {
         if (data.length === 0) {
-          return KeywordError;
+          return defineError("Array must contain at least one item");
         }
         return;
       }
 
-      return KeywordError;
+      return defineError("Array must not contain any items");
     }
 
     for (let i = 0; i < data.length; i++) {
@@ -164,6 +180,6 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
       continue;
     }
 
-    return KeywordError;
+    return defineError("Array must contain at least one item");
   }
 };

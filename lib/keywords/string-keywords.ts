@@ -3,23 +3,23 @@ import { ValidationError, deepEqual } from "../utils";
 import { KeywordFunction } from "../index";
 
 export const StringKeywords: Record<string, KeywordFunction> = {
-  minLength(schema, data, KeywordError) {
+  minLength(schema, data, defineError) {
     if (typeof data !== "string" || data.length >= schema.minLength) {
       return;
     }
 
-    return KeywordError;
+    return defineError("Value is shorter than the minimum length");
   },
 
-  maxLength(schema, data, KeywordError) {
+  maxLength(schema, data, defineError) {
     if (typeof data !== "string" || data.length <= schema.maxLength) {
       return;
     }
 
-    return KeywordError;
+    return defineError("Value is longer than the maximum length");
   },
 
-  pattern(schema, data, KeywordError) {
+  pattern(schema, data, defineError) {
     if (typeof data !== "string") {
       return;
     }
@@ -27,17 +27,17 @@ export const StringKeywords: Record<string, KeywordFunction> = {
     const patternRegexp = new RegExp(schema.pattern, "u");
 
     if (patternRegexp instanceof RegExp === false) {
-      return KeywordError;
+      return defineError("Invalid regular expression");
     }
 
     if (patternRegexp.test(data)) {
       return;
     }
 
-    return KeywordError;
+    return defineError("Value does not match the pattern");
   },
 
-  format(schema, data, KeywordError, formatInstance) {
+  format(schema, data, defineError, formatInstance) {
     if (typeof data !== "string") {
       return;
     }
@@ -52,36 +52,9 @@ export const StringKeywords: Record<string, KeywordFunction> = {
         return;
       }
 
-      return KeywordError;
+      return defineError("Value does not match the format");
     }
 
-    return KeywordError;
-  },
-
-  enum(schema, data, KeywordError) {
-    // Check if data is an array or an object
-    const isArray = Array.isArray(data);
-    const isObject = typeof data === "object" && data !== null;
-
-    for (let i = 0; i < schema.enum.length; i++) {
-      const enumItem = schema.enum[i];
-
-      // Simple equality check
-      if (enumItem === data) {
-        return;
-      }
-
-      // If data is an array or an object, check for deep equality
-      if (
-        (isArray && Array.isArray(enumItem)) ||
-        (isObject && typeof enumItem === "object" && enumItem !== null)
-      ) {
-        if (deepEqual(enumItem, data)) {
-          return;
-        }
-      }
-    }
-
-    return KeywordError;
+    return defineError("Format is not supported");
   }
 };

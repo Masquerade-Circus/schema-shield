@@ -3,7 +3,7 @@ import { ValidationError, areCloseEnough } from "../utils";
 import { KeywordFunction } from "../index";
 
 export const NumberKeywords: Record<string, KeywordFunction> = {
-  minimum(schema, data, KeywordError, instance) {
+  minimum(schema, data, defineError, instance) {
     if (typeof data !== "number") {
       return;
     }
@@ -16,13 +16,13 @@ export const NumberKeywords: Record<string, KeywordFunction> = {
     }
 
     if (data < min) {
-      return KeywordError;
+      return defineError("Value is less than the minimum");
     }
 
     return;
   },
 
-  maximum(schema, data, KeywordError, instance) {
+  maximum(schema, data, defineError, instance) {
     if (typeof data !== "number") {
       return;
     }
@@ -35,13 +35,13 @@ export const NumberKeywords: Record<string, KeywordFunction> = {
     }
 
     if (data > max) {
-      return KeywordError;
+      return defineError("Value is greater than the maximum");
     }
 
     return;
   },
 
-  multipleOf(schema, data, KeywordError, instance) {
+  multipleOf(schema, data, defineError, instance) {
     if (typeof data !== "number") {
       return;
     }
@@ -53,13 +53,13 @@ export const NumberKeywords: Record<string, KeywordFunction> = {
     }
 
     if (!areCloseEnough(quotient, Math.round(quotient))) {
-      return KeywordError;
+      return defineError("Value is not a multiple of the multipleOf");
     }
 
     return;
   },
 
-  exclusiveMinimum(schema, data, KeywordError, instance) {
+  exclusiveMinimum(schema, data, defineError, instance) {
     if (
       typeof data !== "number" ||
       typeof schema.exclusiveMinimum !== "number" ||
@@ -69,13 +69,13 @@ export const NumberKeywords: Record<string, KeywordFunction> = {
     }
 
     if (data <= schema.exclusiveMinimum + 1e-15) {
-      return KeywordError;
+      return defineError("Value is less than or equal to the exclusiveMinimum");
     }
 
     return;
   },
 
-  exclusiveMaximum(schema, data, KeywordError, instance) {
+  exclusiveMaximum(schema, data, defineError, instance) {
     if (
       typeof data !== "number" ||
       typeof schema.exclusiveMaximum !== "number" ||
@@ -85,7 +85,9 @@ export const NumberKeywords: Record<string, KeywordFunction> = {
     }
 
     if (data >= schema.exclusiveMaximum) {
-      return KeywordError;
+      return defineError(
+        "Value is greater than or equal to the exclusiveMaximum"
+      );
     }
 
     return;

@@ -7,22 +7,41 @@ import {
 } from "../utils";
 
 export const OtherKeywords: Record<string, KeywordFunction> = {
-  nullable(schema, data, KeywordError) {
-    if (schema.nullable && data !== null) {
-      return KeywordError;
+
+  enum(schema, data, defineError) {
+    // Check if data is an array or an object
+    const isArray = Array.isArray(data);
+    const isObject = typeof data === "object" && data !== null;
+
+    for (let i = 0; i < schema.enum.length; i++) {
+      const enumItem = schema.enum[i];
+
+      // Simple equality check
+      if (enumItem === data) {
+        return;
+      }
+
+      // If data is an array or an object, check for deep equality
+      if (
+        (isArray && Array.isArray(enumItem)) ||
+        (isObject && typeof enumItem === "object" && enumItem !== null)
+      ) {
+        if (deepEqual(enumItem, data)) {
+          return;
+        }
+      }
     }
 
-    return;
+    return defineError("Value is not one of the allowed values");
   },
 
-  allOf(schema, data, KeywordError) {
+  allOf(schema, data, defineError) {
     for (let i = 0; i < schema.allOf.length; i++) {
       if (isObject(schema.allOf[i])) {
         if ("$validate" in schema.allOf[i]) {
           const error = schema.allOf[i].$validate(data);
           if (error) {
-            KeywordError.cause = error;
-            return KeywordError;
+            return defineError("Value is not valid", { cause: error });
           }
         }
         continue;
@@ -30,20 +49,20 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
 
       if (typeof schema.allOf[i] === "boolean") {
         if (Boolean(data) !== schema.allOf[i]) {
-          return KeywordError;
+          return defineError("Value is not valid");
         }
         continue;
       }
 
       if (data !== schema.allOf[i]) {
-        return KeywordError;
+        return defineError("Value is not valid");
       }
     }
 
     return;
   },
 
-  anyOf(schema, data, KeywordError) {
+  anyOf(schema, data, defineError) {
     for (let i = 0; i < schema.anyOf.length; i++) {
       if (isObject(schema.anyOf[i])) {
         if ("$validate" in schema.anyOf[i]) {
@@ -67,10 +86,10 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
       }
     }
 
-    return KeywordError;
+    return defineError("Value is not valid");
   },
 
-  oneOf(schema, data, KeywordError) {
+  oneOf(schema, data, defineError) {
     let validCount = 0;
     for (let i = 0; i < schema.oneOf.length; i++) {
       if (isObject(schema.oneOf[i])) {
@@ -101,53 +120,12 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
       return;
     }
 
-    return KeywordError;
+    return defineError("Value is not valid");
   },
 
-  dependencies(schema, data, KeywordError) {
-    if (!isObject(data)) {
-      return;
-    }
+  
 
-    for (const key in schema.dependencies) {
-      if (key in data === false) {
-        continue;
-      }
-
-      const dependency = schema.dependencies[key];
-      if (Array.isArray(dependency)) {
-        for (let i = 0; i < dependency.length; i++) {
-          if (!(dependency[i] in data)) {
-            KeywordError.item = i;
-            return KeywordError;
-          }
-        }
-        continue;
-      }
-      if (typeof dependency === "boolean") {
-        if (dependency) {
-          continue;
-        }
-        return KeywordError;
-      }
-
-      if (typeof dependency === "string") {
-        if (dependency in data) {
-          continue;
-        }
-        return KeywordError;
-      }
-      const error = dependency.$validate(data);
-      if (error) {
-        KeywordError.cause = error;
-        return KeywordError;
-      }
-    }
-
-    return;
-  },
-
-  const(schema, data, KeywordError) {
+  const(schema, data, defineError) {
     if (
       data === schema.const ||
       (isObject(data) &&
@@ -159,10 +137,10 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
     ) {
       return;
     }
-    return KeywordError;
+    return defineError("Value is not valid");
   },
 
-  if(schema, data, KeywordError) {
+  if(schema, data, defineError) {
     if ("then" in schema === false && "else" in schema === false) {
       return;
     }
@@ -191,10 +169,10 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
     }
   },
 
-  not(schema, data, KeywordError) {
+  not(schema, data, defineError) {
     if (typeof schema.not === "boolean") {
       if (schema.not) {
-        return KeywordError;
+        return defineError("Value is not valid");
       }
       return;
     }
@@ -203,13 +181,13 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
       if ("$validate" in schema.not) {
         const error = schema.not.$validate(data);
         if (!error) {
-          return KeywordError;
+          return defineError("Value is not valid", { cause: error });
         }
         return;
       }
-      return KeywordError;
+      return defineError("Value is not valid");
     }
 
-    return KeywordError;
+    return defineError("Value is not valid");
   }
 };

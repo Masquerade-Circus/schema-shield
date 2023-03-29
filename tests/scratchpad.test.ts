@@ -65,7 +65,7 @@ const testGroup = {
 
 const count = 100000;
 
-describe.only("Scratchpad", () => {
+describe("Scratchpad", () => {
   let validate;
 
   before(() => {
@@ -87,14 +87,14 @@ describe.only("Scratchpad", () => {
   });
 
   for (const { valid, data, description } of testGroup.tests) {
-    it.only(description, () => {
+    it(description, () => {
       expect(validate(data)).toEqual({
         valid,
         error: valid ? null : expect.any(ValidationError),
         data: data === null ? null : expect.anything()
       });
       if (!valid) {
-        console.log(validate(data).error.getCause());
+        // console.log(validate(data).error.getCause());
       }
     });
   }

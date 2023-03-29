@@ -1,6 +1,6 @@
 import { CompiledSchema } from "./index";
 
-function getError(error, pointer = "#") {
+function defineError(error, pointer = "#") {
   const path =
     pointer + "/" + error.keyword + ("item" in error ? "/" + error.item : "");
 
@@ -9,7 +9,7 @@ function getError(error, pointer = "#") {
     return error;
   }
 
-  return getError(error.cause, path);
+  return defineError(error.cause, path);
 }
 
 export class ValidationError extends Error {
@@ -18,10 +18,15 @@ export class ValidationError extends Error {
   keyword: string;
   cause: ValidationError;
   path: string = "";
+  data?: any;
+  schema?: CompiledSchema;
 
   private _getCause(pointer = "#") {
     const path =
-      pointer + "/" + this.keyword + ("item" in this ? "/" + this.item : "");
+      pointer +
+      "/" +
+      this.keyword +
+      (typeof this.item !== "undefined" ? "/" + this.item : "");
 
     if (!this.cause) {
       this.path = path;
@@ -34,6 +39,38 @@ export class ValidationError extends Error {
   getCause() {
     return this._getCause();
   }
+}
+
+export interface DefineErrorOptions {
+  item?: any; // Final item in the path
+  cause?: ValidationError; // Cause of the error
+  data?: any; // Data that caused the error
+}
+
+export interface DefineErrorFunction {
+  (message: string, options?: DefineErrorOptions): ValidationError;
+}
+
+export function getDefinedErrorFunctionForKey(
+  key: string,
+  schema: CompiledSchema
+) {
+  const KeywordError = new ValidationError(`Invalid ${key}`);
+  KeywordError.keyword = key;
+  KeywordError.schema = schema;
+
+  const defineError: DefineErrorFunction = (message, options = {}) => {
+    KeywordError.message = message;
+    KeywordError.item = options.item;
+    KeywordError.cause = options.cause;
+    KeywordError.data = options.data;
+    return KeywordError;
+  };
+
+  return getNamedFunction<DefineErrorFunction>(
+    `defineError_${key}`,
+    defineError
+  );
 }
 
 export function deepEqual(

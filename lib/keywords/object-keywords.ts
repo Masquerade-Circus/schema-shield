@@ -3,7 +3,7 @@ import { ValidationError, isCompiledSchema, isObject } from "../utils";
 
 export const ObjectKeywords: Record<string, KeywordFunction | false> = {
   // Object
-  required(schema, data, KeywordError) {
+  required(schema, data, defineError) {
     if (!isObject(data)) {
       return;
     }
@@ -11,15 +11,14 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
     for (let i = 0; i < schema.required.length; i++) {
       const key = schema.required[i];
       if (!data.hasOwnProperty(key)) {
-        KeywordError.item = key;
-        return KeywordError;
+        return defineError("Required property is missing", { item: key });
       }
     }
 
     return;
   },
 
-  properties(schema, data, KeywordError) {
+  properties(schema, data, defineError) {
     if (!isObject(data)) {
       return;
     }
@@ -36,8 +35,7 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
 
       if (typeof schema.properties[key] === "boolean") {
         if (schema.properties[key] === false) {
-          KeywordError.item = key;
-          return KeywordError;
+          return defineError("Property is not allowed", { item: key });
         }
         continue;
       }
@@ -45,9 +43,10 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
       if ("$validate" in schema.properties[key]) {
         const error = schema.properties[key].$validate(data[key]);
         if (error) {
-          KeywordError.item = key;
-          KeywordError.cause = error;
-          return KeywordError;
+          return defineError("Property is invalid", {
+            item: key,
+            cause: error
+          });
         }
       }
     }
@@ -55,23 +54,39 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
     return;
   },
 
-  maxProperties(schema, data, KeywordError) {
+  values(schema, data, defineError) {
+    if (!isObject(data) || !isCompiledSchema(schema.values)) {
+      return;
+    }
+
+    const keys = Object.keys(data);
+    for (const key of keys) {
+      const error = schema.values.$validate(data[key]);
+      if (error) {
+        return defineError("Property is invalid", { item: key, cause: error });
+      }
+    }
+
+    return;
+  },
+
+  maxProperties(schema, data, defineError) {
     if (!isObject(data) || Object.keys(data).length <= schema.maxProperties) {
       return;
     }
 
-    return KeywordError;
+    return defineError("Too many properties");
   },
 
-  minProperties(schema, data, KeywordError) {
+  minProperties(schema, data, defineError) {
     if (!isObject(data) || Object.keys(data).length >= schema.minProperties) {
       return;
     }
 
-    return KeywordError;
+    return defineError("Too few properties");
   },
 
-  additionalProperties(schema, data, KeywordError) {
+  additionalProperties(schema, data, defineError) {
     if (!isObject(data)) {
       return;
     }
@@ -97,16 +112,18 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
       }
 
       if (schema.additionalProperties === false) {
-        KeywordError.item = key;
-        return KeywordError;
+        return defineError("Additional properties are not allowed", {
+          item: key
+        });
       }
 
       if (isCompiled) {
         const error = schema.additionalProperties.$validate(data[key]);
         if (error) {
-          KeywordError.item = key;
-          KeywordError.cause = error;
-          return KeywordError;
+          return defineError("Additional properties are invalid", {
+            item: key,
+            cause: error
+          });
         }
       }
     }
@@ -114,7 +131,7 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
     return;
   },
 
-  patternProperties(schema, data, KeywordError) {
+  patternProperties(schema, data, defineError) {
     if (!isObject(data)) {
       return;
     }
@@ -126,8 +143,7 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
         if (schema.patternProperties[pattern] === false) {
           for (const key in data) {
             if (regex.test(key)) {
-              KeywordError.item = key;
-              return KeywordError;
+              return defineError("Property is not allowed", { item: key });
             }
           }
         }
@@ -142,9 +158,10 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
               data[key]
             );
             if (error) {
-              KeywordError.item = key;
-              KeywordError.cause = error;
-              return KeywordError;
+              return defineError("Property is invalid", {
+                item: key,
+                cause: error
+              });
             }
           }
         }
@@ -154,23 +171,65 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
     return;
   },
 
-  propertyNames(schema, data, KeywordError) {
+  propertyNames(schema, data, defineError) {
     if (!isObject(data)) {
       return;
     }
     if (typeof schema.propertyNames === "boolean") {
       if (schema.propertyNames === false && Object.keys(data).length > 0) {
-        return KeywordError;
+        return defineError("Properties are not allowed");
       }
     }
     if (isCompiledSchema(schema.propertyNames)) {
       for (let key in data) {
         const error = schema.propertyNames.$validate(key);
         if (error) {
-          KeywordError.item = key;
-          KeywordError.cause = error;
-          return KeywordError;
+          return defineError("Property name is invalid", {
+            item: key,
+            cause: error
+          });
         }
+      }
+    }
+
+    return;
+  },
+
+  dependencies(schema, data, defineError) {
+    if (!isObject(data)) {
+      return;
+    }
+
+    for (const key in schema.dependencies) {
+      if (key in data === false) {
+        continue;
+      }
+
+      const dependency = schema.dependencies[key];
+      if (Array.isArray(dependency)) {
+        for (let i = 0; i < dependency.length; i++) {
+          if (!(dependency[i] in data)) {
+            return defineError("Dependency is not satisfied", { item: i });
+          }
+        }
+        continue;
+      }
+      if (typeof dependency === "boolean") {
+        if (dependency) {
+          continue;
+        }
+        return defineError("Dependency is not satisfied");
+      }
+
+      if (typeof dependency === "string") {
+        if (dependency in data) {
+          continue;
+        }
+        return defineError("Dependency is not satisfied");
+      }
+      const error = dependency.$validate(data);
+      if (error) {
+        return defineError("Dependency is not satisfied", { cause: error });
       }
     }
 
@@ -187,8 +246,16 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
   definitions: false,
   $id: false,
   $schema: false,
+
+  // Metadata keywords (not used as a function)
   title: false,
+  description: false,
   $comment: false,
+  examples: false,
   contentMediaType: false,
-  contentEncoding: false
+  contentEncoding: false,
+
+  // Not supported Open API keywords
+  discriminator: false,
+  nullable: false
 };

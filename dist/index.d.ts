@@ -1,7 +1,7 @@
-import { ValidationError } from "./utils";
+import { DefineErrorFunction, ValidationError } from "./utils";
 export type Result = void | ValidationError;
 export interface KeywordFunction {
-    (schema: CompiledSchema, data: any, error: ValidationError, instance: SchemaShield): Result;
+    (schema: CompiledSchema, data: any, defineError: DefineErrorFunction, instance: SchemaShield): Result;
 }
 export interface TypeFunction {
     (data: any): boolean;
