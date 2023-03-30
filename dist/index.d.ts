@@ -25,16 +25,19 @@ export interface Validator {
     compiledSchema: CompiledSchema;
 }
 export declare class SchemaShield {
-    types: Map<string, false | TypeFunction>;
-    formats: Map<string, false | FormatFunction>;
-    keywords: Map<string, false | KeywordFunction>;
-    immutable: boolean;
+    private types;
+    private formats;
+    private keywords;
+    private immutable;
     constructor({ immutable }?: {
         immutable?: boolean;
     });
-    addType(name: string, validator: TypeFunction): void;
-    addFormat(name: string, validator: FormatFunction): void;
-    addKeyword(name: string, validator: KeywordFunction): void;
+    addType(name: string, validator: TypeFunction, overwrite?: boolean): void;
+    getType(type: string): TypeFunction | false;
+    addFormat(name: string, validator: FormatFunction, overwrite?: boolean): void;
+    getFormat(format: string): FormatFunction | false;
+    addKeyword(name: string, validator: KeywordFunction, overwrite?: boolean): void;
+    getKeyword(keyword: string): KeywordFunction | false;
     compile(schema: any): Validator;
     private compileSchema;
     isSchemaLike(subSchema: any): boolean;

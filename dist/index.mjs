@@ -217,39 +217,101 @@ function getNamedFunction(name, fn) {
 // lib/formats.ts
 var import_is_my_ip_valid = __toESM(require_is_my_ip_valid());
 var RegExps = {
-  "date-time": /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|([+-])(\d{2}):(\d{2}))$/,
   time: /^(\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|([+-])(\d{2}):(\d{2}))$/,
   uri: /^[a-zA-Z][a-zA-Z0-9+\-.]*:[^\s]*$/,
-  email: /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/,
   hostname: /^[a-zA-Z0-9][a-zA-Z0-9-]{0,62}(\.[a-zA-Z0-9][a-zA-Z0-9-]{0,62})*[a-zA-Z0-9]$/,
   date: /^(\d{4})-(\d{2})-(\d{2})$/,
   "json-pointer": /^\/(?:[^~]|~0|~1)*$/,
   "relative-json-pointer": /^([0-9]+)(#|\/(?:[^~]|~0|~1)*)?$/
 };
+var daysInMonth = [31, , 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 var Formats = {
   ["date-time"](data) {
-    const upperCaseData = data.toUpperCase();
-    if (!RegExps["date-time"].test(upperCaseData)) {
+    const match = data.match(
+      /^(\d{4})-(0[0-9]|1[0-2])-(\d{2})T(0[0-9]|1\d|2[0-3]):([0-5]\d):((?:[0-5]\d|60))(?:.\d+)?(?:([+-])(0[0-9]|1\d|2[0-3]):([0-5]\d)|Z)?$/i
+    );
+    if (!match) {
       return false;
     }
-    const date = new Date(upperCaseData);
-    return !isNaN(date.getTime());
+    let day = Number(match[3]);
+    if (match[2] === "02" && day > 29) {
+      return false;
+    }
+    const [
+      ,
+      yearStr,
+      monthStr,
+      ,
+      hourStr,
+      minuteStr,
+      secondStr,
+      timezoneSign,
+      timezoneHourStr,
+      timezoneMinuteStr
+    ] = match;
+    let year = Number(yearStr);
+    let month = Number(monthStr);
+    let hour = Number(hourStr);
+    let minute = Number(minuteStr);
+    let second = Number(secondStr);
+    if (timezoneSign === "-" || timezoneSign === "+") {
+      const timezoneHour = Number(timezoneHourStr);
+      const timezoneMinute = Number(timezoneMinuteStr);
+      if (timezoneSign === "-") {
+        hour += timezoneHour;
+        minute += timezoneMinute;
+      } else if (timezoneSign === "+") {
+        hour -= timezoneHour;
+        minute -= timezoneMinute;
+      }
+      if (minute > 59) {
+        hour += 1;
+        minute -= 60;
+      } else if (minute < 0) {
+        hour -= 1;
+        minute += 60;
+      }
+      if (hour > 23) {
+        day += 1;
+        hour -= 24;
+      } else if (hour < 0) {
+        day -= 1;
+        hour += 24;
+      }
+      if (day > 31) {
+        month += 1;
+        day -= 31;
+      } else if (day < 1) {
+        month -= 1;
+        day += 31;
+      }
+      if (month > 12) {
+        year += 1;
+        month -= 12;
+      } else if (month < 1) {
+        year -= 1;
+        month += 12;
+      }
+      if (year < 0) {
+        return false;
+      }
+    }
+    const maxDays = month === 2 ? year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28 : daysInMonth[month - 1];
+    if (day > maxDays) {
+      return false;
+    }
+    if (second === 60 && (minute !== 59 || hour !== 23)) {
+      return false;
+    }
+    return true;
   },
   uri(data) {
     return RegExps.uri.test(data);
   },
   email(data) {
-    if (!RegExps.email.test(data)) {
-      return false;
-    }
-    const [local, domain] = data.split("@");
-    if (local.length > 64 || local.indexOf("..") !== -1 || local[0] === "." || local[local.length - 1] === ".") {
-      return false;
-    }
-    if (domain.length > 255 || domain.indexOf("..") !== -1 || domain[0] === "." || domain[domain.length - 1] === ".") {
-      return false;
-    }
-    return true;
+    return /^(?!\.)(?!.*\.$)[a-z0-9!#$%&'*+/=?^_`{|}~-]{1,20}(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]{1,21}){0,2}@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,60}[a-z0-9])?){0,3}$/i.test(
+      data
+    );
   },
   ipv4: (0, import_is_my_ip_valid.default)({ version: 4 }),
   ipv6: (0, import_is_my_ip_valid.default)({ version: 6 }),
@@ -994,15 +1056,15 @@ var StringKeywords = {
     }
     return defineError("Value does not match the pattern", { data });
   },
-  format(schema, data, defineError, formatInstance) {
+  format(schema, data, defineError, instance) {
     if (typeof data !== "string") {
       return;
     }
-    const formatValidate = formatInstance.formats.get(schema.format);
+    const formatValidate = instance.getFormat(schema.format);
     if (formatValidate === false) {
       return;
     }
-    if (typeof formatValidate === "function") {
+    if (formatValidate) {
       if (formatValidate(data)) {
         return;
       }
@@ -1023,9 +1085,9 @@ var keywords = {
 
 // lib/index.ts
 var SchemaShield = class {
-  types = /* @__PURE__ */ new Map();
-  formats = /* @__PURE__ */ new Map();
-  keywords = /* @__PURE__ */ new Map();
+  types = {};
+  formats = {};
+  keywords = {};
   immutable = false;
   constructor({
     immutable = false
@@ -1045,14 +1107,32 @@ var SchemaShield = class {
       }
     }
   }
-  addType(name, validator) {
-    this.types.set(name, validator);
+  addType(name, validator, overwrite = false) {
+    if (this.types[name] && !overwrite) {
+      throw new ValidationError(`Type "${name}" already exists`);
+    }
+    this.types[name] = validator;
   }
-  addFormat(name, validator) {
-    this.formats.set(name, validator);
+  getType(type) {
+    return this.types[type];
   }
-  addKeyword(name, validator) {
-    this.keywords.set(name, validator);
+  addFormat(name, validator, overwrite = false) {
+    if (this.formats[name] && !overwrite) {
+      throw new ValidationError(`Format "${name}" already exists`);
+    }
+    this.formats[name] = validator;
+  }
+  getFormat(format) {
+    return this.formats[format];
+  }
+  addKeyword(name, validator, overwrite = false) {
+    if (this.keywords[name] && !overwrite) {
+      throw new ValidationError(`Keyword "${name}" already exists`);
+    }
+    this.keywords[name] = validator;
+  }
+  getKeyword(keyword) {
+    return this.keywords[keyword];
   }
   compile(schema) {
     const compiledSchema = this.compileSchema(schema);
@@ -1101,7 +1181,7 @@ var SchemaShield = class {
     if ("type" in schema) {
       const types = Array.isArray(schema.type) ? schema.type : schema.type.split(",").map((t) => t.trim());
       for (const type of types) {
-        const validator = this.types.get(type);
+        const validator = this.getType(type);
         if (validator) {
           typeValidations.push(validator);
           methodName += (methodName ? "_OR_" : "") + validator.name;
@@ -1141,7 +1221,7 @@ var SchemaShield = class {
         compiledSchema.type = schema.type;
         continue;
       }
-      const keywordValidator = this.keywords.get(key);
+      const keywordValidator = this.getKeyword(key);
       if (keywordValidator) {
         const defineError = getDefinedErrorFunctionForKey(key, schema[key]);
         const executeKeywordValidator = (data) => keywordValidator(
@@ -1194,7 +1274,7 @@ var SchemaShield = class {
         return true;
       }
       for (let subKey in subSchema) {
-        if (this.keywords.has(subKey)) {
+        if (subKey in this.keywords) {
           return true;
         }
       }

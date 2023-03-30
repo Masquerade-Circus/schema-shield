@@ -35,17 +35,17 @@ export const StringKeywords: Record<string, KeywordFunction> = {
     return defineError("Value does not match the pattern", { data });
   },
 
-  format(schema, data, defineError, formatInstance) {
+  format(schema, data, defineError, instance) {
     if (typeof data !== "string") {
       return;
     }
 
-    const formatValidate = formatInstance.formats.get(schema.format);
+    const formatValidate = instance.getFormat(schema.format);
     if (formatValidate === false) {
       return;
     }
 
-    if (typeof formatValidate === "function") {
+    if (formatValidate) {
       if (formatValidate(data)) {
         return;
       }

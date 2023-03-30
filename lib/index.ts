@@ -45,10 +45,10 @@ export interface Validator {
 }
 
 export class SchemaShield {
-  types = new Map<string, TypeFunction | false>();
-  formats = new Map<string, FormatFunction | false>();
-  keywords = new Map<string, KeywordFunction | false>();
-  immutable = false;
+  private types: Record<string, TypeFunction | false> = {};
+  private formats: Record<string, FormatFunction | false> = {};
+  private keywords: Record<string, KeywordFunction | false> = {};
+  private immutable = false;
 
   constructor({
     immutable = false
@@ -74,16 +74,37 @@ export class SchemaShield {
     }
   }
 
-  addType(name: string, validator: TypeFunction) {
-    this.types.set(name, validator);
+  addType(name: string, validator: TypeFunction, overwrite = false) {
+    if (this.types[name] && !overwrite) {
+      throw new ValidationError(`Type "${name}" already exists`);
+    }
+    this.types[name] = validator;
   }
 
-  addFormat(name: string, validator: FormatFunction) {
-    this.formats.set(name, validator);
+  getType(type: string): TypeFunction | false {
+    return this.types[type];
   }
 
-  addKeyword(name: string, validator: KeywordFunction) {
-    this.keywords.set(name, validator);
+  addFormat(name: string, validator: FormatFunction, overwrite = false) {
+    if (this.formats[name] && !overwrite) {
+      throw new ValidationError(`Format "${name}" already exists`);
+    }
+    this.formats[name] = validator;
+  }
+
+  getFormat(format: string): FormatFunction | false {
+    return this.formats[format];
+  }
+
+  addKeyword(name: string, validator: KeywordFunction, overwrite = false) {
+    if (this.keywords[name] && !overwrite) {
+      throw new ValidationError(`Keyword "${name}" already exists`);
+    }
+    this.keywords[name] = validator;
+  }
+
+  getKeyword(keyword: string): KeywordFunction | false {
+    return this.keywords[keyword];
   }
 
   compile(schema: any): Validator {
@@ -144,7 +165,7 @@ export class SchemaShield {
         : schema.type.split(",").map((t) => t.trim());
 
       for (const type of types) {
-        const validator = this.types.get(type);
+        const validator = this.getType(type);
         if (validator) {
           typeValidations.push(validator);
           methodName += (methodName ? "_OR_" : "") + validator.name;
@@ -189,7 +210,7 @@ export class SchemaShield {
         continue;
       }
 
-      const keywordValidator = this.keywords.get(key);
+      const keywordValidator = this.getKeyword(key);
       if (keywordValidator) {
         const defineError = getDefinedErrorFunctionForKey(key, schema[key]);
         const executeKeywordValidator = (data: any) =>
@@ -252,7 +273,7 @@ export class SchemaShield {
       }
 
       for (let subKey in subSchema) {
-        if (this.keywords.has(subKey)) {
+        if (subKey in this.keywords) {
           return true;
         }
       }
