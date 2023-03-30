@@ -10,66 +10,6 @@ const RegExps = {
 };
 
 const daysInMonth = [31, , 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-function ipv6(address) {
-  if (address === "::") {
-    return true;
-  }
-
-  if (
-    address.indexOf(":") === -1 ||
-    (address.startsWith(":") && !address.startsWith("::")) ||
-    (address.endsWith(":") && !address.endsWith("::")) ||
-    /:::+/.test(address)
-  ) {
-    return false;
-  }
-
-  const hasIpv4 = address.indexOf(".") !== -1;
-  const addressParts = address.split(":");
-
-  if (hasIpv4) {
-    const ipv4Part = addressParts.pop();
-    if (
-      !/^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])$/.test(
-        ipv4Part
-      )
-    ) {
-      return false;
-    }
-  }
-
-  const isShortened = address.indexOf("::") !== -1;
-  const ipv6Part = hasIpv4 ? addressParts.join(":") : address;
-
-  if (isShortened) {
-    if (ipv6Part.split("::").length - 1 > 1) {
-      return false;
-    }
-
-    if (!/^[0-9a-fA-F:.]*$/.test(ipv6Part)) {
-      return false;
-    }
-
-    const ipv6ShortenedRegex =
-      /^(?:(?:(?:[0-9a-fA-F]{1,4}(?::|$)){1,6}))|(?:::(?:[0-9a-fA-F]{1,4})){0,5}$/;
-
-    return (
-      ipv6ShortenedRegex.test(ipv6Part) && !/[0-9a-fA-F]{5,}/.test(ipv6Part)
-    );
-  }
-
-  const ipv6Regex = /^(?:(?:[0-9a-fA-F]{1,4}:){7}(?:[0-9a-fA-F]{1,4}|:))$/;
-
-  const isIpv6Valid = ipv6Regex.test(ipv6Part);
-
-  const hasInvalidChar = /(?:[0-9a-fA-F]{5,}|\D[0-9a-fA-F]{3}:)/.test(ipv6Part);
-
-  if (hasIpv4) {
-    return isIpv6Valid || !hasInvalidChar;
-  }
-
-  return isIpv6Valid && !hasInvalidChar;
-}
 
 export const Formats: Record<string, FormatFunction | false> = {
   ["date-time"](data) {
@@ -190,7 +130,63 @@ export const Formats: Record<string, FormatFunction | false> = {
   },
 
   // ipv6: isMyIpValid({ version: 6 }),
-  ipv6: ipv6,
+  ipv6(address) {
+    if (address === "::") {
+      return true;
+    }
+
+    if (
+      address.indexOf(":") === -1 ||
+      /(?:\s+|:::+|^\w{5,}|\w{5}$|^:{1}\w|\w:{1}$)/.test(address)
+    ) {
+      return false;
+    }
+
+    const hasIpv4 = address.indexOf(".") !== -1;
+    let addressParts = address;
+
+    if (hasIpv4) {
+      addressParts = address.split(":");
+      const ipv4Part = addressParts.pop();
+      if (
+        !/^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])$/.test(
+          ipv4Part
+        )
+      ) {
+        return false;
+      }
+    }
+
+    const isShortened = address.indexOf("::") !== -1;
+    const ipv6Part = hasIpv4 ? addressParts.join(":") : address;
+
+    if (isShortened) {
+      if (ipv6Part.split("::").length - 1 > 1) {
+        return false;
+      }
+
+      if (!/^[0-9a-fA-F:.]*$/.test(ipv6Part)) {
+        return false;
+      }
+
+      return /^(?:(?:(?:[0-9a-fA-F]{1,4}(?::|$)){1,6}))|(?:::(?:[0-9a-fA-F]{1,4})){0,5}$/.test(
+        ipv6Part
+      );
+    }
+
+    const isIpv6Valid =
+      /^(?:(?:[0-9a-fA-F]{1,4}:){7}(?:[0-9a-fA-F]{1,4}|:))$/.test(ipv6Part);
+
+    const hasInvalidChar = /(?:[0-9a-fA-F]{5,}|\D[0-9a-fA-F]{3}:)/.test(
+      ipv6Part
+    );
+
+    if (hasIpv4) {
+      return isIpv6Valid || !hasInvalidChar;
+    }
+
+    return isIpv6Valid && !hasInvalidChar;
+  },
 
   hostname(data) {
     return /^[a-z0-9][a-z0-9-]{0,62}(?:\.[a-z0-9][a-z0-9-]{0,62})*[a-z0-9]$/i.test(
