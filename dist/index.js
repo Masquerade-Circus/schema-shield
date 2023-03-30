@@ -1,12 +1,7 @@
-var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
-var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __commonJS = (cb, mod) => function __require() {
-  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
-};
 var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
@@ -19,104 +14,7 @@ var __copyProps = (to, from, except, desc) => {
   }
   return to;
 };
-var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
-  // If the importer is in node compatibility mode or this is not an ESM
-  // file that has been converted to a CommonJS file using a Babel-
-  // compatible transform (i.e. "__esModule" has not been set), then set
-  // "default" to the CommonJS "module.exports" for node compatibility.
-  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
-  mod
-));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
-
-// node_modules/is-my-ip-valid/index.js
-var require_is_my_ip_valid = __commonJS({
-  "node_modules/is-my-ip-valid/index.js"(exports, module2) {
-    var reIpv4FirstPass = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
-    var reSubnetString = /\/\d{1,3}(?=%|$)/;
-    var reForwardSlash = /\//;
-    var reZone = /%.*$/;
-    var reBadCharacters = /([^0-9a-f:/%])/i;
-    var reBadAddress = /([0-9a-f]{5,}|:{3,}|[^:]:$|^:[^:]|\/$)/i;
-    function validate4(input) {
-      if (!reIpv4FirstPass.test(input))
-        return false;
-      var parts = input.split(".");
-      if (parts.length !== 4)
-        return false;
-      if (parts[0][0] === "0" && parts[0].length > 1)
-        return false;
-      if (parts[1][0] === "0" && parts[1].length > 1)
-        return false;
-      if (parts[2][0] === "0" && parts[2].length > 1)
-        return false;
-      if (parts[3][0] === "0" && parts[3].length > 1)
-        return false;
-      var n0 = Number(parts[0]);
-      var n1 = Number(parts[1]);
-      var n2 = Number(parts[2]);
-      var n3 = Number(parts[3]);
-      return n0 >= 0 && n0 < 256 && n1 >= 0 && n1 < 256 && n2 >= 0 && n2 < 256 && n3 >= 0 && n3 < 256;
-    }
-    function validate6(input) {
-      var withoutSubnet = input.replace(reSubnetString, "");
-      var hasSubnet = input.length !== withoutSubnet.length;
-      if (hasSubnet)
-        return false;
-      if (!hasSubnet) {
-        if (reForwardSlash.test(input))
-          return false;
-      }
-      var withoutZone = withoutSubnet.replace(reZone, "");
-      var lastPartSeparator = withoutZone.lastIndexOf(":");
-      if (lastPartSeparator === -1)
-        return false;
-      var lastPart = withoutZone.substring(lastPartSeparator + 1);
-      var hasV4Part = validate4(lastPart);
-      var address = hasV4Part ? withoutZone.substring(0, lastPartSeparator + 1) + "1234:5678" : withoutZone;
-      if (reBadCharacters.test(address))
-        return false;
-      if (reBadAddress.test(address))
-        return false;
-      var halves = address.split("::");
-      if (halves.length > 2)
-        return false;
-      if (halves.length === 2) {
-        var first = halves[0] === "" ? [] : halves[0].split(":");
-        var last = halves[1] === "" ? [] : halves[1].split(":");
-        var remainingLength = 8 - (first.length + last.length);
-        if (remainingLength <= 0)
-          return false;
-      } else {
-        if (address.split(":").length !== 8)
-          return false;
-      }
-      return true;
-    }
-    function validate(input) {
-      return validate4(input) || validate6(input);
-    }
-    module2.exports = function validator(options) {
-      if (!options)
-        options = {};
-      if (options.version === 4)
-        return validate4;
-      if (options.version === 6)
-        return validate6;
-      if (options.version == null)
-        return validate;
-      throw new Error("Unknown version: " + options.version);
-    };
-    module2.exports["__all_regexes__"] = [
-      reIpv4FirstPass,
-      reSubnetString,
-      reForwardSlash,
-      reZone,
-      reBadCharacters,
-      reBadAddress
-    ];
-  }
-});
 
 // lib/index.ts
 var lib_exports = {};
@@ -227,16 +125,51 @@ function getNamedFunction(name, fn) {
 }
 
 // lib/formats.ts
-var import_is_my_ip_valid = __toESM(require_is_my_ip_valid());
 var RegExps = {
   time: /^(\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|([+-])(\d{2}):(\d{2}))$/,
   uri: /^[a-zA-Z][a-zA-Z0-9+\-.]*:[^\s]*$/,
-  hostname: /^[a-zA-Z0-9][a-zA-Z0-9-]{0,62}(\.[a-zA-Z0-9][a-zA-Z0-9-]{0,62})*[a-zA-Z0-9]$/,
   date: /^(\d{4})-(\d{2})-(\d{2})$/,
   "json-pointer": /^\/(?:[^~]|~0|~1)*$/,
   "relative-json-pointer": /^([0-9]+)(#|\/(?:[^~]|~0|~1)*)?$/
 };
 var daysInMonth = [31, , 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+function ipv6(address) {
+  if (address === "::") {
+    return true;
+  }
+  if (address.indexOf(":") === -1 || address.startsWith(":") && !address.startsWith("::") || address.endsWith(":") && !address.endsWith("::") || /:::+/.test(address)) {
+    return false;
+  }
+  const hasIpv4 = address.indexOf(".") !== -1;
+  const addressParts = address.split(":");
+  if (hasIpv4) {
+    const ipv4Part = addressParts.pop();
+    if (!/^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])$/.test(
+      ipv4Part
+    )) {
+      return false;
+    }
+  }
+  const isShortened = address.indexOf("::") !== -1;
+  const ipv6Part = hasIpv4 ? addressParts.join(":") : address;
+  if (isShortened) {
+    if (ipv6Part.split("::").length - 1 > 1) {
+      return false;
+    }
+    if (!/^[0-9a-fA-F:.]*$/.test(ipv6Part)) {
+      return false;
+    }
+    const ipv6ShortenedRegex = /^(?:(?:(?:[0-9a-fA-F]{1,4}(?::|$)){1,6}))|(?:::(?:[0-9a-fA-F]{1,4})){0,5}$/;
+    return ipv6ShortenedRegex.test(ipv6Part) && !/[0-9a-fA-F]{5,}/.test(ipv6Part);
+  }
+  const ipv6Regex = /^(?:(?:[0-9a-fA-F]{1,4}:){7}(?:[0-9a-fA-F]{1,4}|:))$/;
+  const isIpv6Valid = ipv6Regex.test(ipv6Part);
+  const hasInvalidChar = /(?:[0-9a-fA-F]{5,}|\D[0-9a-fA-F]{3}:)/.test(ipv6Part);
+  if (hasIpv4) {
+    return isIpv6Valid || !hasInvalidChar;
+  }
+  return isIpv6Valid && !hasInvalidChar;
+}
 var Formats = {
   ["date-time"](data) {
     const match = data.match(
@@ -325,10 +258,17 @@ var Formats = {
       data
     );
   },
-  ipv4: (0, import_is_my_ip_valid.default)({ version: 4 }),
-  ipv6: (0, import_is_my_ip_valid.default)({ version: 6 }),
+  ipv4(data) {
+    return /^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])$/.test(
+      data
+    );
+  },
+  // ipv6: isMyIpValid({ version: 6 }),
+  ipv6,
   hostname(data) {
-    return RegExps.hostname.test(data);
+    return /^[a-z0-9][a-z0-9-]{0,62}(?:\.[a-z0-9][a-z0-9-]{0,62})*[a-z0-9]$/i.test(
+      data
+    );
   },
   date(data) {
     if (typeof data !== "string") {

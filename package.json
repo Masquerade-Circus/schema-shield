@@ -79,7 +79,6 @@
     "release-test": "release-it --dry-run --verbose"
   },
   "dependencies": {
-    "is-my-ip-valid": "^1.0.1",
     "ts-node": "^10.9.1",
     "tsc-prog": "^2.2.1",
     "tslib": "^2.5.0",

@@ -1,19 +1,75 @@
 import { FormatFunction } from "./index";
-import { ValidationError } from "./utils";
-import isMyIpValid from "is-my-ip-valid";
 
 // The datetime 1990-02-31T15:59:60.123-08:00 must be rejected.
 const RegExps = {
   time: /^(\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|([+-])(\d{2}):(\d{2}))$/,
   uri: /^[a-zA-Z][a-zA-Z0-9+\-.]*:[^\s]*$/,
-  hostname:
-    /^[a-zA-Z0-9][a-zA-Z0-9-]{0,62}(\.[a-zA-Z0-9][a-zA-Z0-9-]{0,62})*[a-zA-Z0-9]$/,
   date: /^(\d{4})-(\d{2})-(\d{2})$/,
   "json-pointer": /^\/(?:[^~]|~0|~1)*$/,
   "relative-json-pointer": /^([0-9]+)(#|\/(?:[^~]|~0|~1)*)?$/
 };
 
 const daysInMonth = [31, , 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+function ipv6(address) {
+  if (address === "::") {
+    return true;
+  }
+
+  if (
+    address.indexOf(":") === -1 ||
+    (address.startsWith(":") && !address.startsWith("::")) ||
+    (address.endsWith(":") && !address.endsWith("::")) ||
+    /:::+/.test(address)
+  ) {
+    return false;
+  }
+
+  const hasIpv4 = address.indexOf(".") !== -1;
+  const addressParts = address.split(":");
+
+  if (hasIpv4) {
+    const ipv4Part = addressParts.pop();
+    if (
+      !/^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])$/.test(
+        ipv4Part
+      )
+    ) {
+      return false;
+    }
+  }
+
+  const isShortened = address.indexOf("::") !== -1;
+  const ipv6Part = hasIpv4 ? addressParts.join(":") : address;
+
+  if (isShortened) {
+    if (ipv6Part.split("::").length - 1 > 1) {
+      return false;
+    }
+
+    if (!/^[0-9a-fA-F:.]*$/.test(ipv6Part)) {
+      return false;
+    }
+
+    const ipv6ShortenedRegex =
+      /^(?:(?:(?:[0-9a-fA-F]{1,4}(?::|$)){1,6}))|(?:::(?:[0-9a-fA-F]{1,4})){0,5}$/;
+
+    return (
+      ipv6ShortenedRegex.test(ipv6Part) && !/[0-9a-fA-F]{5,}/.test(ipv6Part)
+    );
+  }
+
+  const ipv6Regex = /^(?:(?:[0-9a-fA-F]{1,4}:){7}(?:[0-9a-fA-F]{1,4}|:))$/;
+
+  const isIpv6Valid = ipv6Regex.test(ipv6Part);
+
+  const hasInvalidChar = /(?:[0-9a-fA-F]{5,}|\D[0-9a-fA-F]{3}:)/.test(ipv6Part);
+
+  if (hasIpv4) {
+    return isIpv6Valid || !hasInvalidChar;
+  }
+
+  return isIpv6Valid && !hasInvalidChar;
+}
 
 export const Formats: Record<string, FormatFunction | false> = {
   ["date-time"](data) {
@@ -125,11 +181,21 @@ export const Formats: Record<string, FormatFunction | false> = {
       data
     );
   },
-  ipv4: isMyIpValid({ version: 4 }),
-  ipv6: isMyIpValid({ version: 6 }),
+  ipv4(data) {
+    // Matches a string formed by 4 numbers between 0 and 255 separated by dots without leading zeros
+    // /^((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])$/
+    return /^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])$/.test(
+      data
+    );
+  },
+
+  // ipv6: isMyIpValid({ version: 6 }),
+  ipv6: ipv6,
 
   hostname(data) {
-    return RegExps.hostname.test(data);
+    return /^[a-z0-9][a-z0-9-]{0,62}(?:\.[a-z0-9][a-z0-9-]{0,62})*[a-z0-9]$/i.test(
+      data
+    );
   },
   date(data) {
     if (typeof data !== "string") {
