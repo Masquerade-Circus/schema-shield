@@ -1,5 +1,17 @@
 
 
+### [0.0.4](https://github.com/Masquerade-Circus/schema-shield/compare/0.0.3...0.0.4) (2023-03-31)
+
+
+### Documentation
+
+* Update issue templates ([8c75c7e](https://github.com/Masquerade-Circus/schema-shield/commit/8c75c7e408092fa678537f050a0ef743433d90c5))
+
+
+### Code Refactoring
+
+* Improve performance ([#2](https://github.com/Masquerade-Circus/schema-shield/issues/2)) ([270aebc](https://github.com/Masquerade-Circus/schema-shield/commit/270aebc5a90b9f35b3622e9daef98735f849bbb9))
+
 ### [0.0.3](https://github.com/Masquerade-Circus/schema-shield/compare/0.0.2...0.0.3) (2023-03-29)
 
 
