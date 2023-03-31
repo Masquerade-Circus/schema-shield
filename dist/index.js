@@ -125,14 +125,6 @@ function getNamedFunction(name, fn) {
 }
 
 // lib/formats.ts
-var RegExps = {
-  time: /^(\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|([+-])(\d{2}):(\d{2}))$/,
-  uri: /^[a-zA-Z][a-zA-Z0-9+\-.]*:[^\s]*$/,
-  date: /^(\d{4})-(\d{2})-(\d{2})$/,
-  "json-pointer": /^\/(?:[^~]|~0|~1)*$/,
-  "relative-json-pointer": /^([0-9]+)(#|\/(?:[^~]|~0|~1)*)?$/
-};
-var daysInMonth = [31, , 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 var Formats = {
   ["date-time"](data) {
     const match = data.match(
@@ -204,6 +196,7 @@ var Formats = {
         return false;
       }
     }
+    const daysInMonth = [31, , 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     const maxDays = month === 2 ? year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28 : daysInMonth[month - 1];
     if (day > maxDays) {
       return false;
@@ -214,7 +207,7 @@ var Formats = {
     return true;
   },
   uri(data) {
-    return RegExps.uri.test(data);
+    return /^[a-zA-Z][a-zA-Z0-9+\-.]*:[^\s]*$/.test(data);
   },
   email(data) {
     return /^(?!\.)(?!.*\.$)[a-z0-9!#$%&'*+/=?^_`{|}~-]{1,20}(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]{1,21}){0,2}@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,60}[a-z0-9])?){0,3}$/i.test(
@@ -227,17 +220,17 @@ var Formats = {
     );
   },
   // ipv6: isMyIpValid({ version: 6 }),
-  ipv6(address) {
-    if (address === "::") {
+  ipv6(data) {
+    if (data === "::") {
       return true;
     }
-    if (address.indexOf(":") === -1 || /(?:\s+|:::+|^\w{5,}|\w{5}$|^:{1}\w|\w:{1}$)/.test(address)) {
+    if (data.indexOf(":") === -1 || /(?:\s+|:::+|^\w{5,}|\w{5}$|^:{1}\w|\w:{1}$)/.test(data)) {
       return false;
     }
-    const hasIpv4 = address.indexOf(".") !== -1;
-    let addressParts = address;
+    const hasIpv4 = data.indexOf(".") !== -1;
+    let addressParts = data;
     if (hasIpv4) {
-      addressParts = address.split(":");
+      addressParts = data.split(":");
       const ipv4Part = addressParts.pop();
       if (!/^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])$/.test(
         ipv4Part
@@ -245,8 +238,8 @@ var Formats = {
         return false;
       }
     }
-    const isShortened = address.indexOf("::") !== -1;
-    const ipv6Part = hasIpv4 ? addressParts.join(":") : address;
+    const isShortened = data.indexOf("::") !== -1;
+    const ipv6Part = hasIpv4 ? addressParts.join(":") : data;
     if (isShortened) {
       if (ipv6Part.split("::").length - 1 > 1) {
         return false;
@@ -273,10 +266,7 @@ var Formats = {
     );
   },
   date(data) {
-    if (typeof data !== "string") {
-      return false;
-    }
-    if (RegExps.date.test(data) === false) {
+    if (/^(\d{4})-(\d{2})-(\d{2})$/.test(data) === false) {
       return false;
     }
     return !isNaN(new Date(data).getTime());
@@ -293,26 +283,39 @@ var Formats = {
     if (data === "") {
       return true;
     }
-    return RegExps["json-pointer"].test(data);
+    return /^\/(?:[^~]|~0|~1)*$/.test(data);
   },
   "relative-json-pointer"(data) {
     if (data === "") {
       return true;
     }
-    return RegExps["relative-json-pointer"].test(data);
+    return /^([0-9]+)(#|\/(?:[^~]|~0|~1)*)?$/.test(data);
   },
   time(data) {
-    return RegExps.time.test(data);
+    return /^(\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|([+-])(\d{2}):(\d{2}))$/.test(
+      data
+    );
+  },
+  "uri-reference"(data) {
+    if (/\\/.test(data)) {
+      return false;
+    }
+    return /^(([^:/?#]+):)?(\/\/([^/?#]*))?([^?#]*)(\?([^#]*))?(#((?![^#]*\\)[^#]*))?/i.test(
+      data
+    );
+  },
+  "uri-template"(data) {
+    return /^(?:(?:https?:\/\/[\w.-]+)?\/?)?[\w- ;,.\/?%&=]*(?:\{[\w-]+(?::\d+)?\}[\w- ;,.\/?%&=]*)*\/?$/.test(
+      data
+    );
   },
   // Not supported yet
   duration: false,
+  uuid: false,
   "idn-email": false,
   "idn-hostname": false,
-  uuid: false,
-  "uri-reference": false,
   iri: false,
-  "iri-reference": false,
-  "uri-template": false
+  "iri-reference": false
 };
 
 // lib/types.ts

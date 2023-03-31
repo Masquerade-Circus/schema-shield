@@ -34,7 +34,7 @@ Despite its feature-rich and easy extendable nature, SchemaShield is designed to
   - [Known Limitations](#known-limitations)
     - [Schema References and Schema Definitions](#schema-references-and-schema-definitions)
     - [Unsupported Formats](#unsupported-formats)
-    - [Internationalized Formats](#internationalized-formats)
+      - [Internationalized Formats](#internationalized-formats)
   - [Testing](#testing)
   - [Contribute](#contribute)
   - [Legal](#legal)
@@ -715,14 +715,7 @@ For now, consider using custom implementations using the `addKeyword` method or 
 
 ### Unsupported Formats
 
-SchemaShield currently does not support the following formats, but they are planned to be addressed in future updates of SchemaShield. For now, consider using custom implementations using the `addFormat` method to handle these formats.
-
-- `duration`
-- `uuid`
-- `uri-reference`
-- `uri-template`
-
-### Internationalized Formats
+#### Internationalized Formats
 
 There is no plan to support the following formats in SchemaShield, as they are not relevant to the majority of use cases. If you need to use these formats, consider using custom implementations using the `addFormat` method to handle them.
 
