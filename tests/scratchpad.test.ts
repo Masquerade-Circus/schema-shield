@@ -189,215 +189,192 @@ describe("ValidationError", () => {
 });
 
 describe.only("Vs schemasafe", () => {
-  const testGroup = {
-    description: "validation of IPv6 addresses",
-    schema: { format: "ipv6" },
-    tests: [
-      {
-        description: "all string formats ignore integers",
-        data: 12,
-        valid: true
+  const testGroups = [
+    {
+      description: "additionalItems as schema",
+      schema: {
+        items: [{}],
+        additionalItems: { type: "integer" }
       },
-      {
-        description: "all string formats ignore floats",
-        data: 13.7,
-        valid: true
+      tests: [
+        {
+          description: "additional items match schema",
+          data: [null, 2, 3, 4],
+          valid: true
+        },
+        {
+          description: "additional items do not match schema",
+          data: [null, 2, 3, "foo"],
+          valid: false
+        }
+      ]
+    },
+    {
+      description: "when items is schema, additionalItems does nothing",
+      schema: {
+        items: {
+          type: "integer"
+        },
+        additionalItems: {
+          type: "string"
+        }
       },
-      {
-        description: "all string formats ignore objects",
-        data: {},
-        valid: true
+      tests: [
+        {
+          description: "valid with a array of type integers",
+          data: [1, 2, 3],
+          valid: true
+        },
+        {
+          description: "invalid with a array of mixed types",
+          data: [1, "2", "3"],
+          valid: false
+        }
+      ]
+    },
+    {
+      description: "when items is schema, boolean additionalItems does nothing",
+      schema: {
+        items: {},
+        additionalItems: false
       },
-      {
-        description: "all string formats ignore arrays",
-        data: [],
-        valid: true
+      tests: [
+        {
+          description: "all items match schema",
+          data: [1, 2, 3, 4, 5],
+          valid: true
+        }
+      ]
+    },
+    {
+      description: "array of items with no additionalItems permitted",
+      schema: {
+        items: [{}, {}, {}],
+        additionalItems: false
       },
-      {
-        description: "all string formats ignore booleans",
-        data: false,
-        valid: true
+      tests: [
+        {
+          description: "empty array",
+          data: [],
+          valid: true
+        },
+        {
+          description: "fewer number of items present (1)",
+          data: [1],
+          valid: true
+        },
+        {
+          description: "fewer number of items present (2)",
+          data: [1, 2],
+          valid: true
+        },
+        {
+          description: "equal number of items present",
+          data: [1, 2, 3],
+          valid: true
+        },
+        {
+          description: "additional items are not permitted",
+          data: [1, 2, 3, 4],
+          valid: false
+        }
+      ]
+    },
+    {
+      description: "additionalItems as false without items",
+      schema: { additionalItems: false },
+      tests: [
+        {
+          description: "items defaults to empty schema so everything is valid",
+          data: [1, 2, 3, 4, 5],
+          valid: true
+        },
+        {
+          description: "ignores non-arrays",
+          data: { foo: "bar" },
+          valid: true
+        }
+      ]
+    },
+    {
+      description: "additionalItems are allowed by default",
+      schema: { items: [{ type: "integer" }] },
+      tests: [
+        {
+          description: "only the first item is validated",
+          data: [1, "foo", false],
+          valid: true
+        }
+      ]
+    },
+    {
+      description: "additionalItems does not look in applicators, valid case",
+      schema: {
+        allOf: [{ items: [{ type: "integer" }] }],
+        additionalItems: { type: "boolean" }
       },
-      {
-        description: "all string formats ignore nulls",
-        data: null,
-        valid: true
+      tests: [
+        {
+          description: "items defined in allOf are not examined",
+          data: [1, null],
+          valid: true
+        }
+      ]
+    },
+    {
+      description: "additionalItems does not look in applicators, invalid case",
+      schema: {
+        allOf: [{ items: [{ type: "integer" }, { type: "string" }] }],
+        items: [{ type: "integer" }],
+        additionalItems: { type: "boolean" }
       },
-      {
-        description: "a valid IPv6 address",
-        data: "::1",
-        valid: true
+      tests: [
+        {
+          description: "items defined in allOf are not examined",
+          data: [1, "hello"],
+          valid: false
+        }
+      ]
+    },
+    {
+      description:
+        "items validation adjusts the starting index for additionalItems",
+      schema: {
+        items: [{ type: "string" }],
+        additionalItems: { type: "integer" }
       },
-      {
-        description: "an IPv6 address with out-of-range values",
-        data: "12345::",
-        valid: false
+      tests: [
+        {
+          description: "valid items",
+          data: ["x", 2, 3],
+          valid: true
+        },
+        {
+          description: "wrong type of second item",
+          data: ["x", "y"],
+          valid: false
+        }
+      ]
+    },
+    {
+      description: "additionalItems with null instance elements",
+      schema: {
+        additionalItems: {
+          type: "null"
+        }
       },
-      {
-        description: "trailing 4 hex symbols is valid",
-        data: "::abef",
-        valid: true
-      },
-      {
-        description: "trailing 5 hex symbols is invalid",
-        data: "::abcef",
-        valid: false
-      },
-      {
-        description: "an IPv6 address with too many components",
-        data: "1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1",
-        valid: false
-      },
-      {
-        description: "an IPv6 address containing illegal characters",
-        data: "::laptop",
-        valid: false
-      },
-      {
-        description: "no digits is valid",
-        data: "::",
-        valid: true
-      },
-      {
-        description: "leading colons is valid",
-        data: "::42:ff:1",
-        valid: true
-      },
-      {
-        description: "trailing colons is valid",
-        data: "d6::",
-        valid: true
-      },
-      {
-        description: "missing leading octet is invalid",
-        data: ":2:3:4:5:6:7:8",
-        valid: false
-      },
-      {
-        description: "missing trailing octet is invalid",
-        data: "1:2:3:4:5:6:7:",
-        valid: false
-      },
-      {
-        description: "missing leading octet with omitted octets later",
-        data: ":2:3:4::8",
-        valid: false
-      },
-      {
-        description: "single set of double colons in the middle is valid",
-        data: "1:d6::42",
-        valid: true
-      },
-      {
-        description: "two sets of double colons is invalid",
-        data: "1::d6::42",
-        valid: false
-      },
-      {
-        description: "mixed format with the ipv4 section as decimal octets",
-        data: "1::d6:192.168.0.1",
-        valid: true
-      },
-      {
-        description: "mixed format with double colons between the sections",
-        data: "1:2::192.168.0.1",
-        valid: true
-      },
-      {
-        description: "mixed format with ipv4 section with octet out of range",
-        data: "1::2:192.168.256.1",
-        valid: false
-      },
-      {
-        description: "mixed format with ipv4 section with a hex octet",
-        data: "1::2:192.168.ff.1",
-        valid: false
-      },
-      {
-        description:
-          "mixed format with leading double colons (ipv4-mapped ipv6 address)",
-        data: "::ffff:192.168.0.1",
-        valid: true
-      },
-      {
-        description: "triple colons is invalid",
-        data: "1:2:3:4:5:::8",
-        valid: false
-      },
-      {
-        description: "8 octets",
-        data: "1:2:3:4:5:6:7:8",
-        valid: true
-      },
-      {
-        description: "insufficient octets without double colons",
-        data: "1:2:3:4:5:6:7",
-        valid: false
-      },
-      {
-        description: "no colons is invalid",
-        data: "1",
-        valid: false
-      },
-      {
-        description: "ipv4 is not ipv6",
-        data: "127.0.0.1",
-        valid: false
-      },
-      {
-        description: "ipv4 segment must have 4 octets",
-        data: "1:2:3:4:1.2.3",
-        valid: false
-      },
-      {
-        description: "leading whitespace is invalid",
-        data: "  ::1",
-        valid: false
-      },
-      {
-        description: "trailing whitespace is invalid",
-        data: "::1  ",
-        valid: false
-      },
-      {
-        description: "netmask is not a part of ipv6 address",
-        data: "fe80::/64",
-        valid: false
-      },
-      {
-        description: "zone id is not a part of ipv6 address",
-        data: "fe80::a%eth1",
-        valid: false
-      },
-      {
-        description: "a long valid ipv6",
-        data: "1000:1000:1000:1000:1000:1000:255.255.255.255",
-        valid: true
-      },
-      {
-        description: "a long invalid ipv6, below length limit, first",
-        data: "100:100:100:100:100:100:255.255.255.255.255",
-        valid: false
-      },
-      {
-        description: "a long invalid ipv6, below length limit, second",
-        data: "100:100:100:100:100:100:100:255.255.255.255",
-        valid: false
-      },
-      {
-        description: "invalid non-ASCII '৪' (a Bengali 4)",
-        data: "1:2:3:4:5:6:7:৪",
-        valid: false
-      },
-      {
-        description: "invalid non-ASCII '৪' (a Bengali 4) in the IPv4 portion",
-        data: "1:2::192.16৪.0.1",
-        valid: false
-      }
-    ]
-  };
+      tests: [
+        {
+          description: "allows null elements",
+          data: [null],
+          valid: true
+        }
+      ]
+    }
+  ];
+  const testGroup = testGroups[8];
 
-  const count = 100000;
+  const count = 10000000;
   const times: any = [];
 
   before(() => {
@@ -451,6 +428,9 @@ describe.only("Vs schemasafe", () => {
 
         expect(result).toHaveProperty("valid", test.valid);
         times.push({
+          group: testGroup.description,
+          description: test.description,
+          schema: JSON.stringify(testGroup.schema),
           data: JSON.stringify({ data: test.data }),
           valid: test.valid,
           schemaShield: 0,

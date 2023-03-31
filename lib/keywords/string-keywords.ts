@@ -35,24 +35,18 @@ export const StringKeywords: Record<string, KeywordFunction> = {
     return defineError("Value does not match the pattern", { data });
   },
 
+  // Take into account that if we receive a format that is not defined, we
+  // will not throw an error, we just ignore it.
   format(schema, data, defineError, instance) {
     if (typeof data !== "string") {
       return;
     }
 
     const formatValidate = instance.getFormat(schema.format);
-    if (formatValidate === false) {
+    if (!formatValidate || formatValidate(data)) {
       return;
     }
 
-    if (formatValidate) {
-      if (formatValidate(data)) {
-        return;
-      }
-
-      return defineError("Value does not match the format", { data });
-    }
-
-    return defineError("Format is not supported", { data });
+    return defineError("Value does not match the format", { data });
   }
 };

@@ -412,7 +412,7 @@ var ArrayKeywords = {
     return defineError("Array is too long", { data });
   },
   additionalItems(schema, data, defineError) {
-    if (!Array.isArray(data) || !schema.items || !Array.isArray(schema.items)) {
+    if (!schema.items || isObject(schema.items)) {
       return;
     }
     if (schema.additionalItems === false) {
@@ -985,21 +985,17 @@ var StringKeywords = {
     }
     return defineError("Value does not match the pattern", { data });
   },
+  // Take into account that if we receive a format that is not defined, we
+  // will not throw an error, we just ignore it.
   format(schema, data, defineError, instance) {
     if (typeof data !== "string") {
       return;
     }
     const formatValidate = instance.getFormat(schema.format);
-    if (formatValidate === false) {
+    if (!formatValidate || formatValidate(data)) {
       return;
     }
-    if (formatValidate) {
-      if (formatValidate(data)) {
-        return;
-      }
-      return defineError("Value does not match the format", { data });
-    }
-    return defineError("Format is not supported", { data });
+    return defineError("Value does not match the format", { data });
   }
 };
 
@@ -1125,10 +1121,9 @@ var SchemaShield = class {
         compiledSchema.$validate = getNamedFunction(
           methodName,
           (data) => {
-            if (typeValidation(data)) {
-              return;
+            if (!typeValidation(data)) {
+              return defineTypeError("Invalid type", { data });
             }
-            return defineTypeError("Invalid type", { data });
           }
         );
       } else if (typeValidationsLength > 1) {
@@ -1153,12 +1148,6 @@ var SchemaShield = class {
       const keywordValidator = this.getKeyword(key);
       if (keywordValidator) {
         const defineError = getDefinedErrorFunctionForKey(key, schema[key]);
-        const executeKeywordValidator = (data) => keywordValidator(
-          compiledSchema,
-          data,
-          defineError,
-          this
-        );
         if (compiledSchema.$validate) {
           const prevValidator = compiledSchema.$validate;
           methodName += `_AND_${keywordValidator.name}`;
@@ -1169,17 +1158,24 @@ var SchemaShield = class {
               if (error) {
                 return error;
               }
-              const keywordError = executeKeywordValidator(data);
-              if (keywordError) {
-                return keywordError;
-              }
+              return keywordValidator(
+                compiledSchema,
+                data,
+                defineError,
+                this
+              );
             }
           );
         } else {
           methodName = keywordValidator.name;
           compiledSchema.$validate = getNamedFunction(
             methodName,
-            executeKeywordValidator
+            (data) => keywordValidator(
+              compiledSchema,
+              data,
+              defineError,
+              this
+            )
           );
         }
       }

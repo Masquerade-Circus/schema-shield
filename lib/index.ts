@@ -183,10 +183,9 @@ export class SchemaShield {
         compiledSchema.$validate = getNamedFunction<ValidateFunction>(
           methodName,
           (data) => {
-            if (typeValidation(data)) {
-              return;
+            if (!typeValidation(data)) {
+              return defineTypeError("Invalid type", { data });
             }
-            return defineTypeError("Invalid type", { data });
           }
         );
       } else if (typeValidationsLength > 1) {
@@ -213,14 +212,6 @@ export class SchemaShield {
       const keywordValidator = this.getKeyword(key);
       if (keywordValidator) {
         const defineError = getDefinedErrorFunctionForKey(key, schema[key]);
-        const executeKeywordValidator = (data: any) =>
-          (keywordValidator as KeywordFunction)(
-            compiledSchema,
-            data,
-            defineError,
-            this
-          );
-
         if (compiledSchema.$validate) {
           const prevValidator = compiledSchema.$validate;
           methodName += `_AND_${keywordValidator.name}`;
@@ -231,17 +222,25 @@ export class SchemaShield {
               if (error) {
                 return error;
               }
-              const keywordError = executeKeywordValidator(data);
-              if (keywordError) {
-                return keywordError;
-              }
+              return (keywordValidator as KeywordFunction)(
+                compiledSchema,
+                data,
+                defineError,
+                this
+              );
             }
           );
         } else {
           methodName = keywordValidator.name;
           compiledSchema.$validate = getNamedFunction<ValidateFunction>(
             methodName,
-            executeKeywordValidator
+            (data) =>
+              (keywordValidator as KeywordFunction)(
+                compiledSchema,
+                data,
+                defineError,
+                this
+              )
           );
         }
       }
