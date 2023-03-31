@@ -8,33 +8,36 @@ Despite its feature-rich and easy extendable nature, SchemaShield is designed to
 
 ## Table of Contents
 
-- [Table of Contents](#table-of-contents)
-- [Features](#features)
-- [Usage](#usage)
-- [No Code Generation](#no-code-generation)
-- [Error Handling](#error-handling)
-  - [ValidationError Properties](#validationerror-properties)
-  - [Get the cause of the error](#get-the-cause-of-the-error)
-- [Adding Custom Types](#adding-custom-types)
-  - [Method Signature](#method-signature)
-  - [Example: Adding a Custom Type](#example-adding-a-custom-type)
-- [Adding Custom Formats](#adding-custom-formats)
-  - [Method Signature](#method-signature-1)
-  - [Example: Adding a Custom Format](#example-adding-a-custom-format)
-- [Adding Custom Keywords](#adding-custom-keywords)
-  - [Method Signature](#method-signature-2)
-  - [Example: Adding a Custom Keyword](#example-adding-a-custom-keyword)
-  - [Complex example: Adding a Custom Keyword that uses the instance](#complex-example-adding-a-custom-keyword-that-uses-the-instance)
-- [No Code Generation Opened Possibilities](#no-code-generation-opened-possibilities)
-- [Immutable Mode](#immutable-mode)
-- [TypeScript Support](#typescript-support)
-- [Known Limitations](#known-limitations)
-  - [Schema References and Schema Definitions](#schema-references-and-schema-definitions)
-  - [Unsupported Formats](#unsupported-formats)
-  - [Internationalized Formats](#internationalized-formats)
-- [Testing](#testing)
-- [Contribute](#contribute)
-- [Legal](#legal)
+- [SchemaShield](#schemashield)
+  - [Table of Contents](#table-of-contents)
+  - [Features](#features)
+  - [Usage](#usage)
+  - [No Code Generation](#no-code-generation)
+  - [Error Handling](#error-handling)
+    - [ValidationError Properties](#validationerror-properties)
+    - [Get the cause of the error](#get-the-cause-of-the-error)
+  - [Adding Custom Types](#adding-custom-types)
+    - [Method Signature](#method-signature)
+    - [Example: Adding a Custom Type](#example-adding-a-custom-type)
+  - [Adding Custom Formats](#adding-custom-formats)
+    - [Method Signature](#method-signature-1)
+    - [Example: Adding a Custom Format](#example-adding-a-custom-format)
+  - [Adding Custom Keywords](#adding-custom-keywords)
+    - [Method Signature](#method-signature-2)
+      - [About the `defineError` Function](#about-the-defineerror-function)
+      - [About the `instance` Argument](#about-the-instance-argument)
+    - [Example: Adding a Custom Keyword](#example-adding-a-custom-keyword)
+    - [Complex example: Adding a Custom Keyword that uses the instance](#complex-example-adding-a-custom-keyword-that-uses-the-instance)
+  - [No Code Generation Opened Possibilities](#no-code-generation-opened-possibilities)
+  - [Immutable Mode](#immutable-mode)
+  - [TypeScript Support](#typescript-support)
+  - [Known Limitations](#known-limitations)
+    - [Schema References and Schema Definitions](#schema-references-and-schema-definitions)
+    - [Unsupported Formats](#unsupported-formats)
+      - [Internationalized Formats](#internationalized-formats)
+  - [Testing](#testing)
+  - [Contribute](#contribute)
+  - [Legal](#legal)
 
 ## Features
 
@@ -218,11 +221,12 @@ interface TypeFunction {
   (data: any): boolean;
 }
 
-addType(name: string, validator: TypeFunction): void;
+addType(name: string, validator: TypeFunction, overwrite?: boolean): void;
 ```
 
 - `name`: The name of the custom type. This should be a unique string that does not conflict with existing types.
 - `validator`: A `TypeFunction` that takes a single argument `data` and returns a boolean value. The function should return `true` if the provided data is valid for the custom type, and `false` otherwise.
+- `overwrite` (optional): Set to `true` to overwrite an existing type with the same name. Default is `false`. If set to `false` and a type with the same name already exists, an error will be thrown.
 
 ### Example: Adding a Custom Type
 
@@ -276,11 +280,12 @@ interface FormatFunction {
   (data: any): boolean;
 }
 
-addFormat(name: string, validator: FormatFunction): void;
+addFormat(name: string, validator: FormatFunction, overwrite?: boolean): void;
 ```
 
 - `name`: The name of the custom format. This should be a unique string that does not conflict with existing formats.
 - `validator`: A FormatFunction that takes a single argument data and returns a boolean value. The function should return true if the provided data is valid for the custom format, and false otherwise.
+- `overwrite` (optional): Set to true to overwrite an existing format with the same name. Default is false. If set to false and a format with the same name already exists, an error will be thrown.
 
 ### Example: Adding a Custom Format
 
@@ -333,7 +338,7 @@ SchemaShield allows you to add custom keywords for validation using the addKeywo
 ```javascript
 type Result = void | ValidationError;
 
-export interface DefineErrorOptions {
+interface DefineErrorOptions {
   item?: any; // Final item in the path
   cause?: ValidationError; // Cause of the error
   data?: any; // Data that caused the error
@@ -352,6 +357,28 @@ interface CompiledSchema {
   [key: string]: any;
 }
 
+interface FormatFunction {
+  (data: any): boolean;
+}
+
+interface TypeFunction {
+  (data: any): boolean;
+}
+
+declare class SchemaShield {
+    constructor({ immutable }?: {
+        immutable?: boolean;
+    });
+    compile(schema: any): Validator;
+    addType(name: string, validator: TypeFunction, overwrite?: boolean): void;
+    addFormat(name: string, validator: FormatFunction, overwrite?: boolean): void;
+    addKeyword(name: string, validator: KeywordFunction, overwrite?: boolean): void;
+    getType(type: string): TypeFunction | false;
+    getFormat(format: string): FormatFunction | false;
+    getKeyword(keyword: string): KeywordFunction | false;
+    isSchemaLike(subSchema: any): boolean;
+}
+
 interface KeywordFunction {
   (
     schema: CompiledSchema,
@@ -361,11 +388,14 @@ interface KeywordFunction {
   ): Result;
 }
 
-addKeyword(name: string, validator: KeywordFunction): void;
+
+
+addKeyword(name: string, validator: KeywordFunction, overwrite?: boolean): void;
 ```
 
 - `name`: The name of the custom keyword. This should be a unique string that does not conflict with existing keywords.
 - `validator`: A `KeywordFunction` that takes four arguments: `schema`, `data`, `defineError`, and `instance` (The SchemaShield instance that is currently running the validation). The function should not return anything if the data is valid for the custom keyword, and should return a `ValidationError` instance if the data is invalid.
+- `overwrite` (optional): Set to true to overwrite an existing keyword with the same name. Default is false. If set to false and a keyword with the same name already exists, an error will be thrown.
 
 #### About the `defineError` Function
 
@@ -465,9 +495,9 @@ const prefixedUsername = (schema, data, defineError, instance) => {
 
   // Get the validators for the specified types and formats from the instance
   // (if they exist)
-  const typeValidator = instance.types.get(validType);
-  const prefixValidator = instance.keywords.get(prefixValidator);
-  const formatValidator = instance.formats.get(validFormat);
+  const typeValidator = instance.getType(validType);
+  const prefixValidator = instance.getKeyword(prefixValidator);
+  const formatValidator = instance.getFormat(validFormat);
 
   for (let i = 0; i < data.length; i++) {
     const item = data[i];
@@ -572,9 +602,9 @@ schemaShield.addKeyword(
   (schema, data, defineError, instance) => {
     const { assignment, project, employee } = data;
 
-    const stringTypeValidator = instance.types.get("string");
-    const projectTypeValidator = instance.types.get("project");
-    const employeeTypeValidator = instance.types.get("employee");
+    const stringTypeValidator = instance.getType("string");
+    const projectTypeValidator = instance.getType("project");
+    const employeeTypeValidator = instance.getType("employee");
 
     if (!stringTypeValidator(assignment)) {
       return defineError("Assignment must be a string", {
@@ -685,14 +715,7 @@ For now, consider using custom implementations using the `addKeyword` method or 
 
 ### Unsupported Formats
 
-SchemaShield currently does not support the following formats, but they are planned to be addressed in future updates of SchemaShield. For now, consider using custom implementations using the `addFormat` method to handle these formats.
-
-- `duration`
-- `uuid`
-- `uri-reference`
-- `uri-template`
-
-### Internationalized Formats
+#### Internationalized Formats
 
 There is no plan to support the following formats in SchemaShield, as they are not relevant to the majority of use cases. If you need to use these formats, consider using custom implementations using the `addFormat` method to handle them.
 

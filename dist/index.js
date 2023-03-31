@@ -1,12 +1,7 @@
-var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
-var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __commonJS = (cb, mod) => function __require() {
-  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
-};
 var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
@@ -19,104 +14,7 @@ var __copyProps = (to, from, except, desc) => {
   }
   return to;
 };
-var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
-  // If the importer is in node compatibility mode or this is not an ESM
-  // file that has been converted to a CommonJS file using a Babel-
-  // compatible transform (i.e. "__esModule" has not been set), then set
-  // "default" to the CommonJS "module.exports" for node compatibility.
-  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
-  mod
-));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
-
-// node_modules/is-my-ip-valid/index.js
-var require_is_my_ip_valid = __commonJS({
-  "node_modules/is-my-ip-valid/index.js"(exports, module2) {
-    var reIpv4FirstPass = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
-    var reSubnetString = /\/\d{1,3}(?=%|$)/;
-    var reForwardSlash = /\//;
-    var reZone = /%.*$/;
-    var reBadCharacters = /([^0-9a-f:/%])/i;
-    var reBadAddress = /([0-9a-f]{5,}|:{3,}|[^:]:$|^:[^:]|\/$)/i;
-    function validate4(input) {
-      if (!reIpv4FirstPass.test(input))
-        return false;
-      var parts = input.split(".");
-      if (parts.length !== 4)
-        return false;
-      if (parts[0][0] === "0" && parts[0].length > 1)
-        return false;
-      if (parts[1][0] === "0" && parts[1].length > 1)
-        return false;
-      if (parts[2][0] === "0" && parts[2].length > 1)
-        return false;
-      if (parts[3][0] === "0" && parts[3].length > 1)
-        return false;
-      var n0 = Number(parts[0]);
-      var n1 = Number(parts[1]);
-      var n2 = Number(parts[2]);
-      var n3 = Number(parts[3]);
-      return n0 >= 0 && n0 < 256 && n1 >= 0 && n1 < 256 && n2 >= 0 && n2 < 256 && n3 >= 0 && n3 < 256;
-    }
-    function validate6(input) {
-      var withoutSubnet = input.replace(reSubnetString, "");
-      var hasSubnet = input.length !== withoutSubnet.length;
-      if (hasSubnet)
-        return false;
-      if (!hasSubnet) {
-        if (reForwardSlash.test(input))
-          return false;
-      }
-      var withoutZone = withoutSubnet.replace(reZone, "");
-      var lastPartSeparator = withoutZone.lastIndexOf(":");
-      if (lastPartSeparator === -1)
-        return false;
-      var lastPart = withoutZone.substring(lastPartSeparator + 1);
-      var hasV4Part = validate4(lastPart);
-      var address = hasV4Part ? withoutZone.substring(0, lastPartSeparator + 1) + "1234:5678" : withoutZone;
-      if (reBadCharacters.test(address))
-        return false;
-      if (reBadAddress.test(address))
-        return false;
-      var halves = address.split("::");
-      if (halves.length > 2)
-        return false;
-      if (halves.length === 2) {
-        var first = halves[0] === "" ? [] : halves[0].split(":");
-        var last = halves[1] === "" ? [] : halves[1].split(":");
-        var remainingLength = 8 - (first.length + last.length);
-        if (remainingLength <= 0)
-          return false;
-      } else {
-        if (address.split(":").length !== 8)
-          return false;
-      }
-      return true;
-    }
-    function validate(input) {
-      return validate4(input) || validate6(input);
-    }
-    module2.exports = function validator(options) {
-      if (!options)
-        options = {};
-      if (options.version === 4)
-        return validate4;
-      if (options.version === 6)
-        return validate6;
-      if (options.version == null)
-        return validate;
-      throw new Error("Unknown version: " + options.version);
-    };
-    module2.exports["__all_regexes__"] = [
-      reIpv4FirstPass,
-      reSubnetString,
-      reForwardSlash,
-      reZone,
-      reBadCharacters,
-      reBadAddress
-    ];
-  }
-});
 
 // lib/index.ts
 var lib_exports = {};
@@ -227,52 +125,148 @@ function getNamedFunction(name, fn) {
 }
 
 // lib/formats.ts
-var import_is_my_ip_valid = __toESM(require_is_my_ip_valid());
-var RegExps = {
-  "date-time": /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|([+-])(\d{2}):(\d{2}))$/,
-  time: /^(\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|([+-])(\d{2}):(\d{2}))$/,
-  uri: /^[a-zA-Z][a-zA-Z0-9+\-.]*:[^\s]*$/,
-  email: /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/,
-  hostname: /^[a-zA-Z0-9][a-zA-Z0-9-]{0,62}(\.[a-zA-Z0-9][a-zA-Z0-9-]{0,62})*[a-zA-Z0-9]$/,
-  date: /^(\d{4})-(\d{2})-(\d{2})$/,
-  "json-pointer": /^\/(?:[^~]|~0|~1)*$/,
-  "relative-json-pointer": /^([0-9]+)(#|\/(?:[^~]|~0|~1)*)?$/
-};
 var Formats = {
   ["date-time"](data) {
-    const upperCaseData = data.toUpperCase();
-    if (!RegExps["date-time"].test(upperCaseData)) {
+    const match = data.match(
+      /^(\d{4})-(0[0-9]|1[0-2])-(\d{2})T(0[0-9]|1\d|2[0-3]):([0-5]\d):((?:[0-5]\d|60))(?:.\d+)?(?:([+-])(0[0-9]|1\d|2[0-3]):([0-5]\d)|Z)?$/i
+    );
+    if (!match) {
       return false;
     }
-    const date = new Date(upperCaseData);
-    return !isNaN(date.getTime());
-  },
-  uri(data) {
-    return RegExps.uri.test(data);
-  },
-  email(data) {
-    if (!RegExps.email.test(data)) {
+    let day = Number(match[3]);
+    if (match[2] === "02" && day > 29) {
       return false;
     }
-    const [local, domain] = data.split("@");
-    if (local.length > 64 || local.indexOf("..") !== -1 || local[0] === "." || local[local.length - 1] === ".") {
+    const [
+      ,
+      yearStr,
+      monthStr,
+      ,
+      hourStr,
+      minuteStr,
+      secondStr,
+      timezoneSign,
+      timezoneHourStr,
+      timezoneMinuteStr
+    ] = match;
+    let year = Number(yearStr);
+    let month = Number(monthStr);
+    let hour = Number(hourStr);
+    let minute = Number(minuteStr);
+    let second = Number(secondStr);
+    if (timezoneSign === "-" || timezoneSign === "+") {
+      const timezoneHour = Number(timezoneHourStr);
+      const timezoneMinute = Number(timezoneMinuteStr);
+      if (timezoneSign === "-") {
+        hour += timezoneHour;
+        minute += timezoneMinute;
+      } else if (timezoneSign === "+") {
+        hour -= timezoneHour;
+        minute -= timezoneMinute;
+      }
+      if (minute > 59) {
+        hour += 1;
+        minute -= 60;
+      } else if (minute < 0) {
+        hour -= 1;
+        minute += 60;
+      }
+      if (hour > 23) {
+        day += 1;
+        hour -= 24;
+      } else if (hour < 0) {
+        day -= 1;
+        hour += 24;
+      }
+      if (day > 31) {
+        month += 1;
+        day -= 31;
+      } else if (day < 1) {
+        month -= 1;
+        day += 31;
+      }
+      if (month > 12) {
+        year += 1;
+        month -= 12;
+      } else if (month < 1) {
+        year -= 1;
+        month += 12;
+      }
+      if (year < 0) {
+        return false;
+      }
+    }
+    const daysInMonth = [31, , 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    const maxDays = month === 2 ? year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28 : daysInMonth[month - 1];
+    if (day > maxDays) {
       return false;
     }
-    if (domain.length > 255 || domain.indexOf("..") !== -1 || domain[0] === "." || domain[domain.length - 1] === ".") {
+    if (second === 60 && (minute !== 59 || hour !== 23)) {
       return false;
     }
     return true;
   },
-  ipv4: (0, import_is_my_ip_valid.default)({ version: 4 }),
-  ipv6: (0, import_is_my_ip_valid.default)({ version: 6 }),
-  hostname(data) {
-    return RegExps.hostname.test(data);
+  uri(data) {
+    return /^[a-zA-Z][a-zA-Z0-9+\-.]*:[^\s]*$/.test(data);
   },
-  date(data) {
-    if (typeof data !== "string") {
+  email(data) {
+    return /^(?!\.)(?!.*\.$)[a-z0-9!#$%&'*+/=?^_`{|}~-]{1,20}(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]{1,21}){0,2}@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,60}[a-z0-9])?){0,3}$/i.test(
+      data
+    );
+  },
+  ipv4(data) {
+    return /^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])$/.test(
+      data
+    );
+  },
+  // ipv6: isMyIpValid({ version: 6 }),
+  ipv6(data) {
+    if (data === "::") {
+      return true;
+    }
+    if (data.indexOf(":") === -1 || /(?:\s+|:::+|^\w{5,}|\w{5}$|^:{1}\w|\w:{1}$)/.test(data)) {
       return false;
     }
-    if (RegExps.date.test(data) === false) {
+    const hasIpv4 = data.indexOf(".") !== -1;
+    let addressParts = data;
+    if (hasIpv4) {
+      addressParts = data.split(":");
+      const ipv4Part = addressParts.pop();
+      if (!/^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])$/.test(
+        ipv4Part
+      )) {
+        return false;
+      }
+    }
+    const isShortened = data.indexOf("::") !== -1;
+    const ipv6Part = hasIpv4 ? addressParts.join(":") : data;
+    if (isShortened) {
+      if (ipv6Part.split("::").length - 1 > 1) {
+        return false;
+      }
+      if (!/^[0-9a-fA-F:.]*$/.test(ipv6Part)) {
+        return false;
+      }
+      return /^(?:(?:(?:[0-9a-fA-F]{1,4}(?::|$)){1,6}))|(?:::(?:[0-9a-fA-F]{1,4})){0,5}$/.test(
+        ipv6Part
+      );
+    }
+    const isIpv6Valid = /^(?:(?:[0-9a-fA-F]{1,4}:){7}(?:[0-9a-fA-F]{1,4}|:))$/.test(ipv6Part);
+    const hasInvalidChar = /(?:[0-9a-fA-F]{5,}|\D[0-9a-fA-F]{3}:)/.test(
+      ipv6Part
+    );
+    if (hasIpv4) {
+      return isIpv6Valid || !hasInvalidChar;
+    }
+    return isIpv6Valid && !hasInvalidChar;
+  },
+  hostname(data) {
+    return /^[a-z0-9][a-z0-9-]{0,62}(?:\.[a-z0-9][a-z0-9-]{0,62})*[a-z0-9]$/i.test(
+      data
+    );
+  },
+  date(data) {
+    if (/^(\d{4})-(\d{2})-(\d{2})$/.test(data) === false) {
       return false;
     }
     return !isNaN(new Date(data).getTime());
@@ -289,26 +283,39 @@ var Formats = {
     if (data === "") {
       return true;
     }
-    return RegExps["json-pointer"].test(data);
+    return /^\/(?:[^~]|~0|~1)*$/.test(data);
   },
   "relative-json-pointer"(data) {
     if (data === "") {
       return true;
     }
-    return RegExps["relative-json-pointer"].test(data);
+    return /^([0-9]+)(#|\/(?:[^~]|~0|~1)*)?$/.test(data);
   },
   time(data) {
-    return RegExps.time.test(data);
+    return /^(\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|([+-])(\d{2}):(\d{2}))$/.test(
+      data
+    );
+  },
+  "uri-reference"(data) {
+    if (/\\/.test(data)) {
+      return false;
+    }
+    return /^(([^:/?#]+):)?(\/\/([^/?#]*))?([^?#]*)(\?([^#]*))?(#((?![^#]*\\)[^#]*))?/i.test(
+      data
+    );
+  },
+  "uri-template"(data) {
+    return /^(?:(?:https?:\/\/[\w.-]+)?\/?)?[\w- ;,.\/?%&=]*(?:\{[\w-]+(?::\d+)?\}[\w- ;,.\/?%&=]*)*\/?$/.test(
+      data
+    );
   },
   // Not supported yet
   duration: false,
+  uuid: false,
   "idn-email": false,
   "idn-hostname": false,
-  uuid: false,
-  "uri-reference": false,
   iri: false,
-  "iri-reference": false,
-  "uri-template": false
+  "iri-reference": false
 };
 
 // lib/types.ts
@@ -433,7 +440,7 @@ var ArrayKeywords = {
     return defineError("Array is too long", { data });
   },
   additionalItems(schema, data, defineError) {
-    if (!Array.isArray(data) || !schema.items || !Array.isArray(schema.items)) {
+    if (!schema.items || isObject(schema.items)) {
       return;
     }
     if (schema.additionalItems === false) {
@@ -1006,21 +1013,17 @@ var StringKeywords = {
     }
     return defineError("Value does not match the pattern", { data });
   },
-  format(schema, data, defineError, formatInstance) {
+  // Take into account that if we receive a format that is not defined, we
+  // will not throw an error, we just ignore it.
+  format(schema, data, defineError, instance) {
     if (typeof data !== "string") {
       return;
     }
-    const formatValidate = formatInstance.formats.get(schema.format);
-    if (formatValidate === false) {
+    const formatValidate = instance.getFormat(schema.format);
+    if (!formatValidate || formatValidate(data)) {
       return;
     }
-    if (typeof formatValidate === "function") {
-      if (formatValidate(data)) {
-        return;
-      }
-      return defineError("Value does not match the format", { data });
-    }
-    return defineError("Format is not supported", { data });
+    return defineError("Value does not match the format", { data });
   }
 };
 
@@ -1035,9 +1038,9 @@ var keywords = {
 
 // lib/index.ts
 var SchemaShield = class {
-  types = /* @__PURE__ */ new Map();
-  formats = /* @__PURE__ */ new Map();
-  keywords = /* @__PURE__ */ new Map();
+  types = {};
+  formats = {};
+  keywords = {};
   immutable = false;
   constructor({
     immutable = false
@@ -1057,14 +1060,32 @@ var SchemaShield = class {
       }
     }
   }
-  addType(name, validator) {
-    this.types.set(name, validator);
+  addType(name, validator, overwrite = false) {
+    if (this.types[name] && !overwrite) {
+      throw new ValidationError(`Type "${name}" already exists`);
+    }
+    this.types[name] = validator;
   }
-  addFormat(name, validator) {
-    this.formats.set(name, validator);
+  getType(type) {
+    return this.types[type];
   }
-  addKeyword(name, validator) {
-    this.keywords.set(name, validator);
+  addFormat(name, validator, overwrite = false) {
+    if (this.formats[name] && !overwrite) {
+      throw new ValidationError(`Format "${name}" already exists`);
+    }
+    this.formats[name] = validator;
+  }
+  getFormat(format) {
+    return this.formats[format];
+  }
+  addKeyword(name, validator, overwrite = false) {
+    if (this.keywords[name] && !overwrite) {
+      throw new ValidationError(`Keyword "${name}" already exists`);
+    }
+    this.keywords[name] = validator;
+  }
+  getKeyword(keyword) {
+    return this.keywords[keyword];
   }
   compile(schema) {
     const compiledSchema = this.compileSchema(schema);
@@ -1113,7 +1134,7 @@ var SchemaShield = class {
     if ("type" in schema) {
       const types = Array.isArray(schema.type) ? schema.type : schema.type.split(",").map((t) => t.trim());
       for (const type of types) {
-        const validator = this.types.get(type);
+        const validator = this.getType(type);
         if (validator) {
           typeValidations.push(validator);
           methodName += (methodName ? "_OR_" : "") + validator.name;
@@ -1128,10 +1149,9 @@ var SchemaShield = class {
         compiledSchema.$validate = getNamedFunction(
           methodName,
           (data) => {
-            if (typeValidation(data)) {
-              return;
+            if (!typeValidation(data)) {
+              return defineTypeError("Invalid type", { data });
             }
-            return defineTypeError("Invalid type", { data });
           }
         );
       } else if (typeValidationsLength > 1) {
@@ -1153,15 +1173,9 @@ var SchemaShield = class {
         compiledSchema.type = schema.type;
         continue;
       }
-      const keywordValidator = this.keywords.get(key);
+      const keywordValidator = this.getKeyword(key);
       if (keywordValidator) {
         const defineError = getDefinedErrorFunctionForKey(key, schema[key]);
-        const executeKeywordValidator = (data) => keywordValidator(
-          compiledSchema,
-          data,
-          defineError,
-          this
-        );
         if (compiledSchema.$validate) {
           const prevValidator = compiledSchema.$validate;
           methodName += `_AND_${keywordValidator.name}`;
@@ -1172,17 +1186,24 @@ var SchemaShield = class {
               if (error) {
                 return error;
               }
-              const keywordError = executeKeywordValidator(data);
-              if (keywordError) {
-                return keywordError;
-              }
+              return keywordValidator(
+                compiledSchema,
+                data,
+                defineError,
+                this
+              );
             }
           );
         } else {
           methodName = keywordValidator.name;
           compiledSchema.$validate = getNamedFunction(
             methodName,
-            executeKeywordValidator
+            (data) => keywordValidator(
+              compiledSchema,
+              data,
+              defineError,
+              this
+            )
           );
         }
       }
@@ -1206,7 +1227,7 @@ var SchemaShield = class {
         return true;
       }
       for (let subKey in subSchema) {
-        if (this.keywords.has(subKey)) {
+        if (subKey in this.keywords) {
           return true;
         }
       }

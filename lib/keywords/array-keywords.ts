@@ -101,7 +101,7 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
   },
 
   additionalItems(schema, data, defineError) {
-    if (!Array.isArray(data) || !schema.items || !Array.isArray(schema.items)) {
+    if (!schema.items || isObject(schema.items)) {
       return;
     }
 

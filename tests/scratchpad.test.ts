@@ -1,111 +1,115 @@
-import { before, describe, it } from "mocha";
+import { after, before, describe, it } from "mocha";
 
 import { SchemaShield } from "../lib";
 import { ValidationError } from "../lib/utils";
 import expect from "expect";
 import { stringifySchema } from "./test-utils";
 
-it("Should create a SchemaShield instance and validate", () => {
-  let schema = {
-    type: "object",
-    properties: {
-      foo: {
-        type: "string"
-      },
-      bar: {
-        type: "integer"
-      },
-      array: {
-        type: "array",
-        items: {
+const schemasafe = require("@exodus/schemasafe");
+
+describe("SchemaShield instance", () => {
+  it("Should create a SchemaShield instance and validate", () => {
+    let schema = {
+      type: "object",
+      properties: {
+        foo: {
           type: "string"
+        },
+        bar: {
+          type: "integer"
+        },
+        array: {
+          type: "array",
+          items: {
+            type: "string"
+          }
+        },
+        hello: {
+          type: "string",
+          default: "world"
         }
       },
-      hello: {
-        type: "string",
-        default: "world"
-      }
-    },
-    required: ["foo", "bar", "array"]
-  };
+      required: ["foo", "bar", "array"]
+    };
 
-  let data = {
-    foo: "hello",
-    bar: 42,
-    array: ["hello", "world"]
-  };
+    let data = {
+      foo: "hello",
+      bar: 42,
+      array: ["hello", "world"]
+    };
 
-  let schemaShield = new SchemaShield();
-  let validate = schemaShield.compile(schema);
+    let schemaShield = new SchemaShield();
+    let validate = schemaShield.compile(schema);
 
-  expect(validate(data)).toEqual({
-    data: { ...data, hello: "world" },
-    error: null,
-    valid: true
+    expect(validate(data)).toEqual({
+      data: { ...data, hello: "world" },
+      error: null,
+      valid: true
+    });
   });
 });
 
-// const testGroup = {
-//   description: "integer type matches integers",
-//   schema: {
-//     type: "integer"
-//   },
-//   tests: [
-//     {
-//       description: "a float is not an integer",
-//       data: 1.1,
-//       valid: false
-//     },
-//     {
-//       description: "an integer is an integer",
-//       data: 1,
-//       valid: true
-//     }
-//   ]
-// };
+describe("Scratchpad", () => {
+  // const testGroup = {
+  //   description: "integer type matches integers",
+  //   schema: {
+  //     type: "integer"
+  //   },
+  //   tests: [
+  //     {
+  //       description: "a float is not an integer",
+  //       data: 1.1,
+  //       valid: false
+  //     },
+  //     {
+  //       description: "an integer is an integer",
+  //       data: 1,
+  //       valid: true
+  //     }
+  //   ]
+  // };
 
-const testGroup = {
-  description: "nested items",
-  schema: {
-    type: "array",
-    items: {
+  const testGroup = {
+    description: "nested items",
+    schema: {
       type: "array",
       items: {
         type: "array",
         items: {
           type: "array",
           items: {
-            type: "number"
+            type: "array",
+            items: {
+              type: "number"
+            }
           }
         }
       }
-    }
-  },
-  tests: [
-    {
-      description: "valid nested array",
-      data: [[[[1]], [[2], [3]]], [[[4], [5], [6]]]],
-      valid: true
     },
-    {
-      description: "nested array with invalid type",
-      data: [[[["1"]], [[2], [3]]], [[[4], [5], [6]]]],
-      valid: false
-    },
-    {
-      description: "not deep enough",
-      data: [
-        [[1], [2], [3]],
-        [[4], [5], [6]]
-      ],
-      valid: false
-    }
-  ]
-};
+    tests: [
+      {
+        description: "valid nested array",
+        data: [[[[1]], [[2], [3]]], [[[4], [5], [6]]]],
+        valid: true
+      },
+      {
+        description: "nested array with invalid type",
+        data: [[[["1"]], [[2], [3]]], [[[4], [5], [6]]]],
+        valid: false
+      },
+      {
+        description: "not deep enough",
+        data: [
+          [[1], [2], [3]],
+          [[4], [5], [6]]
+        ],
+        valid: false
+      }
+    ]
+  };
 
-const count = 100000;
+  const count = 100000;
 
-describe("Scratchpad", () => {
   let validate;
 
   before(() => {
@@ -180,6 +184,172 @@ describe("ValidationError", () => {
       expect(errorCause.data).toEqual(15);
       expect(errorCause.schema).toEqual(18);
       expect(errorCause.keyword).toEqual("minimum");
+    }
+  });
+});
+
+describe("Vs schemasafe", () => {
+  const testGroups = [
+    {
+      description: "format: uri-template",
+      schema: { format: "uri-template" },
+      tests: [
+        {
+          description: "all string formats ignore integers",
+          data: 12,
+          valid: true
+        },
+        {
+          description: "all string formats ignore floats",
+          data: 13.7,
+          valid: true
+        },
+        {
+          description: "all string formats ignore objects",
+          data: {},
+          valid: true
+        },
+        {
+          description: "all string formats ignore arrays",
+          data: [],
+          valid: true
+        },
+        {
+          description: "all string formats ignore booleans",
+          data: false,
+          valid: true
+        },
+        {
+          description: "all string formats ignore nulls",
+          data: null,
+          valid: true
+        },
+        {
+          description: "a valid uri-template",
+          data: "http://example.com/dictionary/{term:1}/{term}",
+          valid: true
+        },
+        {
+          description: "an invalid uri-template",
+          data: "http://example.com/dictionary/{term:1}/{term",
+          valid: false
+        },
+        {
+          description: "a valid uri-template without variables",
+          data: "http://example.com/dictionary",
+          valid: true
+        },
+        {
+          description: "a valid relative uri-template",
+          data: "dictionary/{term:1}/{term}",
+          valid: true
+        }
+      ]
+    }
+  ];
+  const testGroup = testGroups[0];
+
+  const count = 100000;
+  const times: any = [];
+
+  before(() => {
+    for (let test of testGroup.tests) {
+      console.log(
+        JSON.stringify({ data: test.data }),
+        "is",
+        test.valid ? "valid" : "invalid"
+      );
+    }
+  });
+
+  after(() => {
+    for (let key in times) {
+      times[key].winner =
+        times[key].schemaShield < times[key].schemaSafe
+          ? "SchemaShield"
+          : "SchemaSafe";
+      times[key].ratio = times[key].schemaShield / times[key].schemaSafe;
+    }
+
+    const sumOfRatios = Object.values(times).reduce(
+      (sum: any, time: any) => sum + time.ratio,
+      0
+    );
+
+    const timesSortedByRatio = Object.values(times)
+      .sort((a: any, b: any) => b.ratio - a.ratio)
+      .reverse();
+
+    console.log("Times:", timesSortedByRatio);
+    console.log("Sum of ratios:", sumOfRatios);
+  });
+
+  it("SchemaShield", () => {
+    const schemaShield = new SchemaShield();
+    const validate = schemaShield.compile(testGroup.schema);
+    console.log(stringifySchema(validate, true));
+    for (let test of testGroup.tests) {
+      try {
+        const result = validate(test.data);
+        if (result.valid !== test.valid) {
+          console.log(
+            result.error?.getCause() || result.error,
+            "\nThe Input data:",
+            test.data,
+            "Must be",
+            test.valid ? "valid" : "invalid"
+          );
+        }
+
+        expect(result).toHaveProperty("valid", test.valid);
+        times.push({
+          group: testGroup.description,
+          description: test.description,
+          schema: JSON.stringify(testGroup.schema),
+          data: JSON.stringify({ data: test.data }),
+          valid: test.valid,
+          schemaShield: 0,
+          schemaSafe: 0
+        });
+      } catch (error) {
+        console.log(error.message);
+        process.exit();
+        return;
+      }
+    }
+
+    // return;
+    for (let idx = 0, len = testGroup.tests.length; idx < len; idx++) {
+      const initTime = process.hrtime();
+      for (let i = 0; i < count; i++) {
+        validate(testGroup.tests[idx].data);
+      }
+      const diff = process.hrtime(initTime);
+      const seconds = (diff[0] * 1e9 + diff[1]) / 1e9;
+      times[idx].schemaShield = seconds;
+    }
+  });
+
+  it("SchemaSafe", () => {
+    const validate = schemasafe.validator(testGroup.schema, {
+      allowUnusedKeywords: true,
+      includeErrors: true,
+      $schemaDefault: "https://json-schema.org/draft-06/schema"
+    });
+
+    console.log(validate.toString());
+    for (let test of testGroup.tests) {
+      expect(validate(test.data)).toEqual(test.valid);
+    }
+
+    for (let idx = 0, len = testGroup.tests.length; idx < len; idx++) {
+      const initTime = process.hrtime();
+      for (let i = 0; i < count; i++) {
+        validate(testGroup.tests[idx].data);
+      }
+      const diff = process.hrtime(initTime);
+      const seconds = (diff[0] * 1e9 + diff[1]) / 1e9;
+      times[idx].schemaSafe = seconds;
     }
   });
 });

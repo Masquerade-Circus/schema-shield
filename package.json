@@ -70,7 +70,7 @@
   },
   "scripts": {
     "test": "mocha --bail --recursive --no-timeouts  --forbid-only --exit --require ts-node/register --enable-source-maps tests/**/*.test.ts",
-    "dev:test": "nodemon -e ts,js -w ./tests -w ./lib --exec npm run test",
+    "dev:test": "nodemon -e ts,js -w ./tests -w ./lib --exec mocha --bail --recursive --no-timeouts --exit --require ts-node/register --enable-source-maps tests/**/*.test.ts",
     "dev:source": "NODE_ENV=development nodemon --enable-source-maps -e tsx,ts,json,css -w ./lib -w ./www source.js",
     "build": "node source.js",
     "coverage": "nyc report --reporter=lcov",
@@ -79,13 +79,13 @@
     "release-test": "release-it --dry-run --verbose"
   },
   "dependencies": {
-    "is-my-ip-valid": "^1.0.1",
     "ts-node": "^10.9.1",
     "tsc-prog": "^2.2.1",
     "tslib": "^2.5.0",
     "typescript": "^5.0.2"
   },
   "devDependencies": {
+    "@exodus/schemasafe": "^1.0.0",
     "@release-it/conventional-changelog": "^5.1.1",
     "@typescript-eslint/eslint-plugin": "^5.56.0",
     "@typescript-eslint/parser": "^5.56.0",
