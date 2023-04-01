@@ -8,36 +8,35 @@ Despite its feature-rich and easy extendable nature, SchemaShield is designed to
 
 ## Table of Contents
 
-- [SchemaShield](#schemashield)
-  - [Table of Contents](#table-of-contents)
-  - [Features](#features)
-  - [Usage](#usage)
-  - [No Code Generation](#no-code-generation)
-  - [Error Handling](#error-handling)
-    - [ValidationError Properties](#validationerror-properties)
-    - [Get the cause of the error](#get-the-cause-of-the-error)
-  - [Adding Custom Types](#adding-custom-types)
-    - [Method Signature](#method-signature)
-    - [Example: Adding a Custom Type](#example-adding-a-custom-type)
-  - [Adding Custom Formats](#adding-custom-formats)
-    - [Method Signature](#method-signature-1)
-    - [Example: Adding a Custom Format](#example-adding-a-custom-format)
-  - [Adding Custom Keywords](#adding-custom-keywords)
-    - [Method Signature](#method-signature-2)
-      - [About the `defineError` Function](#about-the-defineerror-function)
-      - [About the `instance` Argument](#about-the-instance-argument)
-    - [Example: Adding a Custom Keyword](#example-adding-a-custom-keyword)
-    - [Complex example: Adding a Custom Keyword that uses the instance](#complex-example-adding-a-custom-keyword-that-uses-the-instance)
-  - [No Code Generation Opened Possibilities](#no-code-generation-opened-possibilities)
-  - [Immutable Mode](#immutable-mode)
-  - [TypeScript Support](#typescript-support)
-  - [Known Limitations](#known-limitations)
-    - [Schema References and Schema Definitions](#schema-references-and-schema-definitions)
-    - [Unsupported Formats](#unsupported-formats)
-      - [Internationalized Formats](#internationalized-formats)
-  - [Testing](#testing)
-  - [Contribute](#contribute)
-  - [Legal](#legal)
+- [Table of Contents](#table-of-contents)
+- [Features](#features)
+- [Usage](#usage)
+- [No Code Generation](#no-code-generation)
+- [Error Handling](#error-handling)
+- [Adding Custom Types](#adding-custom-types)
+  - [Method Signature](#method-signature)
+  - [Example: Adding a Custom Type](#example-adding-a-custom-type)
+- [Adding Custom Formats](#adding-custom-formats)
+  - [Method Signature](#method-signature-1)
+  - [Example: Adding a Custom Format](#example-adding-a-custom-format)
+- [Adding Custom Keywords](#adding-custom-keywords)
+  - [Method Signature](#method-signature-2)
+  - [Example: Adding a Custom Keyword](#example-adding-a-custom-keyword)
+  - [Complex example: Adding a Custom Keyword that uses the instance](#complex-example-adding-a-custom-keyword-that-uses-the-instance)
+- [No Code Generation Opened Possibilities](#no-code-generation-opened-possibilities)
+- [More on Error Handling](#more-on-error-handling)
+  - [ValidationError Properties](#validationerror-properties)
+  - [Get the path to the error location](#get-the-path-to-the-error-location)
+  - [Get the full error chain as a tree](#get-the-full-error-chain-as-a-tree)
+  - [Get the cause of the error](#get-the-cause-of-the-error)
+- [Immutable Mode](#immutable-mode)
+- [TypeScript Support](#typescript-support)
+- [Known Limitations](#known-limitations)
+  - [Schema References and Schema Definitions](#schema-references-and-schema-definitions)
+  - [Unsupported Formats](#unsupported-formats)
+- [Testing](#testing)
+- [Contribute](#contribute)
+- [Legal](#legal)
 
 ## Features
 
@@ -47,6 +46,7 @@ Despite its feature-rich and easy extendable nature, SchemaShield is designed to
 - Immutable mode for data protection.
 - Lightweight and fast.
 - Easy to use and extend.
+- No dependencies.
 - Typescript support.
 
 ## Usage
@@ -127,9 +127,9 @@ if (validationResult.valid) {
 
 **`validationResult`**: Contains the following properties:
 
-- `data`: The validated (and potentially modified) data
-- `error`: A `ValidationError` instance if validation failed, otherwise null
-- `valid`: true if validation was successful, otherwise false
+- `data`: The validated (and potentially modified) data.
+- `error`: A `ValidationError` instance if validation failed, otherwise null.
+- `valid`: true if validation was successful, otherwise false.
 
 ## No Code Generation
 
@@ -150,30 +150,14 @@ You can see a full example of this in the [No Code Generation opened possibiliti
 
 ## Error Handling
 
-SchemaShield provides a `ValidationError` class to handle errors that occur during schema validation. When a validation error is encountered, a `ValidationError` instance is returned in the error property of the validation result.
-
-This returned error instance uses the new [Error: cause](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error/cause) property introduced in ES6. This allows you to analyze the whole error chain or to retrieve the root cause of the error using the `getCause()` method.
-
-### ValidationError Properties
-
-- `message`: A string containing a description of the error
-- `item`: The final item in the path that caused the error
-- `keyword`: The keyword that triggered the error
-- `cause`: A nested ValidationError that caused the current error
-- `path`: The JSON Pointer path to the error location in the schema (Only available using the `getCause()` method)
-- `data`: The data that caused the error (optional)
-- `schema`: The compiled schema that caused the error (optional)
-
-### Get the cause of the error
-
-You can use the `getCause()` method to retrieve the root cause of a validation error. This method returns the nested ValidationError instance that triggered the current error and contains the `path` property.
+SchemaShield provides comprehensive error handling for schema validation. When a validation error occurs, a `ValidationError` instance is returned in the error property of the validation result. This error has the `getPath()` method, which is particularly useful for quickly identifying the location of an error in both the schema and the data.
 
 **Example:**
 
 ```javascript
 import { SchemaShield } from "schema-shield";
 
-const schemaShield = new SchemaShield({ immutable: true });
+const schemaShield = new SchemaShield();
 
 const schema = {
   type: "object",
@@ -200,15 +184,14 @@ if (validationResult.valid) {
 } else {
   console.error("Validation error:", validationResult.error.message); // "Property is invalid"
 
-  // Get the root cause of the error
-  const errorCause = validationResult.error.getCause();
-  console.error("Root cause:", errorCause.message); // "Value is less than the minimum"
-  console.error("Error path:", errorCause.path); // "#/properties/age/minimum"
-  console.error("Error data:", errorCause.data); // 15
-  console.error("Error schema:", errorCause.schema); // 18
-  console.error("Error keyword:", errorCause.keyword); // "minimum"
+  // Get the paths to the error location in the schema and in the data
+  const errorPaths = validationResult.error.getPath();
+  console.error("Schema path:", errorPaths.schemaPath); // "#/properties/age/minimum"
+  console.error("Instance path:", errorPaths.instancePath); // "#/age"
 }
 ```
+
+For more advanced error handling and a detailed explanation of the ValidationError properties and methods, refer to the [More on Error Handling](#more-on-error-handling) section.
 
 ## Adding Custom Types
 
@@ -418,7 +401,7 @@ In this example, we'll add a custom keyword called divisibleBy that validates if
 ```javascript
 import { SchemaShield, ValidationError } from "./path/to/SchemaShield";
 
-const schemaShield = new SchemaShield({ immutable: true });
+const schemaShield = new SchemaShield();
 
 // Custom keyword 'divisibleBy' validator function
 const divisibleByValidator = (schema, data, defineError, instance) => {
@@ -680,6 +663,255 @@ if (validationResult.valid) {
 ```
 
 In this example, SchemaShield safely accesses instances of custom classes and utilizes them in the validation process. This level of complexity and flexibility would not be possible or would require a lot of boilerplate code with other libraries that rely on code generation.
+
+## More on Error Handling
+
+SchemaShield provides a `ValidationError` class to handle errors that occur during schema validation. When a validation error is encountered, a `ValidationError` instance is returned in the error property of the validation result.
+
+This error instance uses the new [Error: cause](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error/cause) property introduced in ES6. This allows you to analyze the whole error chain or to retrieve the root cause of the error using the `getCause()` `getTree()` and `getPath()` methods.
+
+### ValidationError Properties
+
+- `message`: A string containing a description of the error.
+- `item`: The final item in the path that caused the error (either a string or a number) (optional).
+- `keyword`: The keyword that triggered the error.
+- `cause`: A nested ValidationError or a normal Error that caused the current error.
+- `schemaPath`: The JSON Pointer path to the error location in the schema.
+- `instancePath`: The JSON Pointer path to the error location in the data.
+- `data`: The data that caused the error (optional).
+- `schema`: The schema that caused the error (optional).
+
+_Note:_ The `schemaPath` and `instancePath` will be only available after using the `getCause()` `getTree()` or `getPath()` methods.
+
+### Get the path to the error location
+
+You can use the `getPath` method to get the JSON Pointer path to the error location in the schema and in the data. This method returns an object containing the `schemaPath` and `instancePath`.
+
+**Example:**
+
+```javascript
+import { SchemaShield } from "schema-shield";
+
+const schemaShield = new SchemaShield();
+
+const schema = {
+  type: "object",
+  properties: {
+    description: { type: "string" },
+    shouldLoadDb: { type: "boolean" },
+    enableNetConnectFor: { type: "array", items: { type: "string" } },
+    params: {
+      type: "object",
+      additionalProperties: {
+        type: "object",
+        properties: {
+          description: { type: "string" },
+          default: { type: "string" }
+        },
+        required: ["description"]
+      }
+    },
+    run: { type: "string" }
+  }
+};
+
+const validator = schemaShield.compile(schema);
+
+const invalidData = {
+  description: "Say hello to the bot.",
+  shouldLoadDb: false,
+  enableNetConnectFor: [],
+  params: {
+    color: {
+      type: "string",
+      // description: "The color of the text", // Missing description on purpose
+      default: "red"
+    }
+  },
+  run: "run"
+};
+
+const validationResult = validator(invalidData);
+
+if (validationResult.valid) {
+  console.log("Data is valid:", validationResult.data);
+} else {
+  console.error("Validation error:", validationResult.error.message); // "Property is invalid"
+
+  // Get the paths to the error location in the schema and in the data
+  const errorPaths = validationResult.error.getPath();
+  console.error("Schema path:", errorPaths.schemaPath); // "#/properties/params/additionalProperties/required"
+  console.error("Instance path:", errorPaths.instancePath); // "#/params/color/description"
+}
+```
+
+### Get the full error chain as a tree
+
+You can use the `getTree()` method to retrieve the full error chain as a tree. This method returns an ErrorTree object with the complete nested error structure, allowing you to analyze the full chain of errors that occurred during validation.
+
+#### ErrorTree Signature
+
+```typescript
+interface ErrorTree {
+  message: string; // The error message
+  keyword: string; // The keyword that triggered the error
+  item?: string | number; // The final item in the path that caused the error (either a string or a number) (optional)
+  schemaPath: string; // The JSON Pointer path to the error location in the schema
+  instancePath: string; // The JSON Pointer path to the error location in the data
+  data?: any; // The data that caused the error (optional)
+  cause?: ErrorTree; // A nested ErrorTree representation of the nested error that caused the current error
+}
+```
+
+**Example:**
+
+```javascript
+import { SchemaShield } from "schema-shield";
+
+const schemaShield = new SchemaShield();
+
+const schema = {
+  type: "object",
+  properties: {
+    description: { type: "string" },
+    shouldLoadDb: { type: "boolean" },
+    enableNetConnectFor: { type: "array", items: { type: "string" } },
+    params: {
+      type: "object",
+      additionalProperties: {
+        type: "object",
+        properties: {
+          description: { type: "string" },
+          default: { type: "string" }
+        },
+        required: ["description"]
+      }
+    },
+    run: { type: "string" }
+  }
+};
+
+const validator = schemaShield.compile(schema);
+
+const invalidData = {
+  description: "Say hello to the bot.",
+  shouldLoadDb: false,
+  enableNetConnectFor: [],
+  params: {
+    color: {
+      type: "string",
+      // description: "The color of the text", // Missing description on purpose
+      default: "red"
+    }
+  },
+  run: "run"
+};
+
+const validationResult = validator(invalidData);
+
+if (validationResult.valid) {
+  console.log("Data is valid:", validationResult.data);
+} else {
+  console.error("Validation error:", validationResult.error.message); // "Property is invalid"
+
+  // Get the full error chain as a tree
+  const errorTree = validationResult.error.getTree();
+  console.error(errorTree);
+
+  /*
+    {
+      message: "Property is invalid",
+      keyword: "properties",
+      item: "params",
+      schemaPath: "#/properties/params",
+      instancePath: "#/params",
+      data: { color: { type: "string", default: "red" } },
+      cause: {
+        message: "Additional properties are invalid",
+        keyword: "additionalProperties",
+        item: "color",
+        schemaPath: "#/properties/params/additionalProperties",
+        instancePath: "#/params/color",
+        data: { type: "string", default: "red" },
+        cause: {
+          message: "Required property is missing",
+          keyword: "required",
+          item: "description",
+          schemaPath: "#/properties/params/additionalProperties/required",
+          instancePath: "#/params/color/description",
+          data: undefined
+        }
+      }
+    }
+  */
+}
+```
+
+The `errorTree` object contains the full error chain with nested causes, allowing you to analyze the entire error structure.
+
+### Get the cause of the error
+
+You can use the `getCause()` method to retrieve the root cause of a validation error. This method returns the nested ValidationError instance that triggered the current error and contains the `schemaPath` and `instancePath` properties.
+
+```javascript
+import { SchemaShield } from "schema-shield";
+
+const schemaShield = new SchemaShield();
+
+const schema = {
+  type: "object",
+  properties: {
+    description: { type: "string" },
+    shouldLoadDb: { type: "boolean" },
+    enableNetConnectFor: { type: "array", items: { type: "string" } },
+    params: {
+      type: "object",
+      additionalProperties: {
+        type: "object",
+        properties: {
+          description: { type: "string" },
+          default: { type: "string" }
+        },
+        required: ["description"]
+      }
+    },
+    run: { type: "string" }
+  }
+};
+
+const validator = schemaShield.compile(schema);
+
+const invalidData = {
+  description: "Say hello to the bot.",
+  shouldLoadDb: false,
+  enableNetConnectFor: [],
+  params: {
+    color: {
+      type: "string",
+      // description: "The color of the text", // Missing description on purpose
+      default: "red"
+    }
+  },
+  run: "run"
+};
+
+const validationResult = validator(invalidData);
+
+if (validationResult.valid) {
+  console.log("Data is valid:", validationResult.data);
+} else {
+  console.error("Validation error:", validationResult.error.message); // "Property is invalid"
+
+  // Get the root cause of the error
+  const errorCause = validationResult.error.getCause();
+  console.error("Root cause:", errorCause.message); // "Required property is missing"
+  console.error("Schema path:", errorCause.schemaPath); // "#/properties/params/additionalProperties/required"
+  console.error("Instance path:", errorCause.instancePath); // "#/params/color/description"
+  console.error("Error data:", errorCause.data); // undefined
+  console.error("Error schema:", errorCause.schema); // ["description"]
+  console.error("Error keyword:", errorCause.keyword); // "required"
+}
+```
 
 ## Immutable Mode
 

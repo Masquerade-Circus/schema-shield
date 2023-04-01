@@ -1,6 +1,6 @@
 export function stringifySchema(validator, full = false) {
   return JSON.stringify(
-    validator?.compiledSchema,
+    validator?.compiledSchema || validator,
     (key, value) =>
       typeof value === "function"
         ? `func ${value.name} ${

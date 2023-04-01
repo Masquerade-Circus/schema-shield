@@ -1,14 +1,30 @@
 import { CompiledSchema } from "./index";
+interface ErrorTree {
+    message: string;
+    keyword: string;
+    item?: string | number;
+    schemaPath: string;
+    instancePath: string;
+    data?: any;
+    cause?: ErrorTree;
+}
 export declare class ValidationError extends Error {
     message: string;
-    item: string | number;
+    item?: string | number;
     keyword: string;
-    cause: ValidationError;
-    path: string;
+    cause?: ValidationError;
+    schemaPath: string;
+    instancePath: string;
     data?: any;
     schema?: CompiledSchema;
     private _getCause;
-    getCause(): any;
+    getCause(): ValidationError;
+    private _getTree;
+    getTree(): ErrorTree;
+    getPath(): {
+        schemaPath: string;
+        instancePath: string;
+    };
 }
 export interface DefineErrorOptions {
     item?: any;
@@ -26,4 +42,5 @@ export declare function getUTF16Length(str: any): number;
 export declare function deepClone(obj: any): any;
 export declare function isCompiledSchema(subSchema: any): subSchema is CompiledSchema;
 export declare function getNamedFunction<T>(name: string, fn: T): T;
+export {};
 //# sourceMappingURL=utils.d.ts.map
