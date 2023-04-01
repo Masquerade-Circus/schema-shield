@@ -1,5 +1,12 @@
 
 
+### [0.0.5](https://github.com/Masquerade-Circus/schema-shield/compare/0.0.4...0.0.5) (2023-04-01)
+
+
+### Code Refactoring
+
+* improve error handling ([#3](https://github.com/Masquerade-Circus/schema-shield/issues/3)) ([522d4c6](https://github.com/Masquerade-Circus/schema-shield/commit/522d4c68c847f04ad5c60356b9da11339d73d628))
+
 ### [0.0.4](https://github.com/Masquerade-Circus/schema-shield/compare/0.0.3...0.0.4) (2023-03-31)
 
 
