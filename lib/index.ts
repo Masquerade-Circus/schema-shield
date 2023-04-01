@@ -153,7 +153,7 @@ export class SchemaShield {
       }
     }
 
-    const compiledSchema: CompiledSchema = { ...schema } as CompiledSchema;
+    const compiledSchema: CompiledSchema = deepClone(schema) as CompiledSchema;
     const defineTypeError = getDefinedErrorFunctionForKey("type", schema);
     const typeValidations: TypeFunction[] = [];
 
@@ -246,6 +246,15 @@ export class SchemaShield {
       }
 
       if (isObject(schema[key])) {
+        // If the key is properties go through each property and try to compile it as a schema
+        if (key === "properties") {
+          for (const subKey of Object.keys(schema[key])) {
+            compiledSchema[key][subKey] = this.compileSchema(
+              schema[key][subKey]
+            );
+          }
+          continue;
+        }
         compiledSchema[key] = this.compileSchema(schema[key]);
         continue;
       }

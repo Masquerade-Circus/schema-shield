@@ -3,9 +3,8 @@ import { after, before, describe, it } from "mocha";
 import { SchemaShield } from "../lib";
 import { ValidationError } from "../lib/utils";
 import expect from "expect";
+import schemasafe from "@exodus/schemasafe";
 import { stringifySchema } from "./test-utils";
-
-const schemasafe = require("@exodus/schemasafe");
 
 describe("SchemaShield instance", () => {
   it("Should create a SchemaShield instance and validate", () => {
@@ -180,10 +179,124 @@ describe("ValidationError", () => {
       expect(validationResult.error.message).toEqual("Property is invalid");
       const errorCause = validationResult.error.getCause();
       expect(errorCause.message).toEqual("Value is less than the minimum");
-      expect(errorCause.path).toEqual("#/properties/age/minimum");
+      expect(errorCause.schemaPath).toEqual("#/properties/age/minimum");
+      expect(errorCause.instancePath).toEqual("#/age");
       expect(errorCause.data).toEqual(15);
       expect(errorCause.schema).toEqual(18);
       expect(errorCause.keyword).toEqual("minimum");
+    }
+  });
+
+  it("should get the correct path within an error", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        description: { type: "string" },
+        shouldLoadDb: { type: "boolean" },
+        enableNetConnectFor: { type: "array", items: { type: "string" } },
+        params: {
+          type: "object",
+          additionalProperties: {
+            type: "object",
+            properties: {
+              description: { type: "string" },
+              default: { type: "string" }
+            },
+            required: ["description"]
+          }
+        },
+        run: { type: "string" }
+      },
+      required: [
+        "description",
+        "shouldLoadDb",
+        "enableNetConnectFor",
+        "params",
+        "run"
+      ]
+    };
+
+    const schemaShield = new SchemaShield({ immutable: true });
+    schemaShield.addType("function", (value) => typeof value === "function");
+
+    const schemaShieldValidate = schemaShield.compile(schema);
+
+    const command = {
+      description: "Say hello to the bot.",
+      shouldLoadDb: false,
+      enableNetConnectFor: [],
+      params: {
+        color: {
+          type: "string",
+          // description: "The color of the text", // Missing description on purpose
+          default: "red"
+        }
+      },
+      run: "run"
+    };
+
+    const result = schemaShieldValidate(command);
+
+    expect(result).toHaveProperty("valid", false);
+    expect(result).toHaveProperty("error", expect.any(ValidationError));
+
+    // Validate if just to make TS happy
+    if (result.error) {
+      // Test the methods of the error
+      expect(result.error).toHaveProperty("getCause", expect.any(Function));
+      expect(result.error).toHaveProperty("getTree", expect.any(Function));
+      expect(result.error).toHaveProperty("getPath", expect.any(Function));
+
+      // Test the cause
+      const cause = result.error.getCause();
+      expect(cause).toBeInstanceOf(ValidationError);
+      expect(cause).toHaveProperty("message", "Required property is missing");
+      expect(cause).toHaveProperty("keyword", "required");
+      expect(cause).toHaveProperty("item", "description");
+      expect(cause).toHaveProperty(
+        "schemaPath",
+        "#/properties/params/additionalProperties/required"
+      );
+      expect(cause).toHaveProperty(
+        "instancePath",
+        "#/params/color/description"
+      );
+      expect(cause).toHaveProperty("schema", ["description"]);
+      expect(cause).toHaveProperty("data"); // undefined
+
+      // Test the tree
+      const tree = result.error.getTree();
+      expect(tree).toEqual({
+        message: "Property is invalid",
+        keyword: "properties",
+        item: "params",
+        schemaPath: "#/properties/params",
+        instancePath: "#/params",
+        data: { color: { type: "string", default: "red" } },
+        cause: {
+          message: "Additional properties are invalid",
+          keyword: "additionalProperties",
+          item: "color",
+          schemaPath: "#/properties/params/additionalProperties",
+          instancePath: "#/params/color",
+          data: { type: "string", default: "red" },
+          cause: {
+            message: "Required property is missing",
+            keyword: "required",
+            item: "description",
+            schemaPath: "#/properties/params/additionalProperties/required",
+            instancePath: "#/params/color/description",
+            data: undefined
+          }
+        }
+      });
+
+      // Test the path
+      const path = result.error.getPath();
+      expect(path).toEqual({
+        schemaPath: "#/properties/params/additionalProperties/required",
+        instancePath: "#/params/color/description"
+      });
     }
   });
 });

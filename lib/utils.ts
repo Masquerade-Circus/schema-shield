@@ -1,36 +1,83 @@
 import { CompiledSchema } from "./index";
 
+interface ErrorTree {
+  message: string;
+  keyword: string;
+  item?: string | number;
+  schemaPath: string;
+  instancePath: string;
+  data?: any;
+  cause?: ErrorTree;
+}
+
 export class ValidationError extends Error {
   message: string;
-  item: string | number;
+  item?: string | number;
   keyword: string;
-  cause: ValidationError;
-  path: string = "";
+  cause?: ValidationError;
+  schemaPath: string = "";
+  instancePath: string = "";
   data?: any;
   schema?: CompiledSchema;
 
-  private _getCause(pointer = "#") {
-    const path =
-      pointer +
-      "/" +
-      this.keyword +
-      (typeof this.item !== "undefined" ? "/" + this.item : "");
+  private _getCause(pointer = "#", instancePointer = "#"): ValidationError {
+    let schemaPath = `${pointer}/${this.keyword}`;
+    let instancePath = `${instancePointer}`;
+    if (typeof this.item !== "undefined") {
+      if (typeof this.item === "string" && this.item in this.schema) {
+        schemaPath += `/${this.item}`;
+      }
+      instancePath += `/${this.item}`;
+    }
 
-    if (!this.cause) {
-      this.path = path;
+    this.instancePath = instancePath;
+    this.schemaPath = schemaPath;
+
+    // If there is no cause or the cause is not a ValidationError, return this
+    if (!this.cause || !(this.cause instanceof ValidationError)) {
       return this;
     }
 
-    return this.cause._getCause(path);
+    return this.cause._getCause(schemaPath, instancePath);
   }
 
-  getCause() {
+  getCause(): ValidationError {
     return this._getCause();
+  }
+
+  private _getTree(): ErrorTree {
+    const tree: ErrorTree = {
+      message: this.message,
+      keyword: this.keyword,
+      item: this.item,
+      schemaPath: this.schemaPath,
+      instancePath: this.instancePath,
+      data: this.data
+    };
+
+    if (this.cause) {
+      tree.cause = this.cause._getTree();
+    }
+
+    return tree;
+  }
+
+  getTree(): ErrorTree {
+    this.getCause();
+    return this._getTree();
+  }
+
+  getPath() {
+    const cause = this.getCause();
+    return {
+      schemaPath: cause.schemaPath,
+      instancePath: cause.instancePath
+    };
   }
 }
 
 export interface DefineErrorOptions {
-  item?: any; // Final item in the path
+  item?: any; // Final item in the schemaPath
   cause?: ValidationError; // Cause of the error
   data?: any; // Data that caused the error
 }

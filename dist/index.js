@@ -29,19 +29,53 @@ var ValidationError = class extends Error {
   item;
   keyword;
   cause;
-  path = "";
+  schemaPath = "";
+  instancePath = "";
   data;
   schema;
-  _getCause(pointer = "#") {
-    const path = pointer + "/" + this.keyword + (typeof this.item !== "undefined" ? "/" + this.item : "");
-    if (!this.cause) {
-      this.path = path;
+  _getCause(pointer = "#", instancePointer = "#") {
+    let schemaPath = `${pointer}/${this.keyword}`;
+    let instancePath = `${instancePointer}`;
+    if (typeof this.item !== "undefined") {
+      if (typeof this.item === "string" && this.item in this.schema) {
+        schemaPath += `/${this.item}`;
+      }
+      instancePath += `/${this.item}`;
+    }
+    this.instancePath = instancePath;
+    this.schemaPath = schemaPath;
+    if (!this.cause || !(this.cause instanceof ValidationError)) {
       return this;
     }
-    return this.cause._getCause(path);
+    return this.cause._getCause(schemaPath, instancePath);
   }
   getCause() {
     return this._getCause();
+  }
+  _getTree() {
+    const tree = {
+      message: this.message,
+      keyword: this.keyword,
+      item: this.item,
+      schemaPath: this.schemaPath,
+      instancePath: this.instancePath,
+      data: this.data
+    };
+    if (this.cause) {
+      tree.cause = this.cause._getTree();
+    }
+    return tree;
+  }
+  getTree() {
+    this.getCause();
+    return this._getTree();
+  }
+  getPath() {
+    const cause = this.getCause();
+    return {
+      schemaPath: cause.schemaPath,
+      instancePath: cause.instancePath
+    };
   }
 };
 function getDefinedErrorFunctionForKey(key, schema) {
@@ -1127,7 +1161,7 @@ var SchemaShield = class {
         };
       }
     }
-    const compiledSchema = { ...schema };
+    const compiledSchema = deepClone(schema);
     const defineTypeError = getDefinedErrorFunctionForKey("type", schema);
     const typeValidations = [];
     let methodName = "";
@@ -1208,6 +1242,14 @@ var SchemaShield = class {
         }
       }
       if (isObject(schema[key])) {
+        if (key === "properties") {
+          for (const subKey of Object.keys(schema[key])) {
+            compiledSchema[key][subKey] = this.compileSchema(
+              schema[key][subKey]
+            );
+          }
+          continue;
+        }
         compiledSchema[key] = this.compileSchema(schema[key]);
         continue;
       }
