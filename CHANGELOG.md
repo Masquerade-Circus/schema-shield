@@ -1,5 +1,12 @@
 
 
+### [0.0.6](https://github.com/Masquerade-Circus/schema-shield/compare/0.0.5...0.0.6) (2023-05-13)
+
+
+### Code Refactoring
+
+* export ValidationError ([178d6e4](https://github.com/Masquerade-Circus/schema-shield/commit/178d6e4cb0745a6a3f0273330cc2d8f293613e12))
+
 ### [0.0.5](https://github.com/Masquerade-Circus/schema-shield/compare/0.0.4...0.0.5) (2023-04-01)
 
 
