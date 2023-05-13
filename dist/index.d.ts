@@ -1,4 +1,6 @@
 import { DefineErrorFunction, ValidationError } from "./utils";
+export { ValidationError } from "./utils";
+export { deepClone } from "./utils";
 export type Result = void | ValidationError;
 export interface KeywordFunction {
     (schema: CompiledSchema, data: any, defineError: DefineErrorFunction, instance: SchemaShield): Result;

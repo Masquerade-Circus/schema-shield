@@ -19,7 +19,9 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // lib/index.ts
 var lib_exports = {};
 __export(lib_exports, {
-  SchemaShield: () => SchemaShield
+  SchemaShield: () => SchemaShield,
+  ValidationError: () => ValidationError,
+  deepClone: () => deepClone
 });
 module.exports = __toCommonJS(lib_exports);
 

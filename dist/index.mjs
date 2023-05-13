@@ -1253,5 +1253,7 @@ var SchemaShield = class {
   }
 };
 export {
-  SchemaShield
+  SchemaShield,
+  ValidationError,
+  deepClone
 };

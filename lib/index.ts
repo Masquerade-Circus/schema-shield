@@ -11,6 +11,10 @@ import { Formats } from "./formats";
 import { Types } from "./types";
 import { keywords } from "./keywords";
 
+export { ValidationError } from "./utils";
+
+export { deepClone } from "./utils";
+
 export type Result = void | ValidationError;
 
 export interface KeywordFunction {
