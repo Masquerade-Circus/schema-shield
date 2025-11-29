@@ -1,5 +1,17 @@
 
 
+## [1.0.0](https://github.com/Masquerade-Circus/schema-shield/compare/0.0.6...1.0.0) (2025-11-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* Change the way the result returns an error. If failFast is true error will be a
+boolean.
+
+### Features
+
+* implement better loop stack and a failFast flag to improve performance ([7457ac6](https://github.com/Masquerade-Circus/schema-shield/commit/7457ac655215d51a0416c6dec984177d162374f3))
+
 ### [0.0.6](https://github.com/Masquerade-Circus/schema-shield/compare/0.0.5...0.0.6) (2023-05-13)
 
 

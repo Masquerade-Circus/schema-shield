@@ -6,9 +6,6 @@ import expect from "expect";
 import schemasafe from "@exodus/schemasafe";
 import { stringifySchema } from "./test-utils";
 
-import fs from "fs";
-import path from "path";
-
 describe("SchemaShield instance", () => {
   it("Should create a SchemaShield instance and validate", () => {
     let schema = {
