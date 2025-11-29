@@ -1,8 +1,9 @@
-import { isCompiledSchema, isObject } from "../utils";
+import { hasChanged, isCompiledSchema, isObject } from "../utils";
 
 import { KeywordFunction } from "../index";
 
 export const ArrayKeywords: Record<string, KeywordFunction> = {
+  // lib/keywords/array-keywords.ts
   items(schema, data, defineError) {
     if (!Array.isArray(data)) {
       return;
@@ -15,17 +16,19 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
       if (schemaItems === false && dataLength > 0) {
         return defineError("Array items are not allowed", { data });
       }
-
       return;
     }
 
     if (Array.isArray(schemaItems)) {
       const schemaItemsLength = schemaItems.length;
-      const itemsLength = Math.min(schemaItemsLength, dataLength);
+      const itemsLength =
+        schemaItemsLength < dataLength ? schemaItemsLength : dataLength;
+
       for (let i = 0; i < itemsLength; i++) {
         const schemaItem = schemaItems[i];
+
         if (typeof schemaItem === "boolean") {
-          if (schemaItem === false && typeof data[i] !== "undefined") {
+          if (schemaItem === false && data[i] !== undefined) {
             return defineError("Array item is not allowed", {
               item: i,
               data: data[i]
@@ -34,8 +37,9 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
           continue;
         }
 
-        if (isCompiledSchema(schemaItem)) {
-          const error = schemaItem.$validate(data[i]);
+        const validate = schemaItem && schemaItem.$validate;
+        if (typeof validate === "function") {
+          const error = validate(data[i]);
           if (error) {
             return defineError("Array item is invalid", {
               item: i,
@@ -49,29 +53,13 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
       return;
     }
 
-    if (isCompiledSchema(schemaItems)) {
-      for (let i = 0; i < dataLength; i++) {
-        const error = schemaItems.$validate(data[i]);
-        if (error) {
-          return defineError("Array item is invalid", {
-            item: i,
-            cause: error,
-            data: data[i]
-          });
-        }
-      }
-    }
-
-    return;
-  },
-
-  elements(schema, data, defineError) {
-    if (!Array.isArray(data) || !isCompiledSchema(schema.elements)) {
+    const validate = schemaItems && schemaItems.$validate;
+    if (typeof validate !== "function") {
       return;
     }
 
-    for (let i = 0; i < data.length; i++) {
-      const error = schema.elements.$validate(data[i]);
+    for (let i = 0; i < dataLength; i++) {
+      const error = validate(data[i]);
       if (error) {
         return defineError("Array item is invalid", {
           item: i,
@@ -80,8 +68,29 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
         });
       }
     }
+  },
 
-    return;
+  elements(schema, data, defineError) {
+    if (!Array.isArray(data)) {
+      return;
+    }
+
+    const elementsSchema = schema.elements;
+    const validate = elementsSchema && elementsSchema.$validate;
+    if (typeof validate !== "function") {
+      return;
+    }
+
+    for (let i = 0; i < data.length; i++) {
+      const error = validate(data[i]);
+      if (error) {
+        return defineError("Array item is invalid", {
+          item: i,
+          cause: error,
+          data: data[i]
+        });
+      }
+    }
   },
 
   minItems(schema, data, defineError) {
@@ -138,34 +147,39 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
       return;
     }
 
-    const unique = new Set();
-
-    for (const item of data) {
-      let itemStr;
-
-      // Change string to "string" to avoid false positives
-      if (typeof item === "string") {
-        itemStr = `s:${item}`;
-        // Sort object keys to avoid false positives
-      } else if (isObject(item)) {
-        itemStr = `o:${JSON.stringify(
-          Object.fromEntries(
-            Object.entries(item).sort(([a], [b]) => a.localeCompare(b))
-          )
-        )}`;
-      } else if (Array.isArray(item)) {
-        itemStr = JSON.stringify(item);
-      } else {
-        itemStr = String(item);
-      }
-
-      if (unique.has(itemStr)) {
-        return defineError("Array items are not unique", { data: item });
-      }
-      unique.add(itemStr);
+    const len = data.length;
+    if (len <= 1) {
+      return;
     }
 
-    return;
+    const primitiveSeen = new Set<any>();
+
+    for (let i = 0; i < len; i++) {
+      const item = data[i];
+      const type = typeof item;
+
+      if (
+        item === null ||
+        type === "string" ||
+        type === "number" ||
+        type === "boolean"
+      ) {
+        if (primitiveSeen.has(item)) {
+          return defineError("Array items are not unique", { data: item });
+        }
+        primitiveSeen.add(item);
+        continue;
+      }
+
+      if (item && typeof item === "object") {
+        for (let j = 0; j < i; j++) {
+          const prev = data[j];
+          if (prev && typeof prev === "object" && !hasChanged(prev, item)) {
+            return defineError("Array items are not unique", { data: item });
+          }
+        }
+      }
+    }
   },
 
   contains(schema, data, defineError) {

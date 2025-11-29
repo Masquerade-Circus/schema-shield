@@ -1,4 +1,4 @@
-import { KeywordFunction } from "../index";
+import { FormatFunction, KeywordFunction } from "../index";
 
 export const StringKeywords: Record<string, KeywordFunction> = {
   minLength(schema, data, defineError) {
@@ -22,10 +22,22 @@ export const StringKeywords: Record<string, KeywordFunction> = {
       return;
     }
 
-    const patternRegexp = new RegExp(schema.pattern, "u");
-
-    if (patternRegexp instanceof RegExp === false) {
-      return defineError("Invalid regular expression", { data });
+    let patternRegexp = (schema as any)._patternRegexp as RegExp | undefined;
+    if (!patternRegexp) {
+      try {
+        patternRegexp = new RegExp(schema.pattern, "u");
+        Object.defineProperty(schema, "_patternRegexp", {
+          value: patternRegexp,
+          enumerable: false,
+          configurable: false,
+          writable: false
+        });
+      } catch (error) {
+        return defineError("Invalid regular expression", {
+          data,
+          cause: error
+        });
+      }
     }
 
     if (patternRegexp.test(data)) {
@@ -42,7 +54,21 @@ export const StringKeywords: Record<string, KeywordFunction> = {
       return;
     }
 
-    const formatValidate = instance.getFormat(schema.format);
+    let formatValidate = (schema as any)._formatValidate as
+      | FormatFunction
+      | false
+      | undefined;
+
+    if (formatValidate === undefined) {
+      formatValidate = instance.getFormat(schema.format);
+      Object.defineProperty(schema, "_formatValidate", {
+        value: formatValidate,
+        enumerable: false,
+        configurable: false,
+        writable: false
+      });
+    }
+
     if (!formatValidate || formatValidate(data)) {
       return;
     }

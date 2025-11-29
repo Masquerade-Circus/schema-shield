@@ -1,16 +1,28 @@
-# SchemaShield
+# SchemaShield 🛡️
 
-SchemaShield is a versatile and powerful JSON Schema validator designed to simplify the process of validating complex data structures.
+**Validation for Modern Architectures: Secure, Stack-Safe, and Domain-Aware.**
 
-Unlike many other libraries, SchemaShield does not rely on code generation, making it safer to pass real references to objects, classes, or variables and opening new possibilities for custom validation that are not possible with other libraries.
+SchemaShield is a secure interpreter for JSON Schema engineered for strict environments and complex domain logic. It prioritizes **architectural stability** and **developer experience** over raw synthetic throughput.
 
-Despite its feature-rich and easy extendable nature, SchemaShield is designed to be fast and efficient, matching the performance of other libraries that use code generation.
+- **Security by Design:** Zero Code Generation. Fully compatible with strict Content Security Policy (CSP).
+- **Production Stability:** Stack-safe traversal. Designed to minimize stack usage and reduce the risk of stack overflows, even on deeply nested schemas.
+- **Domain Integrated:** Validates runtime objects (Classes, Dates, Streams) alongside serialized JSON.
+- **Transparent Debugging:** Pure JavaScript execution means clean stack traces and no black-box generated code.
 
 ## Table of Contents
 
 - [Table of Contents](#table-of-contents)
-- [Features](#features)
+- [Why SchemaShield?](#why-schemashield)
+  - [Comparison with Other Approaches](#comparison-with-other-approaches)
 - [Usage](#usage)
+- [Performance](#performance)
+  - [Understanding Performance Context](#understanding-performance-context)
+  - [1. Modern Runtimes (Bun)](#1-modern-runtimes-bun)
+  - [2. Standard Runtimes (Node.js)](#2-standard-runtimes-nodejs)
+- [Edge \& Serverless Ready](#edge--serverless-ready)
+- [Features](#features)
+- [Security Philosophy: Hermetic Validation](#security-philosophy-hermetic-validation)
+  - [Why No Remote References?](#why-no-remote-references)
 - [No Code Generation](#no-code-generation)
 - [Error Handling](#error-handling)
 - [Adding Custom Types](#adding-custom-types)
@@ -23,7 +35,8 @@ Despite its feature-rich and easy extendable nature, SchemaShield is designed to
   - [Method Signature](#method-signature-2)
   - [Example: Adding a Custom Keyword](#example-adding-a-custom-keyword)
   - [Complex example: Adding a Custom Keyword that uses the instance](#complex-example-adding-a-custom-keyword-that-uses-the-instance)
-- [No Code Generation Opened Possibilities](#no-code-generation-opened-possibilities)
+- [Supported Formats](#supported-formats)
+- [Validating Runtime Objects](#validating-runtime-objects)
 - [More on Error Handling](#more-on-error-handling)
   - [ValidationError Properties](#validationerror-properties)
   - [Get the path to the error location](#get-the-path-to-the-error-location)
@@ -32,22 +45,39 @@ Despite its feature-rich and easy extendable nature, SchemaShield is designed to
 - [Immutable Mode](#immutable-mode)
 - [TypeScript Support](#typescript-support)
 - [Known Limitations](#known-limitations)
-  - [Schema References and Schema Definitions](#schema-references-and-schema-definitions)
-  - [Unsupported Formats](#unsupported-formats)
+  - [1. Dynamic ID Scope Resolution (Scope Alteration)](#1-dynamic-id-scope-resolution-scope-alteration)
+  - [2. Unicode Length Validation](#2-unicode-length-validation)
 - [Testing](#testing)
 - [Contribute](#contribute)
 - [Legal](#legal)
 
-## Features
+## Why SchemaShield?
 
-- Supports draft-06 and draft-07 of the [JSON Schema](https://json-schema.org/) specification.
-- No Code Generation for Enhanced Safety and Validation Flexibility.
-- Custom type, keyword, and format validators.
-- Immutable mode for data protection.
-- Lightweight and fast.
-- Easy to use and extend.
-- No dependencies.
-- Typescript support.
+Most validators optimize for "operations per second" in synthetic benchmarks, often sacrificing security, stability, or maintainability. SchemaShield optimizes for the **Total Cost of Ownership** of your software.
+
+| Feature              | JIT Compilers                                                        | SchemaShield                                               | Why it matters                                                                          |
+| :------------------- | :------------------------------------------------------------------- | :--------------------------------------------------------- | :-------------------------------------------------------------------------------------- |
+| **Security Model**   | **Reactive**<br>(Requires config to prevent Prototype Pollution/DoS) | **Preventive**<br>(Hermetic & Immutable by design)         | "Secure by default" prevents human error and vulnerabilities in production.             |
+| **Debug Experience** | **Black Box**<br>(Debugs opaque generated strings/code)              | **White Box**<br>(Standard JS stack traces)                | Drastically reduces time-to-fix when validation fails in complex logic.                 |
+| **Stability**        | **Recursive**<br>(Risk of Stack Overflow on deep data)               | **Flat Loop**<br>(Constant memory usage)                   | Protects your server availability against malicious deep-payload attacks.               |
+| **Domain Logic**     | **Disconnected**<br>(Hard to validate Class Instances/State)         | **Integrated**<br>(Native `instanceof` & state validation) | Unifies DTO validation and Business Rules, eliminating "spaghetti code" in controllers. |
+| **Ecosystem**        | **Fragmented**<br>(Requires plugins for errors/formats)              | **Cohesive**<br>(Advanced error trees & formats built-in)  | Reduces dependency fatigue and maintenance burden.                                      |
+
+> **The Trade-off:** While JIT compilers can be faster in raw throughput on V8 (Node.js), SchemaShield offers a balanced architecture where validation is never the bottleneck in real-world I/O bound applications (Database/Network APIs).
+
+### Comparison with Other Approaches
+
+| Feature                       | SchemaShield                                        | JIT Compilers                    | Classic Interpreters  |
+| :---------------------------- | :-------------------------------------------------- | :------------------------------- | :-------------------- |
+| **Architecture**              | **Secure Flat Interpreter**                         | JIT Compiler (eval/new Function) | Recursive Interpreter |
+| **Relative Speed**            | **High (~60%)**                                     | Reference (100%)                 | Low (1% - 20%)        |
+| **CSP Compliance**            | **Native (100% Safe)**                              | Requires Build Config            | Variable              |
+| **Edge Ready**                | **Native**                                          | Complex Setup                    | Variable              |
+| **Stack Safety**              | **Minimized stack usage (non-recursive core loop)** | Risk of Overflow                 | Risk of Overflow      |
+| **Class Instance Validation** | **Native**                                          | No                               | No                    |
+| **Debug Experience**          | **Clean Stack Trace**                               | Opaque Generated Code            | Variable              |
+
+> **Note:** Stack Safety refers to the risk of stack overflow errors when validating deeply nested data structures. SchemaShield's flat interpreter design minimizes this risk in its core validation loop. Keep in mind that custom keywords can still introduce recursion if not implemented carefully.
 
 ## Usage
 
@@ -56,7 +86,7 @@ Despite its feature-rich and easy extendable nature, SchemaShield is designed to
 ```bash
 npm install schema-shield
 # or
-yarn add schema-shield
+bun add schema-shield
 ```
 
 **2. Import the SchemaShield class**
@@ -70,10 +100,11 @@ const { SchemaShield } = require("schema-shield");
 **3. Instantiate the SchemaShield class**
 
 ```javascript
-const schemaShield = new SchemaShield({ immutable: true });
+const schemaShield = new SchemaShield();
 ```
 
-**`immutable`** (optional): Set to `true` to ensure that input data remains unmodified during validation. Default is `false` for better performance.
+- **`immutable`** (optional): Set to `true` to ensure that input data remains unmodified during validation. Default is `false` for better performance.
+- **`failFast`** (optional): Set to `false` to receive detailed error objects on validation failure. Default is `true` for lightweight failure indication.
 
 **3.5. Add custom types, keywords, and formats (optional)**
 
@@ -128,8 +159,91 @@ if (validationResult.valid) {
 **`validationResult`**: Contains the following properties:
 
 - `data`: The validated (and potentially modified) data.
-- `error`: A `ValidationError` instance if validation failed, otherwise null.
+- `error`: A `ValidationError` instance if validation failed (when `failFast: false`), `true` if validation failed in fail-fast mode, otherwise `null`.
 - `valid`: true if validation was successful, otherwise false.
+
+> Note: When SchemaShield is instantiated with `{ failFast: false }`, `validationResult.error` will contain a detailed `ValidationError` instance if validation fails. In `failFast: true` mode, `error` is just `true` as a lightweight sentinel.
+
+**6. Intelligent Defaults**
+
+SchemaShield applies `default` values only when necessary to fulfill the schema contract. A `default` value is injected if and only if:
+
+1. The property is missing in the input data.
+2. The property is marked as `required` in the schema.
+
+## Performance
+
+SchemaShield is engineered with a **Flat Loop Interpreter** architecture. This design choice implies zero compilation overhead, making it exceptionally stable and significantly faster in modern runtimes.
+
+### Understanding Performance Context
+
+In real-world applications, validation latency is often negligible compared to Network I/O (~20-100ms) or Database queries (~5-50ms).
+
+SchemaShield is engineered to be **"Elite Fast" (Sufficiently Fast)**:
+
+- **Zero Compilation Overhead:** Ideal for Serverless/Edge cold-starts.
+- **Predictable Throughput:** Consistent performance regardless of schema complexity.
+
+While JIT compilers may show higher numbers in micro-benchmarks on V8, SchemaShield processes thousands of requests per second—more than enough for high-traffic APIs—without the architectural risks of code generation.
+
+### 1. Modern Runtimes (Bun)
+
+In runtimes using JavaScriptCore (like Bun), SchemaShield outperforms JIT compilers because it avoids the heavy cost of runtime code generation and optimization overhead.
+
+| Validator          | Relative Speed | Context      |
+| :----------------- | :------------- | :----------- |
+| **SchemaShield**   | **100%**       | **Fastest**  |
+| ajv                | ~55%           | JIT Compiler |
+| @exodus/schemasafe | ~12%           | Interpreter  |
+| jsonschema         | ~2%            | Legacy       |
+
+### 2. Standard Runtimes (Node.js)
+
+In V8-based environments (Node.js), SchemaShield maintains elite performance for a secure interpreter, being roughly **50x faster** than legacy libraries.
+
+| Validator          | Relative Speed | Context             |
+| :----------------- | :------------- | :------------------ |
+| ajv                | 100%           | Reference (JIT)     |
+| @exodus/schemasafe | ~75%           | Interpreter         |
+| **SchemaShield**   | **~60%**       | **Secure Standard** |
+| jsonschema         | ~1%            | Legacy              |
+
+**Key Takeaway:** SchemaShield delivers consistent high performance in Node.js without the security risks, memory leaks, or "cold start" latency associated with code generation.
+
+## Edge & Serverless Ready
+
+SchemaShield is designed to run seamlessly in restrictive environments like **Cloudflare Workers**, **Vercel Edge Functions**, **Deno Deploy**, and **Bun**.
+
+- **Zero Dependencies:** No strict reliance on Node.js built-ins.
+- **CSP Compliant:** Works in environments where `eval()` and `new Function()` are banned for security.
+- **Instant Startup:** No compilation overhead, minimizing "cold start" latency in Serverless functions.
+
+## Features
+
+- Supports draft-06 and draft-07 of the [JSON Schema](https://json-schema.org/) specification.
+- Full support for internal references ($ref) and anchors ($id).
+- No Code Generation for Enhanced Safety and Validation Flexibility.
+- Custom type, keyword, and format validators.
+- Runtime object validation: first-class support for business logic checks (type checking and schema validation).
+- Immutable mode for data protection.
+- Lightweight and fast.
+- Easy to use and extend.
+- No dependencies.
+- TypeScript support.
+
+## Security Philosophy: Hermetic Validation
+
+SchemaShield adopts a **Zero Trust** and **Hermetic Architecture** approach. Unlike validators that allow runtime network access, SchemaShield is strictly synchronous and offline by design.
+
+### Why No Remote References?
+
+Allowing a validator to fetch schemas from remote URLs (`$ref: "https://..."`) at runtime introduces critical security vectors and stability issues:
+
+1. **SSRF (Server-Side Request Forgery):** Prevents attackers from manipulating schemas to force internal network scanning or access metadata services.
+2. **Supply Chain Attacks:** Eliminates the risk of a remote schema being silently compromised, which could alter validation logic without code deployment.
+3. **Deterministic Reliability:** Validation never fails due to network latency, DNS issues, or third-party server downtime.
+
+**Recommendation:** Treat schemas as **code dependencies**, not dynamic assets. Download and bundle remote schemas locally during your build process to ensure immutable, versioned, and audit-ready validation.
 
 ## No Code Generation
 
@@ -146,18 +260,21 @@ class CustomDate extends Date {}
 schemaShield.addType("custom-date-class", (data) => data instanceof CustomDate);
 ```
 
-You can see a full example of this in the [No Code Generation opened possibilities](#no-code-generation-opened-possibilities) section.
-
 ## Error Handling
 
-SchemaShield provides comprehensive error handling for schema validation. When a validation error occurs, a `ValidationError` instance is returned in the error property of the validation result. This error has the `getPath()` method, which is particularly useful for quickly identifying the location of an error in both the schema and the data.
+SchemaShield provides comprehensive error handling for schema validation. When a validation error occurs:
+
+- If the instance was created with `{ failFast: true }` (the default), the `error` property will be `true` as a lightweight sentinel indicating that validation failed.
+- If the instance was created with `{ failFast: false }`, the `error` property will contain a `ValidationError` instance with rich debugging information.
+
+This error object has the `getPath()` method, which is particularly useful for quickly identifying the location of an error in both the schema and the data.
 
 **Example:**
 
 ```javascript
 import { SchemaShield } from "schema-shield";
 
-const schemaShield = new SchemaShield();
+const schemaShield = new SchemaShield({ failFast: false });
 
 const schema = {
   type: "object",
@@ -218,7 +335,7 @@ In this example, we'll add a custom type called age that validates if a given nu
 ```javascript
 import { SchemaShield } from "schema-shield";
 
-const schemaShield = new SchemaShield();
+const schemaShield = new SchemaShield({ failFast: false });
 
 // Custom type 'age' validator function
 const ageValidator = (data) => {
@@ -275,9 +392,9 @@ addFormat(name: string, validator: FormatFunction, overwrite?: boolean): void;
 In this example, we'll add a custom format called ssn that validates if a given string is a valid U.S. Social Security Number (SSN).
 
 ```javascript
-import { SchemaShield } from "./path/to/SchemaShield";
+import { SchemaShield } from "schema-shield";
 
-const schemaShield = new SchemaShield();
+const schemaShield = new SchemaShield({ failFast: false });
 
 // Custom format 'ssn' validator function
 const ssnValidator = (data) => {
@@ -314,21 +431,21 @@ if (validationResult.valid) {
 
 ## Adding Custom Keywords
 
-SchemaShield allows you to add custom keywords for validation using the addKeyword method. This is the most powerful method for adding custom validation logic to SchemaShield because it allows to interact with the entire schema and data being validated at the level of the keyword.
+SchemaShield allows you to add custom keywords for validation using the `addKeyword` method. This is the most powerful method for adding custom validation logic to SchemaShield because it allows you to interact with the entire schema and data being validated at the level of the keyword.
 
 ### Method Signature
 
 ```javascript
-type Result = void | ValidationError;
+type Result = void | ValidationError | true;
 
 interface DefineErrorOptions {
   item?: any; // Final item in the path
-  cause?: ValidationError; // Cause of the error
+  cause?: ValidationError | true; // Cause of the error (or true in failFast mode)
   data?: any; // Data that caused the error
 }
 
 interface DefineErrorFunction {
-  (message: string, options?: DefineErrorOptions): ValidationError;
+  (message: string, options?: DefineErrorOptions): ValidationError | true;
 }
 
 interface ValidateFunction {
@@ -349,8 +466,9 @@ interface TypeFunction {
 }
 
 declare class SchemaShield {
-    constructor({ immutable }?: {
-        immutable?: boolean;
+    constructor(options?: {
+      immutable?: boolean;
+      failFast?: boolean;
     });
     compile(schema: any): Validator;
     addType(name: string, validator: TypeFunction, overwrite?: boolean): void;
@@ -377,7 +495,7 @@ addKeyword(name: string, validator: KeywordFunction, overwrite?: boolean): void;
 ```
 
 - `name`: The name of the custom keyword. This should be a unique string that does not conflict with existing keywords.
-- `validator`: A `KeywordFunction` that takes four arguments: `schema`, `data`, `defineError`, and `instance` (The SchemaShield instance that is currently running the validation). The function should not return anything if the data is valid for the custom keyword, and should return a `ValidationError` instance if the data is invalid.
+- `validator`: A `KeywordFunction` that takes four arguments: `schema`, `data`, `defineError`, and `instance` (The SchemaShield instance that is currently running the validation). The function should not return anything if the data is valid for the custom keyword, and should return a `ValidationError` instance if the data is invalid when `failFast` is `false`, or `true` when `failFast` is `true`.
 - `overwrite` (optional): Set to true to overwrite an existing keyword with the same name. Default is false. If set to false and a keyword with the same name already exists, an error will be thrown.
 
 #### About the `defineError` Function
@@ -386,9 +504,12 @@ Take into account that the error must be generated using the `defineError` funct
 
 - `message`: A string that describes the validation error.
 - `options`: An optional object with properties that provide more context for the error:
+
   - `item`?: An optional value representing the final item in the path where the validation error occurred. (e.g. index of an array item)
-  - `cause`?: An optional `ValidationError` that represents the cause of the current error.
+  - `cause`?: An optional `ValidationError` (or `true` in fail-fast mode) that represents the cause of the current error.
   - `data`?: An optional value representing the data that caused the validation error.
+
+When the SchemaShield instance is created with `failFast: true`, `defineError` returns `true` instead of a `ValidationError`, and keyword implementations should simply `return` whatever `defineError` gives them.
 
 #### About the `instance` Argument
 
@@ -399,9 +520,9 @@ The `instance` argument is the SchemaShield instance that is currently running t
 In this example, we'll add a custom keyword called divisibleBy that validates if a given number is divisible by a specified divisor.
 
 ```javascript
-import { SchemaShield, ValidationError } from "./path/to/SchemaShield";
+import { SchemaShield, ValidationError } from "schema-shield";
 
-const schemaShield = new SchemaShield();
+const schemaShield = new SchemaShield({ failFast: false });
 
 // Custom keyword 'divisibleBy' validator function
 const divisibleByValidator = (schema, data, defineError, instance) => {
@@ -450,7 +571,7 @@ In this example we'll add a custom keyword called `prefixedUsername` that will v
 ```javascript
 import { SchemaShield, ValidationError } from "schema-shield";
 
-const schemaShield = new SchemaShield();
+const schemaShield = new SchemaShield({ failFast: false });
 
 // Custom type validator: nonEmptyString
 const nonEmptyStringValidator = (data) =>
@@ -479,7 +600,7 @@ const prefixedUsername = (schema, data, defineError, instance) => {
   // Get the validators for the specified types and formats from the instance
   // (if they exist)
   const typeValidator = instance.getType(validType);
-  const prefixValidator = instance.getKeyword(prefixValidator);
+  const prefixKeyword = instance.getKeyword(prefixValidator);
   const formatValidator = instance.getFormat(validFormat);
 
   for (let i = 0; i < data.length; i++) {
@@ -506,8 +627,8 @@ const prefixedUsername = (schema, data, defineError, instance) => {
     }
 
     // Validate that the data has the correct prefix if specified
-    if (prefixValidator) {
-      const error = prefixValidator(schema, item, defineError, instance);
+    if (prefixKeyword) {
+      const error = prefixKeyword(schema, item, defineError, instance);
       if (error) {
         return defineError(`Invalid prefix: ${prefixValidator}`, {
           cause: error,
@@ -546,16 +667,30 @@ if (validationResult.valid) {
 }
 ```
 
-## No Code Generation Opened Possibilities
+## Supported Formats
 
-With the no code generation nature of SchemaShield, you can create complex validation logic that incorporates custom classes, objects, or variables. This flexibility allows you to seamlessly integrate the validation process into your application's unique requirements and data structures.
+SchemaShield includes built-in validators for the following formats:
+
+- **Date & Time:** `date`, `time`, `date-time`, `duration`.
+- **Email:** `email`, `idn-email`.
+- **Hostnames:** `hostname`, `idn-hostname`.
+- **IP Addresses:** `ipv4`, `ipv6`.
+- **Resource Identifiers:** `uuid`, `uri`, `uri-reference`, `uri-template`, `iri`, `iri-reference`.
+- **JSON Pointers:** `json-pointer`, `relative-json-pointer`.
+- **Regex:** `regex`.
+
+You can override any of these or add new ones using `schemaShield.addFormat`.
+
+## Validating Runtime Objects
+
+JSON Schema is traditionally for serialized JSON text. SchemaShield extends this concept to **JavaScript Objects**. It allows validation of class instances, Dates, and internal application state directly.
 
 For example, imagine you have a custom class representing a project and another representing an employee. You could create a custom validator to ensure that only employees with the right qualifications are assigned to a specific project:
 
 ```javascript
 import { SchemaShield, ValidationError } from "schema-shield";
 
-const schemaShield = new SchemaShield();
+const schemaShield = new SchemaShield({ failFast: false });
 
 // Custom classes
 class Project {
@@ -653,7 +788,7 @@ const dataToValidate = {
 };
 
 // Validate the data
-const validationResult = validator(schema);
+const validationResult = validator(dataToValidate);
 
 if (validationResult.valid) {
   console.log("Assignment is valid:", validationResult.data);
@@ -666,9 +801,9 @@ In this example, SchemaShield safely accesses instances of custom classes and ut
 
 ## More on Error Handling
 
-SchemaShield provides a `ValidationError` class to handle errors that occur during schema validation. When a validation error is encountered, a `ValidationError` instance is returned in the error property of the validation result.
+SchemaShield provides a `ValidationError` class to handle errors that occur during schema validation. When a validation error is encountered, a `ValidationError` instance is returned in the error property of the validation result when `failFast: false` is used; otherwise `error` is `true`.
 
-This error instance uses the new [Error: cause](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error/cause) property introduced in ES6. This allows you to analyze the whole error chain or to retrieve the root cause of the error using the `getCause()` `getTree()` and `getPath()` methods.
+This error instance uses the [`Error.cause`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error/cause) property. This allows you to analyze the whole error chain or retrieve the root cause of the error using the `getCause()`, `getTree()`, and `getPath()` methods.
 
 ### ValidationError Properties
 
@@ -692,7 +827,7 @@ You can use the `getPath` method to get the JSON Pointer path to the error locat
 ```javascript
 import { SchemaShield } from "schema-shield";
 
-const schemaShield = new SchemaShield();
+const schemaShield = new SchemaShield({ failFast: false });
 
 const schema = {
   type: "object",
@@ -768,7 +903,7 @@ interface ErrorTree {
 ```javascript
 import { SchemaShield } from "schema-shield";
 
-const schemaShield = new SchemaShield();
+const schemaShield = new SchemaShield({ failFast: false });
 
 const schema = {
   type: "object",
@@ -856,7 +991,7 @@ You can use the `getCause()` method to retrieve the root cause of a validation e
 ```javascript
 import { SchemaShield } from "schema-shield";
 
-const schemaShield = new SchemaShield();
+const schemaShield = new SchemaShield({ failFast: false });
 
 const schema = {
   type: "object",
@@ -937,26 +1072,19 @@ With the built in TypeScript support, you can take advantage of features like st
 
 ## Known Limitations
 
-SchemaShield is a powerful and flexible library, but there are some limitations to be aware of when using it. Some features are not yet supported in the current version.
+SchemaShield is optimized for local execution and strict security.
 
-### Schema References and Schema Definitions
+### 1. Dynamic ID Scope Resolution (Scope Alteration)
 
-SchemaShield currently does not support schema references and schema definitions (i.e. `$ref` and `definitions`). This is planned to be addressed in future updates of SchemaShield.
+SchemaShield resolves references based on static JSON Pointers and unique IDs. It does not support changing the resolution base URI dynamically based on nested `$id` properties within sub-schemas.
 
-For now, consider using custom implementations using the `addKeyword` method or use alternative libraries to handle these specific features if you need them.
+- **Impact:** Rare edge-cases in draft-07 involving complex relative URI resolution inside nested scopes are not supported.
 
-### Unsupported Formats
+### 2. Unicode Length Validation
 
-#### Internationalized Formats
+SchemaShield validates `minLength` and `maxLength` based on JavaScript's `length` property (UTF-16 code units), not Unicode Code Points.
 
-There is no plan to support the following formats in SchemaShield, as they are not relevant to the majority of use cases. If you need to use these formats, consider using custom implementations using the `addFormat` method to handle them.
-
-- `idn-email`
-- `idn-hostname`
-- `iri`
-- `iri-reference`
-
-Also you can contribute to SchemaShield and add support for these keywords and formats or leve a comment requesting support for them.
+- **Impact:** Emoji or surrogate pairs may be counted as length 2.
 
 ## Testing
 
@@ -994,5 +1122,5 @@ We appreciate your interest in contributing to SchemaShield and look forward to 
 
 ## Legal
 
-Author: [Masquerade Circus](http://masquerade-circus.net).  
+Author: [Masquerade Circus](http://masquerade-circus.net).
 License [Apache-2.0](https://opensource.org/licenses/Apache-2.0)

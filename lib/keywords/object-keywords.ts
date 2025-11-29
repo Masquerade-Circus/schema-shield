@@ -1,9 +1,8 @@
-import { isCompiledSchema, isObject } from "../utils";
+import { deepClone, isCompiledSchema, isObject } from "../utils";
 
 import { KeywordFunction } from "../index";
 
 export const ObjectKeywords: Record<string, KeywordFunction | false> = {
-  // Object
   required(schema, data, defineError) {
     if (!isObject(data)) {
       return;
@@ -27,17 +26,59 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
       return;
     }
 
-    for (const key of Object.keys(schema.properties)) {
-      if (!data.hasOwnProperty(key)) {
-        const schemaProp = schema.properties[key];
-        if (isObject(schemaProp) && "default" in schemaProp) {
-          data[key] = schemaProp.default;
+    let propKeys = (schema as any)._propKeys as string[] | undefined;
+    if (!propKeys) {
+      propKeys = Object.keys(schema.properties || {});
+      Object.defineProperty(schema, "_propKeys", {
+        value: propKeys,
+        enumerable: false,
+        configurable: false,
+        writable: false
+      });
+    }
+
+    let requiredKeys = (schema as any)._requiredKeys as
+      | string[]
+      | null
+      | undefined;
+    if (requiredKeys === undefined) {
+      requiredKeys = Array.isArray(schema.required) ? schema.required : null;
+      Object.defineProperty(schema, "_requiredKeys", {
+        value: requiredKeys,
+        enumerable: false,
+        configurable: false,
+        writable: false
+      });
+    }
+
+    const required = requiredKeys || [];
+
+    for (let i = 0; i < propKeys.length; i++) {
+      const key = propKeys[i];
+      const schemaProp = schema.properties[key];
+
+      if (!Object.prototype.hasOwnProperty.call(data, key)) {
+        if (
+          required.length &&
+          required.indexOf(key) !== -1 &&
+          isObject(schemaProp) &&
+          "default" in schemaProp
+        ) {
+          const error = schemaProp.$validate(schemaProp.default);
+          if (error) {
+            return defineError("Default property is invalid", {
+              item: key,
+              cause: error,
+              data: schemaProp.default
+            });
+          }
+          data[key] = deepClone(schemaProp.default);
         }
         continue;
       }
 
-      if (typeof schema.properties[key] === "boolean") {
-        if (schema.properties[key] === false) {
+      if (typeof schemaProp === "boolean") {
+        if (schemaProp === false) {
           return defineError("Property is not allowed", {
             item: key,
             data: data[key]
@@ -46,8 +87,8 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
         continue;
       }
 
-      if ("$validate" in schema.properties[key]) {
-        const error = schema.properties[key].$validate(data[key]);
+      if (schemaProp && "$validate" in schemaProp) {
+        const error = schemaProp.$validate(data[key]);
         if (error) {
           return defineError("Property is invalid", {
             item: key,
@@ -60,15 +101,21 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
 
     return;
   },
-
   values(schema, data, defineError) {
-    if (!isObject(data) || !isCompiledSchema(schema.values)) {
+    if (!isObject(data)) {
+      return;
+    }
+
+    const valueSchema = schema.values;
+    const validate = valueSchema && valueSchema.$validate;
+    if (typeof validate !== "function") {
       return;
     }
 
     const keys = Object.keys(data);
-    for (const key of keys) {
-      const error = schema.values.$validate(data[key]);
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      const error = validate(data[key]);
       if (error) {
         return defineError("Property is invalid", {
           item: key,
@@ -77,8 +124,6 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
         });
       }
     }
-
-    return;
   },
 
   maxProperties(schema, data, defineError) {
@@ -103,16 +148,45 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
     }
 
     const keys = Object.keys(data);
-    const isCompiled = isCompiledSchema(schema.additionalProperties);
-    for (const key of keys) {
+
+    let apIsCompiled = (schema as any)._apIsCompiled as boolean | undefined;
+    if (apIsCompiled === undefined) {
+      apIsCompiled = isCompiledSchema(schema.additionalProperties);
+      Object.defineProperty(schema, "_apIsCompiled", {
+        value: apIsCompiled,
+        enumerable: false
+      });
+    }
+
+    let patternList = (schema as any)._patternPropertiesList as
+      | { regex: RegExp; key: string }[]
+      | undefined;
+
+    if (schema.patternProperties && !patternList) {
+      patternList = [];
+      for (const pattern in schema.patternProperties) {
+        patternList.push({
+          regex: new RegExp(pattern, "u"),
+          key: pattern
+        });
+      }
+      Object.defineProperty(schema, "_patternPropertiesList", {
+        value: patternList,
+        enumerable: false
+      });
+    }
+
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+
       if (schema.properties && schema.properties.hasOwnProperty(key)) {
         continue;
       }
 
-      if (schema.patternProperties) {
+      if (patternList && patternList.length) {
         let match = false;
-        for (const pattern in schema.patternProperties) {
-          if (new RegExp(pattern, "u").test(key)) {
+        for (let j = 0; j < patternList.length; j++) {
+          if (patternList[j].regex.test(key)) {
             match = true;
             break;
           }
@@ -129,7 +203,7 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
         });
       }
 
-      if (isCompiled) {
+      if (apIsCompiled && isCompiledSchema(schema.additionalProperties)) {
         const error = schema.additionalProperties.$validate(data[key]);
         if (error) {
           return defineError("Additional properties are invalid", {
@@ -143,18 +217,41 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
 
     return;
   },
-
   patternProperties(schema, data, defineError) {
     if (!isObject(data)) {
       return;
     }
 
-    const patterns = Object.keys(schema.patternProperties);
-    for (const pattern of patterns) {
-      const regex = new RegExp(pattern, "u");
-      if (typeof schema.patternProperties[pattern] === "boolean") {
-        if (schema.patternProperties[pattern] === false) {
-          for (const key in data) {
+    let patternList = (schema as any)._patternPropertiesList as
+      | { regex: RegExp; key: string }[]
+      | undefined;
+
+    if (!patternList) {
+      patternList = [];
+      const patterns = Object.keys(schema.patternProperties || {});
+      for (let i = 0; i < patterns.length; i++) {
+        const pattern = patterns[i];
+        patternList.push({
+          regex: new RegExp(pattern, "u"),
+          key: pattern
+        });
+      }
+      Object.defineProperty(schema, "_patternPropertiesList", {
+        value: patternList,
+        enumerable: false
+      });
+    }
+
+    const dataKeys = Object.keys(data);
+
+    for (let p = 0; p < patternList.length; p++) {
+      const { regex, key: patternKey } = patternList[p];
+      const schemaProp = schema.patternProperties[patternKey];
+
+      if (typeof schemaProp === "boolean") {
+        if (schemaProp === false) {
+          for (let i = 0; i < dataKeys.length; i++) {
+            const key = dataKeys[i];
             if (regex.test(key)) {
               return defineError("Property is not allowed", {
                 item: key,
@@ -166,13 +263,11 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
         continue;
       }
 
-      const keys = Object.keys(data);
-      for (const key of keys) {
-        if (regex.test(key)) {
-          if ("$validate" in schema.patternProperties[pattern]) {
-            const error = schema.patternProperties[pattern].$validate(
-              data[key]
-            );
+      if ("$validate" in schemaProp) {
+        for (let i = 0; i < dataKeys.length; i++) {
+          const key = dataKeys[i];
+          if (regex.test(key)) {
+            const error = schemaProp.$validate(data[key]);
             if (error) {
               return defineError("Property is invalid", {
                 item: key,
@@ -187,30 +282,38 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
 
     return;
   },
-
   propertyNames(schema, data, defineError) {
     if (!isObject(data)) {
       return;
     }
-    if (typeof schema.propertyNames === "boolean") {
-      if (schema.propertyNames === false && Object.keys(data).length > 0) {
+
+    const pn = schema.propertyNames;
+
+    if (typeof pn === "boolean") {
+      if (pn === false && Object.keys(data).length > 0) {
         return defineError("Properties are not allowed", { data });
       }
-    }
-    if (isCompiledSchema(schema.propertyNames)) {
-      for (let key in data) {
-        const error = schema.propertyNames.$validate(key);
-        if (error) {
-          return defineError("Property name is invalid", {
-            item: key,
-            cause: error,
-            data: data[key]
-          });
-        }
-      }
+      return;
     }
 
-    return;
+    const validate = pn && pn.$validate;
+    if (typeof validate !== "function") {
+      return;
+    }
+
+    for (const key in data) {
+      if (!Object.prototype.hasOwnProperty.call(data, key)) {
+        continue;
+      }
+      const error = validate(key);
+      if (error) {
+        return defineError("Property name is invalid", {
+          item: key,
+          cause: error,
+          data: data[key]
+        });
+      }
+    }
   },
 
   dependencies(schema, data, defineError) {
@@ -266,7 +369,6 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
   default: false,
 
   // Not implemented yet
-  $ref: false,
   definitions: false,
   $id: false,
   $schema: false,

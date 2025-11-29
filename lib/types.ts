@@ -6,17 +6,7 @@ export const Types: Record<string, TypeFunction | false> = {
     return isObject(data);
   },
   array(data) {
-    if (Array.isArray(data)) {
-      return true;
-    }
-
-    return (
-      typeof data === "object" &&
-      data !== null &&
-      "length" in data &&
-      "0" in data &&
-      Object.keys(data).length - 1 === data.length
-    );
+    return Array.isArray(data);
   },
   string(data) {
     return typeof data === "string";
@@ -44,6 +34,4 @@ export const Types: Record<string, TypeFunction | false> = {
   unit32: false,
   float32: false,
   float64: false
-
-
 };

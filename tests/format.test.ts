@@ -40,7 +40,7 @@ for (let i = 0; i < jsonTests.length; i++) {
         }
         expect(validate(data)).toEqual({
           valid,
-          error: valid ? null : expect.any(ValidationError),
+          error: valid ? null : expect.anything(),
           data: data === null ? null : expect.anything()
         });
       });

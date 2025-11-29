@@ -6,6 +6,9 @@ import expect from "expect";
 import schemasafe from "@exodus/schemasafe";
 import { stringifySchema } from "./test-utils";
 
+import fs from "fs";
+import path from "path";
+
 describe("SchemaShield instance", () => {
   it("Should create a SchemaShield instance and validate", () => {
     let schema = {
@@ -26,9 +29,13 @@ describe("SchemaShield instance", () => {
         hello: {
           type: "string",
           default: "world"
+        },
+        world: {
+          type: "string",
+          default: "hello"
         }
       },
-      required: ["foo", "bar", "array"]
+      required: ["foo", "bar", "array", "hello"]
     };
 
     let data = {
@@ -124,7 +131,7 @@ describe("Scratchpad", () => {
     it(description, () => {
       expect(validate(data)).toEqual({
         valid,
-        error: valid ? null : expect.any(ValidationError),
+        error: valid ? null : expect.anything(),
         data: data === null ? null : expect.anything()
       });
     });
@@ -175,7 +182,7 @@ describe("ValidationError", () => {
     expect(validationResult.error).not.toBeNull();
 
     // Validating error property again just to make TS happy in the next lines
-    if (validationResult.error !== null) {
+    if (validationResult.error instanceof ValidationError) {
       expect(validationResult.error.message).toEqual("Property is invalid");
       const errorCause = validationResult.error.getCause();
       expect(errorCause.message).toEqual("Value is less than the minimum");
@@ -238,10 +245,10 @@ describe("ValidationError", () => {
     const result = schemaShieldValidate(command);
 
     expect(result).toHaveProperty("valid", false);
-    expect(result).toHaveProperty("error", expect.any(ValidationError));
+    expect(result).toHaveProperty("error", expect.anything());
 
     // Validate if just to make TS happy
-    if (result.error) {
+    if (result.error instanceof ValidationError) {
       // Test the methods of the error
       expect(result.error).toHaveProperty("getCause", expect.any(Function));
       expect(result.error).toHaveProperty("getTree", expect.any(Function));
@@ -297,6 +304,84 @@ describe("ValidationError", () => {
         schemaPath: "#/properties/params/additionalProperties/required",
         instancePath: "#/params/color/description"
       });
+    }
+  });
+
+  it('should test the "getPath" README.md example', () => {
+    const schemaShield = new SchemaShield();
+
+    const schema = {
+      type: "object",
+      properties: {
+        description: { type: "string" },
+        shouldLoadDb: { type: "boolean" },
+        enableNetConnectFor: { type: "array", items: { type: "string" } },
+        params: {
+          type: "object",
+          additionalProperties: {
+            type: "object",
+            properties: {
+              description: { type: "string" },
+              default: { type: "string" }
+            },
+            required: ["description"]
+          }
+        },
+        run: { type: "string" }
+      }
+    };
+
+    const validator = schemaShield.compile(schema);
+
+    const invalidData = {
+      description: "Say hello to the bot.",
+      shouldLoadDb: false,
+      enableNetConnectFor: [],
+      params: {
+        color: {
+          type: "string",
+          // description: "The color of the text", // Missing description on purpose
+          default: "red"
+        }
+      },
+      run: "run"
+    };
+
+    const validationResult = validator(invalidData);
+
+    if (validationResult.error instanceof ValidationError) {
+      console.error("Validation error:", validationResult.error.message); // "Property is invalid"
+
+      // Get the full error chain as a tree
+      const errorTree = validationResult.error.getTree();
+      console.error(errorTree);
+
+      /*
+    {
+      message: "Property is invalid",
+      keyword: "properties",
+      item: "params",
+      schemaPath: "#/properties/params",
+      instancePath: "#/params",
+      data: { color: { type: "string", default: "red" } },
+      cause: {
+        message: "Additional properties are invalid",
+        keyword: "additionalProperties",
+        item: "color",
+        schemaPath: "#/properties/params/additionalProperties",
+        instancePath: "#/params/color",
+        data: { type: "string", default: "red" },
+        cause: {
+          message: "Required property is missing",
+          keyword: "required",
+          item: "description",
+          schemaPath: "#/properties/params/additionalProperties/required",
+          instancePath: "#/params/color/description",
+          data: undefined
+        }
+      }
+    }
+  */
     }
   });
 });

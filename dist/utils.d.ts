@@ -28,19 +28,20 @@ export declare class ValidationError extends Error {
 }
 export interface DefineErrorOptions {
     item?: any;
-    cause?: ValidationError;
+    cause?: ValidationError | true;
     data?: any;
 }
 export interface DefineErrorFunction {
-    (message: string, options?: DefineErrorOptions): ValidationError;
+    (message: string, options?: DefineErrorOptions): ValidationError | void | true;
 }
-export declare function getDefinedErrorFunctionForKey(key: string, schema: CompiledSchema): DefineErrorFunction;
-export declare function deepEqual(obj: Array<any> | Record<string, any>, other: Array<any> | Record<string, any>): boolean;
+export declare function getDefinedErrorFunctionForKey(key: string, schema: CompiledSchema, failFast: boolean): DefineErrorFunction;
+export declare function hasChanged(prev: any, current: any): boolean;
 export declare function isObject(data: any): boolean;
 export declare function areCloseEnough(a: any, b: any, epsilon?: number): boolean;
 export declare function getUTF16Length(str: any): number;
-export declare function deepClone(obj: any): any;
+export declare function deepClone<T>(obj: T, cloneClassInstances?: boolean, seen?: WeakMap<object, any>): T;
 export declare function isCompiledSchema(subSchema: any): subSchema is CompiledSchema;
 export declare function getNamedFunction<T>(name: string, fn: T): T;
+export declare function resolvePath(root: any, path: string): any;
 export {};
 //# sourceMappingURL=utils.d.ts.map

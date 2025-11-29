@@ -1,29 +1,26 @@
-import { deepEqual, isCompiledSchema, isObject } from "../utils";
+import { hasChanged, isCompiledSchema, isObject } from "../utils";
 
 import { KeywordFunction } from "../index";
 
 export const OtherKeywords: Record<string, KeywordFunction> = {
   enum(schema, data, defineError) {
-    // Check if data is an array or an object
-    const isArray = Array.isArray(data);
-    const isObject = typeof data === "object" && data !== null;
+    const list = schema.enum;
 
-    for (let i = 0; i < schema.enum.length; i++) {
-      const enumItem = schema.enum[i];
+    for (let i = 0; i < list.length; i++) {
+      const enumItem = list[i];
 
-      // Simple equality check
       if (enumItem === data) {
         return;
       }
 
-      // If data is an array or an object, check for deep equality
       if (
-        (isArray && Array.isArray(enumItem)) ||
-        (isObject && typeof enumItem === "object" && enumItem !== null)
+        enumItem !== null &&
+        data !== null &&
+        typeof enumItem === "object" &&
+        typeof data === "object" &&
+        !hasChanged(enumItem, data)
       ) {
-        if (deepEqual(enumItem, data)) {
-          return;
-        }
+        return;
       }
     }
 
@@ -85,28 +82,44 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
   },
 
   oneOf(schema, data, defineError) {
+    const list = schema.oneOf;
     let validCount = 0;
-    for (let i = 0; i < schema.oneOf.length; i++) {
-      if (isObject(schema.oneOf[i])) {
-        if ("$validate" in schema.oneOf[i]) {
-          const error = schema.oneOf[i].$validate(data);
+
+    for (let i = 0; i < list.length; i++) {
+      const sub = list[i];
+
+      if (isObject(sub)) {
+        if ("$validate" in sub) {
+          const error = sub.$validate(data);
           if (!error) {
             validCount++;
+            if (validCount > 1) {
+              return defineError("Value is not valid", { data });
+            }
           }
           continue;
         }
         validCount++;
-        continue;
-      } else {
-        if (typeof schema.oneOf[i] === "boolean") {
-          if (Boolean(data) === schema.oneOf[i]) {
-            validCount++;
-          }
-          continue;
+        if (validCount > 1) {
+          return defineError("Value is not valid", { data });
         }
+        continue;
+      }
 
-        if (data === schema.oneOf[i]) {
+      if (typeof sub === "boolean") {
+        if (Boolean(data) === sub) {
           validCount++;
+          if (validCount > 1) {
+            return defineError("Value is not valid", { data });
+          }
+        }
+        continue;
+      }
+
+      if (data === sub) {
+        validCount++;
+        if (validCount > 1) {
+          return defineError("Value is not valid", { data });
         }
       }
     }
@@ -119,21 +132,24 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
   },
 
   const(schema, data, defineError) {
+    if (data === schema.const) {
+      return;
+    }
+
     if (
-      data === schema.const ||
       (isObject(data) &&
         isObject(schema.const) &&
-        deepEqual(data, schema.const)) ||
+        !hasChanged(data, schema.const)) ||
       (Array.isArray(data) &&
         Array.isArray(schema.const) &&
-        deepEqual(data, schema.const))
+        !hasChanged(data, schema.const))
     ) {
       return;
     }
     return defineError("Value is not valid", { data });
   },
 
-  if(schema, data, defineError) {
+  if(schema, data) {
     if ("then" in schema === false && "else" in schema === false) {
       return;
     }
@@ -186,5 +202,29 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
     }
 
     return defineError("Value is not valid", { data });
+  },
+
+  $ref(schema, data, defineError, instance) {
+    if (schema._resolvedRef) {
+      return schema._resolvedRef(data);
+    }
+
+    const refPath = schema.$ref;
+    let targetSchema = instance.getSchemaRef(refPath);
+
+    if (!targetSchema) {
+      targetSchema = instance.getSchemaById(refPath);
+    }
+
+    if (!targetSchema) {
+      return defineError(`Missing reference: ${refPath}`);
+    }
+
+    if (!targetSchema.$validate) {
+      return;
+    }
+
+    schema._resolvedRef = targetSchema.$validate;
+    return schema._resolvedRef(data);
   }
 };

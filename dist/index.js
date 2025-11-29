@@ -80,14 +80,18 @@ var ValidationError = class extends Error {
     };
   }
 };
-function getDefinedErrorFunctionForKey(key, schema) {
+var FAIL_FAST_DEFINE_ERROR = () => true;
+function getDefinedErrorFunctionForKey(key, schema, failFast) {
+  if (failFast) {
+    return FAIL_FAST_DEFINE_ERROR;
+  }
   const KeywordError = new ValidationError(`Invalid ${key}`);
   KeywordError.keyword = key;
   KeywordError.schema = schema;
   const defineError = (message, options = {}) => {
     KeywordError.message = message;
     KeywordError.item = options.item;
-    KeywordError.cause = options.cause;
+    KeywordError.cause = options.cause && options.cause !== true ? options.cause : void 0;
     KeywordError.data = options.data;
     return KeywordError;
   };
@@ -96,34 +100,38 @@ function getDefinedErrorFunctionForKey(key, schema) {
     defineError
   );
 }
-function deepEqual(obj, other) {
-  if (Array.isArray(obj) && Array.isArray(other)) {
-    if (obj.length !== other.length) {
-      return false;
+function hasChanged(prev, current) {
+  if (Array.isArray(prev)) {
+    if (Array.isArray(current) === false) {
+      return true;
     }
-    for (let i = 0; i < obj.length; i++) {
-      if (!deepEqual(obj[i], other[i])) {
-        return false;
+    if (prev.length !== current.length) {
+      return true;
+    }
+    for (let i = 0; i < current.length; i++) {
+      if (hasChanged(prev[i], current[i])) {
+        return true;
       }
     }
-    return true;
+    return false;
   }
-  if (typeof obj === "object" && typeof other === "object") {
-    if (obj === null || other === null) {
-      return obj === other;
+  if (typeof prev === "object" && prev !== null) {
+    if (typeof current !== "object" || current === null) {
+      return true;
     }
-    const keys = Object.keys(obj);
-    if (keys.length !== Object.keys(other).length) {
-      return false;
-    }
-    for (const key of keys) {
-      if (!deepEqual(obj[key], other[key])) {
-        return false;
+    for (const key in current) {
+      if (hasChanged(prev[key], current[key])) {
+        return true;
       }
     }
-    return true;
+    for (const key in prev) {
+      if (hasChanged(prev[key], current[key])) {
+        return true;
+      }
+    }
+    return false;
   }
-  return obj === other;
+  return Object.is(prev, current) === false;
 }
 function isObject(data) {
   return typeof data === "object" && data !== null && !Array.isArray(data);
@@ -131,27 +139,116 @@ function isObject(data) {
 function areCloseEnough(a, b, epsilon = 1e-15) {
   return Math.abs(a - b) <= epsilon * Math.max(Math.abs(a), Math.abs(b));
 }
-function deepClone(obj) {
-  if (Array.isArray(obj)) {
-    const result = [];
-    for (let i = 0; i < obj.length; i++) {
-      result[i] = deepClone(obj[i]);
-    }
-    return result;
-  }
-  if (obj && obj.constructor && obj.constructor.name !== "Object") {
+function deepClone(obj, cloneClassInstances = false, seen = /* @__PURE__ */ new WeakMap()) {
+  if (typeof obj === "undefined" || obj === null || typeof obj !== "object") {
     return obj;
   }
-  if (isObject(obj)) {
-    const result = {
-      ...obj
-    };
-    for (const key in obj) {
-      result[key] = deepClone(obj[key]);
-    }
-    return result;
+  if (seen.has(obj)) {
+    return seen.get(obj);
   }
-  return obj;
+  let clone;
+  if (typeof structuredClone === "function") {
+    clone = structuredClone(obj);
+    seen.set(obj, clone);
+    return clone;
+  }
+  switch (true) {
+    case Array.isArray(obj): {
+      clone = [];
+      seen.set(obj, clone);
+      for (let i = 0, l = obj.length; i < l; i++) {
+        clone[i] = deepClone(obj[i], cloneClassInstances, seen);
+      }
+      return clone;
+    }
+    case obj instanceof Date: {
+      clone = new Date(obj.getTime());
+      seen.set(obj, clone);
+      return clone;
+    }
+    case obj instanceof RegExp: {
+      clone = new RegExp(obj.source, obj.flags);
+      seen.set(obj, clone);
+      return clone;
+    }
+    case obj instanceof Map: {
+      clone = /* @__PURE__ */ new Map();
+      seen.set(obj, clone);
+      for (const [key, value] of obj.entries()) {
+        clone.set(
+          deepClone(key, cloneClassInstances, seen),
+          deepClone(value, cloneClassInstances, seen)
+        );
+      }
+      return clone;
+    }
+    case obj instanceof Set: {
+      clone = /* @__PURE__ */ new Set();
+      seen.set(obj, clone);
+      for (const value of obj.values()) {
+        clone.add(deepClone(value, cloneClassInstances, seen));
+      }
+      return clone;
+    }
+    case obj instanceof ArrayBuffer: {
+      clone = obj.slice(0);
+      seen.set(obj, clone);
+      return clone;
+    }
+    case ArrayBuffer.isView(obj): {
+      clone = new obj.constructor(obj.buffer.slice(0));
+      seen.set(obj, clone);
+      return clone;
+    }
+    case (typeof Buffer !== "undefined" && obj instanceof Buffer): {
+      clone = Buffer.from(obj);
+      seen.set(obj, clone);
+      return clone;
+    }
+    case obj instanceof Error: {
+      clone = new obj.constructor(obj.message);
+      seen.set(obj, clone);
+      break;
+    }
+    case (obj instanceof Promise || obj instanceof WeakMap || obj instanceof WeakSet): {
+      clone = obj;
+      seen.set(obj, clone);
+      return clone;
+    }
+    case (obj.constructor && obj.constructor !== Object): {
+      if (!cloneClassInstances) {
+        clone = obj;
+        seen.set(obj, clone);
+        return clone;
+      }
+      clone = Object.create(Object.getPrototypeOf(obj));
+      seen.set(obj, clone);
+      break;
+    }
+    default: {
+      clone = {};
+      seen.set(obj, clone);
+      const keys = Reflect.ownKeys(obj);
+      for (let i = 0, l = keys.length; i < l; i++) {
+        const key = keys[i];
+        clone[key] = deepClone(
+          obj[key],
+          cloneClassInstances,
+          seen
+        );
+      }
+      return clone;
+    }
+  }
+  const descriptors = Object.getOwnPropertyDescriptors(obj);
+  for (const key of Reflect.ownKeys(descriptors)) {
+    const descriptor = descriptors[key];
+    if ("value" in descriptor) {
+      descriptor.value = deepClone(descriptor.value, cloneClassInstances, seen);
+    }
+    Object.defineProperty(clone, key, descriptor);
+  }
+  return clone;
 }
 function isCompiledSchema(subSchema) {
   return isObject(subSchema) && "$validate" in subSchema;
@@ -159,82 +256,86 @@ function isCompiledSchema(subSchema) {
 function getNamedFunction(name, fn) {
   return Object.defineProperty(fn, "name", { value: name });
 }
+function resolvePath(root, path) {
+  if (!path || path === "#") {
+    return root;
+  }
+  if (path.startsWith("#/")) {
+    const parts = path.split("/").slice(1);
+    let current = root;
+    for (const part of parts) {
+      const decodedUriPart = decodeURIComponent(part);
+      const key = decodedUriPart.replace(/~1/g, "/").replace(/~0/g, "~");
+      if (current && typeof current === "object" && key in current) {
+        current = current[key];
+      } else {
+        return;
+      }
+    }
+    return current;
+  }
+  if (!path.includes("#")) {
+    if (root.definitions && root.definitions[path]) {
+      return root.definitions[path];
+    }
+    if (root.defs && root.defs[path]) {
+      return root.defs[path];
+    }
+    if (root.$id && typeof root.$id === "string") {
+      if (root.$id === path || root.$id.endsWith("/" + path)) {
+        return root;
+      }
+    }
+  }
+  return;
+}
 
 // lib/formats.ts
+var UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+var DURATION_REGEX = /^P(?!$)((\d+Y)?(\d+M)?(\d+W)?(\d+D)?)(T(?=\d)(\d+H)?(\d+M)?(\d+S)?)?$/;
+var DATE_TIME_REGEX = /^(\d{4})-(0[0-9]|1[0-2])-(\d{2})T(0[0-9]|1\d|2[0-3]):([0-5]\d):((?:[0-5]\d|60))(?:.\d+)?(?:([+-])(0[0-9]|1\d|2[0-3]):([0-5]\d)|Z)?$/i;
+var URI_REGEX = /^[a-zA-Z][a-zA-Z0-9+\-.]*:[^\s]*$/;
+var EMAIL_REGEX = /^(?!\.)(?!.*\.$)[a-z0-9!#$%&'*+/=?^_`{|}~-]{1,20}(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]{1,21}){0,2}@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,60}[a-z0-9])?){0,3}$/i;
+var IPV4_REGEX = /^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])$/;
+var IPV6_REGEX = /(?:\s+|:::+|^\w{5,}|\w{5}$|^:{1}\w|\w:{1}$)/;
+var IPV6_SHORT_REGEX = /^[0-9a-fA-F:.]*$/;
+var IPV6_FULL_REGEX = /^(?:(?:[0-9a-fA-F]{1,4}:){7}(?:[0-9a-fA-F]{1,4}|:))$/;
+var IPV6_INVALID_CHAR_REGEX = /(?:[0-9a-fA-F]{5,}|\D[0-9a-fA-F]{3}:)/;
+var IPV6_FAST_FAIL_REGEX = /^(?:(?:(?:[0-9a-fA-F]{1,4}(?::|$)){1,6}))|(?:::(?:[0-9a-fA-F]{1,4})){0,5}$/;
+var HOSTNAME_REGEX = /^[a-z0-9][a-z0-9-]{0,62}(?:\.[a-z0-9][a-z0-9-]{0,62})*[a-z0-9]$/i;
+var DATE_REGEX = /^(\d{4})-(\d{2})-(\d{2})$/;
+var JSON_POINTER_REGEX = /^\/(?:[^~]|~0|~1)*$/;
+var RELATIVE_JSON_POINTER_REGEX = /^([0-9]+)(#|\/(?:[^~]|~0|~1)*)?$/;
+var TIME_REGEX = /^([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(\.\d+)?(Z|([+-])([01]\d|2[0-3]):([0-5]\d))$/;
+var URI_REFERENCE_REGEX = /^(([^:/?#]+):)?(\/\/([^/?#]*))?([^?#]*)(\?([^#]*))?(#((?![^#]*\\)[^#]*))?/i;
+var URI_TEMPLATE_REGEX = /^(?:[^{}]|\{[^}]+\})*$/;
+var IRI_REGEX = /^[a-zA-Z][a-zA-Z0-9+\-.]*:[^\s]*$/;
+var IRI_REFERENCE_REGEX = /^(([^:/?#]+):)?(\/\/([^/?#]*))?([^?#]*)(\?([^#]*))?(#((?![^#]*\\)[^#]*))?/i;
+var IDN_EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+var IDN_HOSTNAME_REGEX = /^[^\s!@#$%^&*()_+\=\[\]{};':"\\|,<>\/?]+$/;
+var BACK_SLASH_REGEX = /\\/;
+var DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 var Formats = {
   ["date-time"](data) {
-    const match = data.match(
-      /^(\d{4})-(0[0-9]|1[0-2])-(\d{2})T(0[0-9]|1\d|2[0-3]):([0-5]\d):((?:[0-5]\d|60))(?:.\d+)?(?:([+-])(0[0-9]|1\d|2[0-3]):([0-5]\d)|Z)?$/i
-    );
+    const match = data.match(DATE_TIME_REGEX);
     if (!match) {
       return false;
     }
-    let day = Number(match[3]);
-    if (match[2] === "02" && day > 29) {
+    const [, yearStr, monthStr, dayStr, hourStr, minuteStr, secondStr] = match;
+    const year = Number(yearStr);
+    const month = Number(monthStr);
+    const day = Number(dayStr);
+    const hour = Number(hourStr);
+    const minute = Number(minuteStr);
+    const second = Number(secondStr);
+    if (month < 1 || month > 12) {
       return false;
     }
-    const [
-      ,
-      yearStr,
-      monthStr,
-      ,
-      hourStr,
-      minuteStr,
-      secondStr,
-      timezoneSign,
-      timezoneHourStr,
-      timezoneMinuteStr
-    ] = match;
-    let year = Number(yearStr);
-    let month = Number(monthStr);
-    let hour = Number(hourStr);
-    let minute = Number(minuteStr);
-    let second = Number(secondStr);
-    if (timezoneSign === "-" || timezoneSign === "+") {
-      const timezoneHour = Number(timezoneHourStr);
-      const timezoneMinute = Number(timezoneMinuteStr);
-      if (timezoneSign === "-") {
-        hour += timezoneHour;
-        minute += timezoneMinute;
-      } else if (timezoneSign === "+") {
-        hour -= timezoneHour;
-        minute -= timezoneMinute;
-      }
-      if (minute > 59) {
-        hour += 1;
-        minute -= 60;
-      } else if (minute < 0) {
-        hour -= 1;
-        minute += 60;
-      }
-      if (hour > 23) {
-        day += 1;
-        hour -= 24;
-      } else if (hour < 0) {
-        day -= 1;
-        hour += 24;
-      }
-      if (day > 31) {
-        month += 1;
-        day -= 31;
-      } else if (day < 1) {
-        month -= 1;
-        day += 31;
-      }
-      if (month > 12) {
-        year += 1;
-        month -= 12;
-      } else if (month < 1) {
-        year -= 1;
-        month += 12;
-      }
-      if (year < 0) {
-        return false;
-      }
+    if (day < 1) {
+      return false;
     }
-    const daysInMonth = [31, , 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    const maxDays = month === 2 ? year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28 : daysInMonth[month - 1];
-    if (day > maxDays) {
+    const maxDays = month === 2 ? year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28 : DAYS_IN_MONTH[month - 1];
+    if (!maxDays || day > maxDays) {
       return false;
     }
     if (second === 60 && (minute !== 59 || hour !== 23)) {
@@ -243,24 +344,20 @@ var Formats = {
     return true;
   },
   uri(data) {
-    return /^[a-zA-Z][a-zA-Z0-9+\-.]*:[^\s]*$/.test(data);
+    return URI_REGEX.test(data);
   },
   email(data) {
-    return /^(?!\.)(?!.*\.$)[a-z0-9!#$%&'*+/=?^_`{|}~-]{1,20}(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]{1,21}){0,2}@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,60}[a-z0-9])?){0,3}$/i.test(
-      data
-    );
+    return EMAIL_REGEX.test(data);
   },
   ipv4(data) {
-    return /^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])$/.test(
-      data
-    );
+    return IPV4_REGEX.test(data);
   },
   // ipv6: isMyIpValid({ version: 6 }),
   ipv6(data) {
     if (data === "::") {
       return true;
     }
-    if (data.indexOf(":") === -1 || /(?:\s+|:::+|^\w{5,}|\w{5}$|^:{1}\w|\w:{1}$)/.test(data)) {
+    if (data.indexOf(":") === -1 || IPV6_REGEX.test(data)) {
       return false;
     }
     const hasIpv4 = data.indexOf(".") !== -1;
@@ -268,9 +365,7 @@ var Formats = {
     if (hasIpv4) {
       addressParts = data.split(":");
       const ipv4Part = addressParts.pop();
-      if (!/^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])$/.test(
-        ipv4Part
-      )) {
+      if (!IPV4_REGEX.test(ipv4Part)) {
         return false;
       }
     }
@@ -280,32 +375,38 @@ var Formats = {
       if (ipv6Part.split("::").length - 1 > 1) {
         return false;
       }
-      if (!/^[0-9a-fA-F:.]*$/.test(ipv6Part)) {
+      if (!IPV6_SHORT_REGEX.test(ipv6Part)) {
         return false;
       }
-      return /^(?:(?:(?:[0-9a-fA-F]{1,4}(?::|$)){1,6}))|(?:::(?:[0-9a-fA-F]{1,4})){0,5}$/.test(
-        ipv6Part
-      );
+      return IPV6_FAST_FAIL_REGEX.test(ipv6Part);
     }
-    const isIpv6Valid = /^(?:(?:[0-9a-fA-F]{1,4}:){7}(?:[0-9a-fA-F]{1,4}|:))$/.test(ipv6Part);
-    const hasInvalidChar = /(?:[0-9a-fA-F]{5,}|\D[0-9a-fA-F]{3}:)/.test(
-      ipv6Part
-    );
+    const isIpv6Valid = IPV6_FULL_REGEX.test(ipv6Part);
+    const hasInvalidChar = IPV6_INVALID_CHAR_REGEX.test(ipv6Part);
     if (hasIpv4) {
       return isIpv6Valid || !hasInvalidChar;
     }
     return isIpv6Valid && !hasInvalidChar;
   },
   hostname(data) {
-    return /^[a-z0-9][a-z0-9-]{0,62}(?:\.[a-z0-9][a-z0-9-]{0,62})*[a-z0-9]$/i.test(
-      data
-    );
+    return HOSTNAME_REGEX.test(data);
   },
   date(data) {
-    if (/^(\d{4})-(\d{2})-(\d{2})$/.test(data) === false) {
+    const match = DATE_REGEX.exec(data);
+    if (!match) {
       return false;
     }
-    return !isNaN(new Date(data).getTime());
+    const [, yearStr, monthStr, dayStr] = match;
+    const year = Number(yearStr);
+    const month = Number(monthStr);
+    const day = Number(dayStr);
+    if (month < 1 || month > 12) {
+      return false;
+    }
+    if (day < 1) {
+      return false;
+    }
+    const maxDays = month === 2 ? year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28 : DAYS_IN_MONTH[month - 1];
+    return !!maxDays && day <= maxDays;
   },
   regex(data) {
     try {
@@ -319,39 +420,49 @@ var Formats = {
     if (data === "") {
       return true;
     }
-    return /^\/(?:[^~]|~0|~1)*$/.test(data);
+    return JSON_POINTER_REGEX.test(data);
   },
   "relative-json-pointer"(data) {
     if (data === "") {
       return true;
     }
-    return /^([0-9]+)(#|\/(?:[^~]|~0|~1)*)?$/.test(data);
+    return RELATIVE_JSON_POINTER_REGEX.test(data);
   },
   time(data) {
-    return /^(\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|([+-])(\d{2}):(\d{2}))$/.test(
-      data
-    );
+    return TIME_REGEX.test(data);
   },
   "uri-reference"(data) {
-    if (/\\/.test(data)) {
+    if (BACK_SLASH_REGEX.test(data)) {
       return false;
     }
-    return /^(([^:/?#]+):)?(\/\/([^/?#]*))?([^?#]*)(\?([^#]*))?(#((?![^#]*\\)[^#]*))?/i.test(
-      data
-    );
+    return URI_REFERENCE_REGEX.test(data);
   },
   "uri-template"(data) {
-    return /^(?:(?:https?:\/\/[\w.-]+)?\/?)?[\w- ;,.\/?%&=]*(?:\{[\w-]+(?::\d+)?\}[\w- ;,.\/?%&=]*)*\/?$/.test(
-      data
-    );
+    return URI_TEMPLATE_REGEX.test(data);
   },
-  // Not supported yet
-  duration: false,
-  uuid: false,
-  "idn-email": false,
-  "idn-hostname": false,
-  iri: false,
-  "iri-reference": false
+  duration(data) {
+    return DURATION_REGEX.test(data);
+  },
+  uuid(data) {
+    return UUID_REGEX.test(data);
+  },
+  // IRI is like URI but allows Unicode. We reuse a permissive logic.
+  iri(data) {
+    return IRI_REGEX.test(data);
+  },
+  "iri-reference"(data) {
+    if (BACK_SLASH_REGEX.test(data)) {
+      return false;
+    }
+    return IRI_REFERENCE_REGEX.test(data);
+  },
+  // Best-effort structural validation for IDN (no punycode/tables)
+  "idn-email"(data) {
+    return IDN_EMAIL_REGEX.test(data);
+  },
+  "idn-hostname"(data) {
+    return IDN_HOSTNAME_REGEX.test(data);
+  }
 };
 
 // lib/types.ts
@@ -360,10 +471,7 @@ var Types = {
     return isObject(data);
   },
   array(data) {
-    if (Array.isArray(data)) {
-      return true;
-    }
-    return typeof data === "object" && data !== null && "length" in data && "0" in data && Object.keys(data).length - 1 === data.length;
+    return Array.isArray(data);
   },
   string(data) {
     return typeof data === "string";
@@ -394,6 +502,7 @@ var Types = {
 
 // lib/keywords/array-keywords.ts
 var ArrayKeywords = {
+  // lib/keywords/array-keywords.ts
   items(schema, data, defineError) {
     if (!Array.isArray(data)) {
       return;
@@ -408,11 +517,11 @@ var ArrayKeywords = {
     }
     if (Array.isArray(schemaItems)) {
       const schemaItemsLength = schemaItems.length;
-      const itemsLength = Math.min(schemaItemsLength, dataLength);
+      const itemsLength = schemaItemsLength < dataLength ? schemaItemsLength : dataLength;
       for (let i = 0; i < itemsLength; i++) {
         const schemaItem = schemaItems[i];
         if (typeof schemaItem === "boolean") {
-          if (schemaItem === false && typeof data[i] !== "undefined") {
+          if (schemaItem === false && data[i] !== void 0) {
             return defineError("Array item is not allowed", {
               item: i,
               data: data[i]
@@ -420,8 +529,9 @@ var ArrayKeywords = {
           }
           continue;
         }
-        if (isCompiledSchema(schemaItem)) {
-          const error = schemaItem.$validate(data[i]);
+        const validate2 = schemaItem && schemaItem.$validate;
+        if (typeof validate2 === "function") {
+          const error = validate2(data[i]);
           if (error) {
             return defineError("Array item is invalid", {
               item: i,
@@ -433,26 +543,12 @@ var ArrayKeywords = {
       }
       return;
     }
-    if (isCompiledSchema(schemaItems)) {
-      for (let i = 0; i < dataLength; i++) {
-        const error = schemaItems.$validate(data[i]);
-        if (error) {
-          return defineError("Array item is invalid", {
-            item: i,
-            cause: error,
-            data: data[i]
-          });
-        }
-      }
-    }
-    return;
-  },
-  elements(schema, data, defineError) {
-    if (!Array.isArray(data) || !isCompiledSchema(schema.elements)) {
+    const validate = schemaItems && schemaItems.$validate;
+    if (typeof validate !== "function") {
       return;
     }
-    for (let i = 0; i < data.length; i++) {
-      const error = schema.elements.$validate(data[i]);
+    for (let i = 0; i < dataLength; i++) {
+      const error = validate(data[i]);
       if (error) {
         return defineError("Array item is invalid", {
           item: i,
@@ -461,7 +557,26 @@ var ArrayKeywords = {
         });
       }
     }
-    return;
+  },
+  elements(schema, data, defineError) {
+    if (!Array.isArray(data)) {
+      return;
+    }
+    const elementsSchema = schema.elements;
+    const validate = elementsSchema && elementsSchema.$validate;
+    if (typeof validate !== "function") {
+      return;
+    }
+    for (let i = 0; i < data.length; i++) {
+      const error = validate(data[i]);
+      if (error) {
+        return defineError("Array item is invalid", {
+          item: i,
+          cause: error,
+          data: data[i]
+        });
+      }
+    }
   },
   minItems(schema, data, defineError) {
     if (!Array.isArray(data) || data.length >= schema.minItems) {
@@ -507,28 +622,30 @@ var ArrayKeywords = {
     if (!Array.isArray(data) || !schema.uniqueItems) {
       return;
     }
-    const unique = /* @__PURE__ */ new Set();
-    for (const item of data) {
-      let itemStr;
-      if (typeof item === "string") {
-        itemStr = `s:${item}`;
-      } else if (isObject(item)) {
-        itemStr = `o:${JSON.stringify(
-          Object.fromEntries(
-            Object.entries(item).sort(([a], [b]) => a.localeCompare(b))
-          )
-        )}`;
-      } else if (Array.isArray(item)) {
-        itemStr = JSON.stringify(item);
-      } else {
-        itemStr = String(item);
-      }
-      if (unique.has(itemStr)) {
-        return defineError("Array items are not unique", { data: item });
-      }
-      unique.add(itemStr);
+    const len = data.length;
+    if (len <= 1) {
+      return;
     }
-    return;
+    const primitiveSeen = /* @__PURE__ */ new Set();
+    for (let i = 0; i < len; i++) {
+      const item = data[i];
+      const type = typeof item;
+      if (item === null || type === "string" || type === "number" || type === "boolean") {
+        if (primitiveSeen.has(item)) {
+          return defineError("Array items are not unique", { data: item });
+        }
+        primitiveSeen.add(item);
+        continue;
+      }
+      if (item && typeof item === "object") {
+        for (let j = 0; j < i; j++) {
+          const prev = data[j];
+          if (prev && typeof prev === "object" && !hasChanged(prev, item)) {
+            return defineError("Array items are not unique", { data: item });
+          }
+        }
+      }
+    }
   },
   contains(schema, data, defineError) {
     if (!Array.isArray(data)) {
@@ -624,7 +741,6 @@ var NumberKeywords = {
 
 // lib/keywords/object-keywords.ts
 var ObjectKeywords = {
-  // Object
   required(schema, data, defineError) {
     if (!isObject(data)) {
       return;
@@ -644,16 +760,46 @@ var ObjectKeywords = {
     if (!isObject(data)) {
       return;
     }
-    for (const key of Object.keys(schema.properties)) {
-      if (!data.hasOwnProperty(key)) {
-        const schemaProp = schema.properties[key];
-        if (isObject(schemaProp) && "default" in schemaProp) {
-          data[key] = schemaProp.default;
+    let propKeys = schema._propKeys;
+    if (!propKeys) {
+      propKeys = Object.keys(schema.properties || {});
+      Object.defineProperty(schema, "_propKeys", {
+        value: propKeys,
+        enumerable: false,
+        configurable: false,
+        writable: false
+      });
+    }
+    let requiredKeys = schema._requiredKeys;
+    if (requiredKeys === void 0) {
+      requiredKeys = Array.isArray(schema.required) ? schema.required : null;
+      Object.defineProperty(schema, "_requiredKeys", {
+        value: requiredKeys,
+        enumerable: false,
+        configurable: false,
+        writable: false
+      });
+    }
+    const required = requiredKeys || [];
+    for (let i = 0; i < propKeys.length; i++) {
+      const key = propKeys[i];
+      const schemaProp = schema.properties[key];
+      if (!Object.prototype.hasOwnProperty.call(data, key)) {
+        if (required.length && required.indexOf(key) !== -1 && isObject(schemaProp) && "default" in schemaProp) {
+          const error = schemaProp.$validate(schemaProp.default);
+          if (error) {
+            return defineError("Default property is invalid", {
+              item: key,
+              cause: error,
+              data: schemaProp.default
+            });
+          }
+          data[key] = deepClone(schemaProp.default);
         }
         continue;
       }
-      if (typeof schema.properties[key] === "boolean") {
-        if (schema.properties[key] === false) {
+      if (typeof schemaProp === "boolean") {
+        if (schemaProp === false) {
           return defineError("Property is not allowed", {
             item: key,
             data: data[key]
@@ -661,8 +807,8 @@ var ObjectKeywords = {
         }
         continue;
       }
-      if ("$validate" in schema.properties[key]) {
-        const error = schema.properties[key].$validate(data[key]);
+      if (schemaProp && "$validate" in schemaProp) {
+        const error = schemaProp.$validate(data[key]);
         if (error) {
           return defineError("Property is invalid", {
             item: key,
@@ -675,12 +821,18 @@ var ObjectKeywords = {
     return;
   },
   values(schema, data, defineError) {
-    if (!isObject(data) || !isCompiledSchema(schema.values)) {
+    if (!isObject(data)) {
+      return;
+    }
+    const valueSchema = schema.values;
+    const validate = valueSchema && valueSchema.$validate;
+    if (typeof validate !== "function") {
       return;
     }
     const keys = Object.keys(data);
-    for (const key of keys) {
-      const error = schema.values.$validate(data[key]);
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      const error = validate(data[key]);
       if (error) {
         return defineError("Property is invalid", {
           item: key,
@@ -689,7 +841,6 @@ var ObjectKeywords = {
         });
       }
     }
-    return;
   },
   maxProperties(schema, data, defineError) {
     if (!isObject(data) || Object.keys(data).length <= schema.maxProperties) {
@@ -708,15 +859,37 @@ var ObjectKeywords = {
       return;
     }
     const keys = Object.keys(data);
-    const isCompiled = isCompiledSchema(schema.additionalProperties);
-    for (const key of keys) {
+    let apIsCompiled = schema._apIsCompiled;
+    if (apIsCompiled === void 0) {
+      apIsCompiled = isCompiledSchema(schema.additionalProperties);
+      Object.defineProperty(schema, "_apIsCompiled", {
+        value: apIsCompiled,
+        enumerable: false
+      });
+    }
+    let patternList = schema._patternPropertiesList;
+    if (schema.patternProperties && !patternList) {
+      patternList = [];
+      for (const pattern in schema.patternProperties) {
+        patternList.push({
+          regex: new RegExp(pattern, "u"),
+          key: pattern
+        });
+      }
+      Object.defineProperty(schema, "_patternPropertiesList", {
+        value: patternList,
+        enumerable: false
+      });
+    }
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
       if (schema.properties && schema.properties.hasOwnProperty(key)) {
         continue;
       }
-      if (schema.patternProperties) {
+      if (patternList && patternList.length) {
         let match = false;
-        for (const pattern in schema.patternProperties) {
-          if (new RegExp(pattern, "u").test(key)) {
+        for (let j = 0; j < patternList.length; j++) {
+          if (patternList[j].regex.test(key)) {
             match = true;
             break;
           }
@@ -731,7 +904,7 @@ var ObjectKeywords = {
           data: data[key]
         });
       }
-      if (isCompiled) {
+      if (apIsCompiled && isCompiledSchema(schema.additionalProperties)) {
         const error = schema.additionalProperties.$validate(data[key]);
         if (error) {
           return defineError("Additional properties are invalid", {
@@ -748,12 +921,30 @@ var ObjectKeywords = {
     if (!isObject(data)) {
       return;
     }
-    const patterns = Object.keys(schema.patternProperties);
-    for (const pattern of patterns) {
-      const regex = new RegExp(pattern, "u");
-      if (typeof schema.patternProperties[pattern] === "boolean") {
-        if (schema.patternProperties[pattern] === false) {
-          for (const key in data) {
+    let patternList = schema._patternPropertiesList;
+    if (!patternList) {
+      patternList = [];
+      const patterns = Object.keys(schema.patternProperties || {});
+      for (let i = 0; i < patterns.length; i++) {
+        const pattern = patterns[i];
+        patternList.push({
+          regex: new RegExp(pattern, "u"),
+          key: pattern
+        });
+      }
+      Object.defineProperty(schema, "_patternPropertiesList", {
+        value: patternList,
+        enumerable: false
+      });
+    }
+    const dataKeys = Object.keys(data);
+    for (let p = 0; p < patternList.length; p++) {
+      const { regex, key: patternKey } = patternList[p];
+      const schemaProp = schema.patternProperties[patternKey];
+      if (typeof schemaProp === "boolean") {
+        if (schemaProp === false) {
+          for (let i = 0; i < dataKeys.length; i++) {
+            const key = dataKeys[i];
             if (regex.test(key)) {
               return defineError("Property is not allowed", {
                 item: key,
@@ -764,13 +955,11 @@ var ObjectKeywords = {
         }
         continue;
       }
-      const keys = Object.keys(data);
-      for (const key of keys) {
-        if (regex.test(key)) {
-          if ("$validate" in schema.patternProperties[pattern]) {
-            const error = schema.patternProperties[pattern].$validate(
-              data[key]
-            );
+      if ("$validate" in schemaProp) {
+        for (let i = 0; i < dataKeys.length; i++) {
+          const key = dataKeys[i];
+          if (regex.test(key)) {
+            const error = schemaProp.$validate(data[key]);
             if (error) {
               return defineError("Property is invalid", {
                 item: key,
@@ -788,24 +977,30 @@ var ObjectKeywords = {
     if (!isObject(data)) {
       return;
     }
-    if (typeof schema.propertyNames === "boolean") {
-      if (schema.propertyNames === false && Object.keys(data).length > 0) {
+    const pn = schema.propertyNames;
+    if (typeof pn === "boolean") {
+      if (pn === false && Object.keys(data).length > 0) {
         return defineError("Properties are not allowed", { data });
       }
+      return;
     }
-    if (isCompiledSchema(schema.propertyNames)) {
-      for (let key in data) {
-        const error = schema.propertyNames.$validate(key);
-        if (error) {
-          return defineError("Property name is invalid", {
-            item: key,
-            cause: error,
-            data: data[key]
-          });
-        }
+    const validate = pn && pn.$validate;
+    if (typeof validate !== "function") {
+      return;
+    }
+    for (const key in data) {
+      if (!Object.prototype.hasOwnProperty.call(data, key)) {
+        continue;
+      }
+      const error = validate(key);
+      if (error) {
+        return defineError("Property name is invalid", {
+          item: key,
+          cause: error,
+          data: data[key]
+        });
       }
     }
-    return;
   },
   dependencies(schema, data, defineError) {
     if (!isObject(data)) {
@@ -854,7 +1049,6 @@ var ObjectKeywords = {
   else: false,
   default: false,
   // Not implemented yet
-  $ref: false,
   definitions: false,
   $id: false,
   $schema: false,
@@ -873,17 +1067,14 @@ var ObjectKeywords = {
 // lib/keywords/other-keywords.ts
 var OtherKeywords = {
   enum(schema, data, defineError) {
-    const isArray = Array.isArray(data);
-    const isObject2 = typeof data === "object" && data !== null;
-    for (let i = 0; i < schema.enum.length; i++) {
-      const enumItem = schema.enum[i];
+    const list = schema.enum;
+    for (let i = 0; i < list.length; i++) {
+      const enumItem = list[i];
       if (enumItem === data) {
         return;
       }
-      if (isArray && Array.isArray(enumItem) || isObject2 && typeof enumItem === "object" && enumItem !== null) {
-        if (deepEqual(enumItem, data)) {
-          return;
-        }
+      if (enumItem !== null && data !== null && typeof enumItem === "object" && typeof data === "object" && !hasChanged(enumItem, data)) {
+        return;
       }
     }
     return defineError("Value is not one of the allowed values", { data });
@@ -936,27 +1127,40 @@ var OtherKeywords = {
     return defineError("Value is not valid", { data });
   },
   oneOf(schema, data, defineError) {
+    const list = schema.oneOf;
     let validCount = 0;
-    for (let i = 0; i < schema.oneOf.length; i++) {
-      if (isObject(schema.oneOf[i])) {
-        if ("$validate" in schema.oneOf[i]) {
-          const error = schema.oneOf[i].$validate(data);
+    for (let i = 0; i < list.length; i++) {
+      const sub = list[i];
+      if (isObject(sub)) {
+        if ("$validate" in sub) {
+          const error = sub.$validate(data);
           if (!error) {
             validCount++;
+            if (validCount > 1) {
+              return defineError("Value is not valid", { data });
+            }
           }
           continue;
         }
         validCount++;
-        continue;
-      } else {
-        if (typeof schema.oneOf[i] === "boolean") {
-          if (Boolean(data) === schema.oneOf[i]) {
-            validCount++;
-          }
-          continue;
+        if (validCount > 1) {
+          return defineError("Value is not valid", { data });
         }
-        if (data === schema.oneOf[i]) {
+        continue;
+      }
+      if (typeof sub === "boolean") {
+        if (Boolean(data) === sub) {
           validCount++;
+          if (validCount > 1) {
+            return defineError("Value is not valid", { data });
+          }
+        }
+        continue;
+      }
+      if (data === sub) {
+        validCount++;
+        if (validCount > 1) {
+          return defineError("Value is not valid", { data });
         }
       }
     }
@@ -966,12 +1170,15 @@ var OtherKeywords = {
     return defineError("Value is not valid", { data });
   },
   const(schema, data, defineError) {
-    if (data === schema.const || isObject(data) && isObject(schema.const) && deepEqual(data, schema.const) || Array.isArray(data) && Array.isArray(schema.const) && deepEqual(data, schema.const)) {
+    if (data === schema.const) {
+      return;
+    }
+    if (isObject(data) && isObject(schema.const) && !hasChanged(data, schema.const) || Array.isArray(data) && Array.isArray(schema.const) && !hasChanged(data, schema.const)) {
       return;
     }
     return defineError("Value is not valid", { data });
   },
-  if(schema, data, defineError) {
+  if(schema, data) {
     if ("then" in schema === false && "else" in schema === false) {
       return;
     }
@@ -1019,6 +1226,24 @@ var OtherKeywords = {
       return defineError("Value is not valid", { data });
     }
     return defineError("Value is not valid", { data });
+  },
+  $ref(schema, data, defineError, instance) {
+    if (schema._resolvedRef) {
+      return schema._resolvedRef(data);
+    }
+    const refPath = schema.$ref;
+    let targetSchema = instance.getSchemaRef(refPath);
+    if (!targetSchema) {
+      targetSchema = instance.getSchemaById(refPath);
+    }
+    if (!targetSchema) {
+      return defineError(`Missing reference: ${refPath}`);
+    }
+    if (!targetSchema.$validate) {
+      return;
+    }
+    schema._resolvedRef = targetSchema.$validate;
+    return schema._resolvedRef(data);
   }
 };
 
@@ -1040,9 +1265,22 @@ var StringKeywords = {
     if (typeof data !== "string") {
       return;
     }
-    const patternRegexp = new RegExp(schema.pattern, "u");
-    if (patternRegexp instanceof RegExp === false) {
-      return defineError("Invalid regular expression", { data });
+    let patternRegexp = schema._patternRegexp;
+    if (!patternRegexp) {
+      try {
+        patternRegexp = new RegExp(schema.pattern, "u");
+        Object.defineProperty(schema, "_patternRegexp", {
+          value: patternRegexp,
+          enumerable: false,
+          configurable: false,
+          writable: false
+        });
+      } catch (error) {
+        return defineError("Invalid regular expression", {
+          data,
+          cause: error
+        });
+      }
     }
     if (patternRegexp.test(data)) {
       return;
@@ -1055,7 +1293,16 @@ var StringKeywords = {
     if (typeof data !== "string") {
       return;
     }
-    const formatValidate = instance.getFormat(schema.format);
+    let formatValidate = schema._formatValidate;
+    if (formatValidate === void 0) {
+      formatValidate = instance.getFormat(schema.format);
+      Object.defineProperty(schema, "_formatValidate", {
+        value: formatValidate,
+        enumerable: false,
+        configurable: false,
+        writable: false
+      });
+    }
     if (!formatValidate || formatValidate(data)) {
       return;
     }
@@ -1078,10 +1325,15 @@ var SchemaShield = class {
   formats = {};
   keywords = {};
   immutable = false;
+  rootSchema = null;
+  idRegistry = /* @__PURE__ */ new Map();
+  failFast = true;
   constructor({
-    immutable = false
+    immutable = false,
+    failFast = true
   } = {}) {
     this.immutable = immutable;
+    this.failFast = failFast;
     for (const [type, validator] of Object.entries(Types)) {
       if (validator) {
         this.addType(type, validator);
@@ -1123,26 +1375,38 @@ var SchemaShield = class {
   getKeyword(keyword) {
     return this.keywords[keyword];
   }
+  getSchemaRef(path) {
+    if (!this.rootSchema) {
+      return;
+    }
+    return resolvePath(this.rootSchema, path);
+  }
+  getSchemaById(id) {
+    return this.idRegistry.get(id);
+  }
   compile(schema) {
+    this.idRegistry.clear();
     const compiledSchema = this.compileSchema(schema);
+    this.rootSchema = compiledSchema;
+    this.linkReferences(compiledSchema);
     if (!compiledSchema.$validate) {
       if (this.isSchemaLike(schema) === false) {
         throw new ValidationError("Invalid schema");
       }
       compiledSchema.$validate = getNamedFunction(
-        "any",
+        "Validate_Any",
         () => {
         }
       );
     }
     const validate = (data) => {
+      this.rootSchema = compiledSchema;
       const clonedData = this.immutable ? deepClone(data) : data;
-      const error = compiledSchema.$validate(clonedData);
-      return {
-        data: clonedData,
-        error: error ? error : null,
-        valid: !error
-      };
+      const res = compiledSchema.$validate(clonedData);
+      if (res) {
+        return { data: clonedData, error: res, valid: false };
+      }
+      return { data: clonedData, error: null, valid: true };
     };
     validate.compiledSchema = compiledSchema;
     return validate;
@@ -1150,98 +1414,112 @@ var SchemaShield = class {
   compileSchema(schema) {
     if (!isObject(schema)) {
       if (schema === true) {
-        schema = {
-          anyOf: [{}]
-        };
+        schema = { anyOf: [{}] };
       } else if (schema === false) {
-        schema = {
-          oneOf: []
-        };
+        schema = { oneOf: [] };
       } else {
-        schema = {
-          oneOf: [schema]
-        };
+        schema = { oneOf: [schema] };
       }
     }
     const compiledSchema = deepClone(schema);
-    const defineTypeError = getDefinedErrorFunctionForKey("type", schema);
-    const typeValidations = [];
-    let methodName = "";
+    if (typeof schema.$id === "string") {
+      this.idRegistry.set(schema.$id, compiledSchema);
+    }
+    if ("$ref" in schema) {
+      const refValidator = this.getKeyword("$ref");
+      if (refValidator) {
+        const defineError = getDefinedErrorFunctionForKey(
+          "$ref",
+          schema["$ref"],
+          this.failFast
+        );
+        compiledSchema.$validate = getNamedFunction(
+          "Validate_Reference",
+          (data) => refValidator(
+            compiledSchema,
+            data,
+            defineError,
+            this
+          )
+        );
+      }
+      return compiledSchema;
+    }
+    const validators = [];
+    const activeNames = [];
     if ("type" in schema) {
+      const defineTypeError = getDefinedErrorFunctionForKey(
+        "type",
+        schema,
+        this.failFast
+      );
       const types = Array.isArray(schema.type) ? schema.type : schema.type.split(",").map((t) => t.trim());
-      for (const type of types) {
-        const validator = this.getType(type);
+      const typeFunctions = [];
+      const typeNames = [];
+      for (const type2 of types) {
+        const validator = this.getType(type2);
         if (validator) {
-          typeValidations.push(validator);
-          methodName += (methodName ? "_OR_" : "") + validator.name;
+          typeFunctions.push(validator);
+          typeNames.push(validator.name);
         }
       }
-      const typeValidationsLength = typeValidations.length;
-      if (typeValidationsLength === 0) {
-        throw defineTypeError("Invalid type for schema", { data: schema.type });
+      if (typeFunctions.length === 0) {
+        throw getDefinedErrorFunctionForKey(
+          "type",
+          schema,
+          this.failFast
+        )("Invalid type for schema", { data: schema.type });
       }
-      if (typeValidationsLength === 1) {
-        const typeValidation = typeValidations[0];
-        compiledSchema.$validate = getNamedFunction(
-          methodName,
-          (data) => {
-            if (!typeValidation(data)) {
-              return defineTypeError("Invalid type", { data });
-            }
-          }
-        );
-      } else if (typeValidationsLength > 1) {
-        compiledSchema.$validate = getNamedFunction(
-          methodName,
-          (data) => {
-            for (let i = 0; i < typeValidationsLength; i++) {
-              if (typeValidations[i](data)) {
-                return;
-              }
-            }
+      let combinedTypeValidator;
+      let typeMethodName = "";
+      if (typeFunctions.length === 1) {
+        typeMethodName = typeNames[0];
+        const singleTypeFn = typeFunctions[0];
+        combinedTypeValidator = (data) => {
+          if (!singleTypeFn(data)) {
             return defineTypeError("Invalid type", { data });
           }
+        };
+      } else {
+        typeMethodName = typeNames.join("_OR_");
+        combinedTypeValidator = (data) => {
+          for (let i = 0; i < typeFunctions.length; i++) {
+            if (typeFunctions[i](data)) {
+              return;
+            }
+          }
+          return defineTypeError("Invalid type", { data });
+        };
+      }
+      const typeAdapter = (_s, data) => combinedTypeValidator(data);
+      validators.push({
+        fn: getNamedFunction(typeMethodName, typeAdapter),
+        defineError: defineTypeError
+      });
+      activeNames.push(typeMethodName);
+    }
+    const { type, $id, $ref, $validate, required, ...otherKeys } = schema;
+    const keyOrder = required ? [...Object.keys(otherKeys), "required"] : Object.keys(otherKeys);
+    for (const key of keyOrder) {
+      const keywordFn = this.getKeyword(key);
+      if (keywordFn) {
+        const defineError = getDefinedErrorFunctionForKey(
+          key,
+          schema[key],
+          this.failFast
         );
+        const fnName = keywordFn.name || key;
+        validators.push({
+          fn: keywordFn,
+          defineError
+        });
+        activeNames.push(fnName);
       }
     }
-    for (const key of Object.keys(schema)) {
-      if (key === "type") {
-        compiledSchema.type = schema.type;
+    const literalKeywords = ["enum", "const", "default", "examples"];
+    for (const key of keyOrder) {
+      if (literalKeywords.includes(key)) {
         continue;
-      }
-      const keywordValidator = this.getKeyword(key);
-      if (keywordValidator) {
-        const defineError = getDefinedErrorFunctionForKey(key, schema[key]);
-        if (compiledSchema.$validate) {
-          const prevValidator = compiledSchema.$validate;
-          methodName += `_AND_${keywordValidator.name}`;
-          compiledSchema.$validate = getNamedFunction(
-            methodName,
-            (data) => {
-              const error = prevValidator(data);
-              if (error) {
-                return error;
-              }
-              return keywordValidator(
-                compiledSchema,
-                data,
-                defineError,
-                this
-              );
-            }
-          );
-        } else {
-          methodName = keywordValidator.name;
-          compiledSchema.$validate = getNamedFunction(
-            methodName,
-            (data) => keywordValidator(
-              compiledSchema,
-              data,
-              defineError,
-              this
-            )
-          );
-        }
       }
       if (isObject(schema[key])) {
         if (key === "properties") {
@@ -1256,12 +1534,39 @@ var SchemaShield = class {
         continue;
       }
       if (Array.isArray(schema[key])) {
-        compiledSchema[key] = schema[key].map(
-          (subSchema, index) => this.isSchemaLike(subSchema) ? this.compileSchema(subSchema) : subSchema
-        );
+        for (let i = 0; i < schema[key].length; i++) {
+          if (this.isSchemaLike(schema[key][i])) {
+            compiledSchema[key][i] = this.compileSchema(schema[key][i]);
+          }
+        }
         continue;
       }
-      compiledSchema[key] = schema[key];
+    }
+    if (validators.length === 0) {
+      return compiledSchema;
+    }
+    if (validators.length === 1) {
+      const v = validators[0];
+      compiledSchema.$validate = getNamedFunction(
+        activeNames[0],
+        (data) => v.fn(compiledSchema, data, v.defineError, this)
+      );
+    } else {
+      const compositeName = "Validate_" + activeNames.join("_AND_");
+      const masterValidator = (data) => {
+        for (let i = 0; i < validators.length; i++) {
+          const v = validators[i];
+          const error = v.fn(compiledSchema, data, v.defineError, this);
+          if (error) {
+            return error;
+          }
+        }
+        return;
+      };
+      compiledSchema.$validate = getNamedFunction(
+        compositeName,
+        masterValidator
+      );
     }
     return compiledSchema;
   }
@@ -1277,5 +1582,55 @@ var SchemaShield = class {
       }
     }
     return false;
+  }
+  linkReferences(root) {
+    const stack = [root];
+    while (stack.length > 0) {
+      const node = stack.pop();
+      if (!node || typeof node !== "object")
+        continue;
+      if (typeof node.$ref === "string" && typeof node.$validate === "function" && node.$validate.name === "Validate_Reference") {
+        const refPath = node.$ref;
+        let target = this.getSchemaRef(refPath);
+        if (typeof target === "undefined") {
+          target = this.getSchemaById(refPath);
+        }
+        if (typeof target === "boolean") {
+          if (target === true) {
+            node.$validate = getNamedFunction("Validate_Ref_True", () => {
+            });
+          } else {
+            const defineError = getDefinedErrorFunctionForKey(
+              "$ref",
+              node,
+              this.failFast
+            );
+            node.$validate = getNamedFunction(
+              "Validate_Ref_False",
+              (_data) => defineError("Value is not valid")
+            );
+          }
+          continue;
+        }
+        if (target && typeof target.$validate === "function") {
+          node.$validate = target.$validate;
+        }
+      }
+      for (const key in node) {
+        const value = node[key];
+        if (!value)
+          continue;
+        if (Array.isArray(value)) {
+          for (let i = 0; i < value.length; i++) {
+            const v = value[i];
+            if (v && typeof v === "object") {
+              stack.push(v);
+            }
+          }
+        } else if (typeof value === "object") {
+          stack.push(value);
+        }
+      }
+    }
   }
 };

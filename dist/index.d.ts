@@ -1,7 +1,8 @@
+/****************** Path: lib/index.ts ******************/
 import { DefineErrorFunction, ValidationError } from "./utils";
 export { ValidationError } from "./utils";
 export { deepClone } from "./utils";
-export type Result = void | ValidationError;
+export type Result = void | ValidationError | true;
 export interface KeywordFunction {
     (schema: CompiledSchema, data: any, defineError: DefineErrorFunction, instance: SchemaShield): Result;
 }
@@ -21,7 +22,7 @@ export interface CompiledSchema {
 export interface Validator {
     (data: any): {
         data: any;
-        error: ValidationError | null;
+        error: ValidationError | null | true;
         valid: boolean;
     };
     compiledSchema: CompiledSchema;
@@ -31,8 +32,12 @@ export declare class SchemaShield {
     private formats;
     private keywords;
     private immutable;
-    constructor({ immutable }?: {
+    private rootSchema;
+    private idRegistry;
+    private failFast;
+    constructor({ immutable, failFast }?: {
         immutable?: boolean;
+        failFast?: boolean;
     });
     addType(name: string, validator: TypeFunction, overwrite?: boolean): void;
     getType(type: string): TypeFunction | false;
@@ -40,8 +45,11 @@ export declare class SchemaShield {
     getFormat(format: string): FormatFunction | false;
     addKeyword(name: string, validator: KeywordFunction, overwrite?: boolean): void;
     getKeyword(keyword: string): KeywordFunction | false;
+    getSchemaRef(path: string): CompiledSchema | undefined;
+    getSchemaById(id: string): CompiledSchema | undefined;
     compile(schema: any): Validator;
     private compileSchema;
     isSchemaLike(subSchema: any): boolean;
+    private linkReferences;
 }
 //# sourceMappingURL=index.d.ts.map
