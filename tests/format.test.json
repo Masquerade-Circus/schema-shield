@@ -19,6 +19,11 @@
         "description": "only RFC3339 not all of ISO 8601 are valid",
         "data": "2013-350T01:01:01",
         "valid": false
+      },
+      {
+        "description": "fraction separator must be a dot",
+        "data": "1963-06-19T08:30:06a283185Z",
+        "valid": false
       }
     ]
   },

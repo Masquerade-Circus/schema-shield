@@ -1,26 +1,52 @@
-import { hasChanged, isCompiledSchema, isObject } from "../utils";
+import { isCompiledSchema } from "../utils/main-utils";
 
 import { KeywordFunction } from "../index";
+import { hasChanged } from "../utils/has-changed";
+import { isObject } from "../utils/validators";
 
 export const OtherKeywords: Record<string, KeywordFunction> = {
   enum(schema, data, defineError) {
-    const list = schema.enum;
+    let enumCache = (schema as any)._enumCache as
+      | { primitiveSet: Set<any>; objectValues: any[] }
+      | undefined;
 
-    for (let i = 0; i < list.length; i++) {
-      const enumItem = list[i];
+    if (!enumCache) {
+      const primitiveSet = new Set<any>();
+      const objectValues: any[] = [];
+      const list = schema.enum;
 
-      if (enumItem === data) {
-        return;
+      for (let i = 0; i < list.length; i++) {
+        const enumItem = list[i];
+        if (enumItem !== null && typeof enumItem === "object") {
+          objectValues.push(enumItem);
+        } else {
+          primitiveSet.add(enumItem);
+        }
       }
 
-      if (
-        enumItem !== null &&
-        data !== null &&
-        typeof enumItem === "object" &&
-        typeof data === "object" &&
-        !hasChanged(enumItem, data)
-      ) {
-        return;
+      enumCache = { primitiveSet, objectValues };
+      Object.defineProperty(schema, "_enumCache", {
+        value: enumCache,
+        enumerable: false,
+        configurable: false,
+        writable: false
+      });
+    }
+
+    if (
+      !(typeof data === "number" && Number.isNaN(data)) &&
+      enumCache.primitiveSet.has(data)
+    ) {
+      return;
+    }
+
+    if (data !== null && typeof data === "object") {
+      // Conservative exact-semantics path.
+      // Future opt-in optimization: structural hashing buckets for large enums.
+      for (let i = 0; i < enumCache.objectValues.length; i++) {
+        if (!hasChanged(enumCache.objectValues[i], data)) {
+          return;
+        }
       }
     }
 
@@ -90,7 +116,7 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
 
       if (isObject(sub)) {
         if ("$validate" in sub) {
-          const error = sub.$validate(data);
+          const error = (sub as any).$validate(data);
           if (!error) {
             validCount++;
             if (validCount > 1) {
@@ -192,9 +218,9 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
 
     if (isObject(schema.not)) {
       if ("$validate" in schema.not) {
-        const error = schema.not.$validate(data);
+        const error = (schema.not as any).$validate(data);
         if (!error) {
-          return defineError("Value is not valid", { cause: error, data });
+          return defineError("Value is not valid", { data });
         }
         return;
       }

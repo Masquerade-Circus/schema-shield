@@ -2,19 +2,19 @@
 import {
   DefineErrorFunction,
   ValidationError,
-  deepClone,
   getDefinedErrorFunctionForKey,
   getNamedFunction,
-  isObject,
   resolvePath
-} from "./utils";
+} from "./utils/main-utils";
 
 import { Formats } from "./formats";
 import { Types } from "./types";
 import { keywords } from "./keywords";
+import { deepCloneUnfreeze } from "./utils/deep-freeze";
+import { isObject } from "./utils/validators";
 
-export { ValidationError } from "./utils";
-export { deepClone } from "./utils";
+export { ValidationError } from "./utils/main-utils";
+export { deepCloneUnfreeze as deepClone } from "./utils/deep-freeze";
 
 export type Result = void | ValidationError | true;
 
@@ -54,8 +54,8 @@ export interface Validator {
 }
 
 interface ValidatorItem {
-  fn: KeywordFunction;
-  defineError: DefineErrorFunction;
+  name: string;
+  validate: ValidateFunction;
 }
 
 export class SchemaShield {
@@ -158,7 +158,7 @@ export class SchemaShield {
     const validate: Validator = (data: any) => {
       this.rootSchema = compiledSchema;
 
-      const clonedData = this.immutable ? deepClone(data) : data;
+      const clonedData = this.immutable ? deepCloneUnfreeze(data) : data;
       const res = compiledSchema.$validate!(clonedData);
 
       if (res) {
@@ -183,7 +183,9 @@ export class SchemaShield {
       }
     }
 
-    const compiledSchema: CompiledSchema = deepClone(schema) as CompiledSchema;
+    const compiledSchema: CompiledSchema = deepCloneUnfreeze(
+      schema
+    ) as CompiledSchema;
 
     if (typeof schema.$id === "string") {
       this.idRegistry.set(schema.$id, compiledSchema);
@@ -267,12 +269,9 @@ export class SchemaShield {
         };
       }
 
-      const typeAdapter: KeywordFunction = (_s, data) =>
-        combinedTypeValidator(data);
-
       validators.push({
-        fn: getNamedFunction(typeMethodName, typeAdapter),
-        defineError: defineTypeError
+        name: typeMethodName,
+        validate: getNamedFunction(typeMethodName, combinedTypeValidator)
       });
       activeNames.push(typeMethodName);
     }
@@ -296,8 +295,15 @@ export class SchemaShield {
         const fnName = keywordFn.name || key;
 
         validators.push({
-          fn: keywordFn as KeywordFunction,
-          defineError
+          name: fnName,
+          validate: getNamedFunction<ValidateFunction>(fnName, (data) =>
+            (keywordFn as KeywordFunction)(
+              compiledSchema,
+              data,
+              defineError,
+              this
+            )
+          )
         });
 
         activeNames.push(fnName);
@@ -338,16 +344,14 @@ export class SchemaShield {
 
     if (validators.length === 1) {
       const v = validators[0];
-      compiledSchema.$validate = getNamedFunction(activeNames[0], (data) =>
-        v.fn(compiledSchema, data, v.defineError, this)
-      );
+      compiledSchema.$validate = getNamedFunction(v.name, v.validate);
     } else {
       const compositeName = "Validate_" + activeNames.join("_AND_");
 
       const masterValidator: ValidateFunction = (data) => {
         for (let i = 0; i < validators.length; i++) {
           const v = validators[i];
-          const error = v.fn(compiledSchema, data, v.defineError, this);
+          const error = v.validate(data);
           if (error) {
             return error;
           }

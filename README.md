@@ -47,6 +47,7 @@ SchemaShield is a secure interpreter for JSON Schema engineered for strict envir
 - [Known Limitations](#known-limitations)
   - [1. Dynamic ID Scope Resolution (Scope Alteration)](#1-dynamic-id-scope-resolution-scope-alteration)
   - [2. Unicode Length Validation](#2-unicode-length-validation)
+  - [3. Conservative Equality Path (Performance Trade-off)](#3-conservative-equality-path-performance-trade-off)
 - [Testing](#testing)
 - [Contribute](#contribute)
 - [Legal](#legal)
@@ -1085,6 +1086,13 @@ SchemaShield resolves references based on static JSON Pointers and unique IDs. I
 SchemaShield validates `minLength` and `maxLength` based on JavaScript's `length` property (UTF-16 code units), not Unicode Code Points.
 
 - **Impact:** Emoji or surrogate pairs may be counted as length 2.
+
+### 3. Conservative Equality Path (Performance Trade-off)
+
+For keywords like `enum`, `const`, and `uniqueItems`, SchemaShield prioritizes exact structural comparisons to preserve predictable behavior.
+
+- **Impact:** For very large arrays or enums with many complex objects, this conservative path can be slower than aggressive hashing strategies.
+- **Future Option:** An opt-in aggressive mode based on structural hashing/bucketing could improve throughput in those extreme cases, but it is intentionally not enabled by default to avoid edge-case semantic divergence.
 
 ## Testing
 

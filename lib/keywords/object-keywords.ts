@@ -1,6 +1,8 @@
-import { deepClone, isCompiledSchema, isObject } from "../utils";
+import { isCompiledSchema } from "../utils/main-utils";
 
 import { KeywordFunction } from "../index";
+import { isObject } from "../utils/validators";
+import { deepCloneUnfreeze } from "../utils/deep-freeze";
 
 export const ObjectKeywords: Record<string, KeywordFunction | false> = {
   required(schema, data, defineError) {
@@ -10,7 +12,7 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
 
     for (let i = 0; i < schema.required.length; i++) {
       const key = schema.required[i];
-      if (!data.hasOwnProperty(key)) {
+      if (!Object.prototype.hasOwnProperty.call(data, key)) {
         return defineError("Required property is missing", {
           item: key,
           data: data[key]
@@ -37,21 +39,21 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
       });
     }
 
-    let requiredKeys = (schema as any)._requiredKeys as
-      | string[]
+    let requiredSet = (schema as any)._requiredSet as
+      | Set<string>
       | null
       | undefined;
-    if (requiredKeys === undefined) {
-      requiredKeys = Array.isArray(schema.required) ? schema.required : null;
-      Object.defineProperty(schema, "_requiredKeys", {
-        value: requiredKeys,
+    if (requiredSet === undefined) {
+      requiredSet = Array.isArray(schema.required)
+        ? new Set<string>(schema.required)
+        : null;
+      Object.defineProperty(schema, "_requiredSet", {
+        value: requiredSet,
         enumerable: false,
         configurable: false,
         writable: false
       });
     }
-
-    const required = requiredKeys || [];
 
     for (let i = 0; i < propKeys.length; i++) {
       const key = propKeys[i];
@@ -59,12 +61,12 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
 
       if (!Object.prototype.hasOwnProperty.call(data, key)) {
         if (
-          required.length &&
-          required.indexOf(key) !== -1 &&
+          requiredSet &&
+          requiredSet.has(key) &&
           isObject(schemaProp) &&
           "default" in schemaProp
         ) {
-          const error = schemaProp.$validate(schemaProp.default);
+          const error = (schemaProp as any).$validate(schemaProp.default);
           if (error) {
             return defineError("Default property is invalid", {
               item: key,
@@ -72,7 +74,7 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
               data: schemaProp.default
             });
           }
-          data[key] = deepClone(schemaProp.default);
+          data[key] = deepCloneUnfreeze(schemaProp.default);
         }
         continue;
       }
@@ -127,16 +129,38 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
   },
 
   maxProperties(schema, data, defineError) {
-    if (!isObject(data) || Object.keys(data).length <= schema.maxProperties) {
+    if (!isObject(data)) {
       return;
     }
 
-    return defineError("Too many properties", { data });
+    let count = 0;
+    for (const key in data) {
+      if (!Object.prototype.hasOwnProperty.call(data, key)) {
+        continue;
+      }
+      count++;
+      if (count > schema.maxProperties) {
+        return defineError("Too many properties", { data });
+      }
+    }
+
+    return;
   },
 
   minProperties(schema, data, defineError) {
-    if (!isObject(data) || Object.keys(data).length >= schema.minProperties) {
+    if (!isObject(data)) {
       return;
+    }
+
+    let count = 0;
+    for (const key in data) {
+      if (!Object.prototype.hasOwnProperty.call(data, key)) {
+        continue;
+      }
+      count++;
+      if (count >= schema.minProperties) {
+        return;
+      }
     }
 
     return defineError("Too few properties", { data });
@@ -179,7 +203,10 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
     for (let i = 0; i < keys.length; i++) {
       const key = keys[i];
 
-      if (schema.properties && schema.properties.hasOwnProperty(key)) {
+      if (
+        schema.properties &&
+        Object.prototype.hasOwnProperty.call(schema.properties, key)
+      ) {
         continue;
       }
 
@@ -290,9 +317,14 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
     const pn = schema.propertyNames;
 
     if (typeof pn === "boolean") {
-      if (pn === false && Object.keys(data).length > 0) {
-        return defineError("Properties are not allowed", { data });
+      if (pn === false) {
+        for (const key in data) {
+          if (Object.prototype.hasOwnProperty.call(data, key)) {
+            return defineError("Properties are not allowed", { data });
+          }
+        }
       }
+
       return;
     }
 

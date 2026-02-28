@@ -1,7 +1,7 @@
 /****************** Path: lib/index.ts ******************/
-import { DefineErrorFunction, ValidationError } from "./utils";
-export { ValidationError } from "./utils";
-export { deepClone } from "./utils";
+import { DefineErrorFunction, ValidationError } from "./utils/main-utils";
+export { ValidationError } from "./utils/main-utils";
+export { deepCloneUnfreeze as deepClone } from "./utils/deep-freeze";
 export type Result = void | ValidationError | true;
 export interface KeywordFunction {
     (schema: CompiledSchema, data: any, defineError: DefineErrorFunction, instance: SchemaShield): Result;

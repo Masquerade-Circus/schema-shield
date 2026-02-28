@@ -1,5 +1,5 @@
 import { TypeFunction } from "./index";
-import { isObject } from "./utils";
+import { isObject } from "./utils/validators";
 
 export const Types: Record<string, TypeFunction | false> = {
   object(data) {
@@ -27,11 +27,11 @@ export const Types: Record<string, TypeFunction | false> = {
   // Not implemented yet
   timestamp: false,
   int8: false,
-  unit8: false,
+  uint8: false,
   int16: false,
-  unit16: false,
+  uint16: false,
   int32: false,
-  unit32: false,
+  uint32: false,
   float32: false,
   float64: false
 };

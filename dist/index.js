@@ -21,11 +21,34 @@ var lib_exports = {};
 __export(lib_exports, {
   SchemaShield: () => SchemaShield,
   ValidationError: () => ValidationError,
-  deepClone: () => deepClone
+  deepClone: () => deepCloneUnfreeze
 });
 module.exports = __toCommonJS(lib_exports);
 
-// lib/utils.ts
+// lib/utils/validators.ts
+function is(value, type) {
+  if (typeof type !== "string") {
+    return value instanceof type;
+  }
+  if (type === "array") {
+    return Array.isArray(value);
+  }
+  if (type === "object") {
+    return value !== null && typeof value === "object" && !Array.isArray(value);
+  }
+  if (type === "number") {
+    return typeof value === "number" && !isNaN(value);
+  }
+  return typeof value === type;
+}
+function isObject(value) {
+  return is(value, "object");
+}
+function areCloseEnough(a, b, epsilon = 1e-15) {
+  return Math.abs(a - b) <= epsilon * Math.max(Math.abs(a), Math.abs(b));
+}
+
+// lib/utils/main-utils.ts
 var ValidationError = class extends Error {
   message;
   item;
@@ -100,156 +123,6 @@ function getDefinedErrorFunctionForKey(key, schema, failFast) {
     defineError
   );
 }
-function hasChanged(prev, current) {
-  if (Array.isArray(prev)) {
-    if (Array.isArray(current) === false) {
-      return true;
-    }
-    if (prev.length !== current.length) {
-      return true;
-    }
-    for (let i = 0; i < current.length; i++) {
-      if (hasChanged(prev[i], current[i])) {
-        return true;
-      }
-    }
-    return false;
-  }
-  if (typeof prev === "object" && prev !== null) {
-    if (typeof current !== "object" || current === null) {
-      return true;
-    }
-    for (const key in current) {
-      if (hasChanged(prev[key], current[key])) {
-        return true;
-      }
-    }
-    for (const key in prev) {
-      if (hasChanged(prev[key], current[key])) {
-        return true;
-      }
-    }
-    return false;
-  }
-  return Object.is(prev, current) === false;
-}
-function isObject(data) {
-  return typeof data === "object" && data !== null && !Array.isArray(data);
-}
-function areCloseEnough(a, b, epsilon = 1e-15) {
-  return Math.abs(a - b) <= epsilon * Math.max(Math.abs(a), Math.abs(b));
-}
-function deepClone(obj, cloneClassInstances = false, seen = /* @__PURE__ */ new WeakMap()) {
-  if (typeof obj === "undefined" || obj === null || typeof obj !== "object") {
-    return obj;
-  }
-  if (seen.has(obj)) {
-    return seen.get(obj);
-  }
-  let clone;
-  if (typeof structuredClone === "function") {
-    clone = structuredClone(obj);
-    seen.set(obj, clone);
-    return clone;
-  }
-  switch (true) {
-    case Array.isArray(obj): {
-      clone = [];
-      seen.set(obj, clone);
-      for (let i = 0, l = obj.length; i < l; i++) {
-        clone[i] = deepClone(obj[i], cloneClassInstances, seen);
-      }
-      return clone;
-    }
-    case obj instanceof Date: {
-      clone = new Date(obj.getTime());
-      seen.set(obj, clone);
-      return clone;
-    }
-    case obj instanceof RegExp: {
-      clone = new RegExp(obj.source, obj.flags);
-      seen.set(obj, clone);
-      return clone;
-    }
-    case obj instanceof Map: {
-      clone = /* @__PURE__ */ new Map();
-      seen.set(obj, clone);
-      for (const [key, value] of obj.entries()) {
-        clone.set(
-          deepClone(key, cloneClassInstances, seen),
-          deepClone(value, cloneClassInstances, seen)
-        );
-      }
-      return clone;
-    }
-    case obj instanceof Set: {
-      clone = /* @__PURE__ */ new Set();
-      seen.set(obj, clone);
-      for (const value of obj.values()) {
-        clone.add(deepClone(value, cloneClassInstances, seen));
-      }
-      return clone;
-    }
-    case obj instanceof ArrayBuffer: {
-      clone = obj.slice(0);
-      seen.set(obj, clone);
-      return clone;
-    }
-    case ArrayBuffer.isView(obj): {
-      clone = new obj.constructor(obj.buffer.slice(0));
-      seen.set(obj, clone);
-      return clone;
-    }
-    case (typeof Buffer !== "undefined" && obj instanceof Buffer): {
-      clone = Buffer.from(obj);
-      seen.set(obj, clone);
-      return clone;
-    }
-    case obj instanceof Error: {
-      clone = new obj.constructor(obj.message);
-      seen.set(obj, clone);
-      break;
-    }
-    case (obj instanceof Promise || obj instanceof WeakMap || obj instanceof WeakSet): {
-      clone = obj;
-      seen.set(obj, clone);
-      return clone;
-    }
-    case (obj.constructor && obj.constructor !== Object): {
-      if (!cloneClassInstances) {
-        clone = obj;
-        seen.set(obj, clone);
-        return clone;
-      }
-      clone = Object.create(Object.getPrototypeOf(obj));
-      seen.set(obj, clone);
-      break;
-    }
-    default: {
-      clone = {};
-      seen.set(obj, clone);
-      const keys = Reflect.ownKeys(obj);
-      for (let i = 0, l = keys.length; i < l; i++) {
-        const key = keys[i];
-        clone[key] = deepClone(
-          obj[key],
-          cloneClassInstances,
-          seen
-        );
-      }
-      return clone;
-    }
-  }
-  const descriptors = Object.getOwnPropertyDescriptors(obj);
-  for (const key of Reflect.ownKeys(descriptors)) {
-    const descriptor = descriptors[key];
-    if ("value" in descriptor) {
-      descriptor.value = deepClone(descriptor.value, cloneClassInstances, seen);
-    }
-    Object.defineProperty(clone, key, descriptor);
-  }
-  return clone;
-}
 function isCompiledSchema(subSchema) {
   return isObject(subSchema) && "$validate" in subSchema;
 }
@@ -293,7 +166,7 @@ function resolvePath(root, path) {
 // lib/formats.ts
 var UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 var DURATION_REGEX = /^P(?!$)((\d+Y)?(\d+M)?(\d+W)?(\d+D)?)(T(?=\d)(\d+H)?(\d+M)?(\d+S)?)?$/;
-var DATE_TIME_REGEX = /^(\d{4})-(0[0-9]|1[0-2])-(\d{2})T(0[0-9]|1\d|2[0-3]):([0-5]\d):((?:[0-5]\d|60))(?:.\d+)?(?:([+-])(0[0-9]|1\d|2[0-3]):([0-5]\d)|Z)?$/i;
+var DATE_TIME_REGEX = /^(\d{4})-(0[0-9]|1[0-2])-(\d{2})T(0[0-9]|1\d|2[0-3]):([0-5]\d):((?:[0-5]\d|60))(?:\.\d+)?(?:([+-])(0[0-9]|1\d|2[0-3]):([0-5]\d)|Z)?$/i;
 var URI_REGEX = /^[a-zA-Z][a-zA-Z0-9+\-.]*:[^\s]*$/;
 var EMAIL_REGEX = /^(?!\.)(?!.*\.$)[a-z0-9!#$%&'*+/=?^_`{|}~-]{1,20}(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]{1,21}){0,2}@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,60}[a-z0-9])?){0,3}$/i;
 var IPV4_REGEX = /^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])$/;
@@ -491,14 +364,55 @@ var Types = {
   // Not implemented yet
   timestamp: false,
   int8: false,
-  unit8: false,
+  uint8: false,
   int16: false,
-  unit16: false,
+  uint16: false,
   int32: false,
-  unit32: false,
+  uint32: false,
   float32: false,
   float64: false
 };
+
+// lib/utils/has-changed.ts
+function hasChanged(prev, current) {
+  if (Object.is(prev, current)) {
+    return false;
+  }
+  if (Array.isArray(prev)) {
+    if (Array.isArray(current) === false) {
+      return true;
+    }
+    if (prev.length !== current.length) {
+      return true;
+    }
+    for (let i = 0; i < current.length; i++) {
+      if (hasChanged(prev[i], current[i])) {
+        return true;
+      }
+    }
+    return false;
+  }
+  if (typeof prev === "object" && prev !== null) {
+    if (typeof current !== "object" || current === null) {
+      return true;
+    }
+    for (const key in current) {
+      if (hasChanged(prev[key], current[key])) {
+        return true;
+      }
+    }
+    for (const key in prev) {
+      if (key in current) {
+        continue;
+      }
+      if (hasChanged(prev[key], void 0)) {
+        return true;
+      }
+    }
+    return false;
+  }
+  return true;
+}
 
 // lib/keywords/array-keywords.ts
 var ArrayKeywords = {
@@ -627,6 +541,8 @@ var ArrayKeywords = {
       return;
     }
     const primitiveSeen = /* @__PURE__ */ new Set();
+    const seenArrayItems = [];
+    const seenObjectItems = [];
     for (let i = 0; i < len; i++) {
       const item = data[i];
       const type = typeof item;
@@ -638,12 +554,13 @@ var ArrayKeywords = {
         continue;
       }
       if (item && typeof item === "object") {
-        for (let j = 0; j < i; j++) {
-          const prev = data[j];
-          if (prev && typeof prev === "object" && !hasChanged(prev, item)) {
+        const candidates = Array.isArray(item) ? seenArrayItems : seenObjectItems;
+        for (let j = 0; j < candidates.length; j++) {
+          if (!hasChanged(candidates[j], item)) {
             return defineError("Array items are not unique", { data: item });
           }
         }
+        candidates.push(item);
       }
     }
   },
@@ -660,8 +577,9 @@ var ArrayKeywords = {
       }
       return defineError("Array must not contain any items", { data });
     }
+    const containsValidate = schema.contains.$validate;
     for (let i = 0; i < data.length; i++) {
-      const error = schema.contains.$validate(data[i]);
+      const error = containsValidate(data[i]);
       if (!error) {
         return;
       }
@@ -739,6 +657,140 @@ var NumberKeywords = {
   }
 };
 
+// lib/utils/deep-freeze.ts
+function isPlainObject(value) {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+function canUseStructuredClone(value) {
+  if (typeof structuredClone !== "function") {
+    return false;
+  }
+  if (typeof Buffer !== "undefined" && value instanceof Buffer) {
+    return false;
+  }
+  return Array.isArray(value) || isPlainObject(value) || value instanceof Date || value instanceof RegExp || value instanceof Map || value instanceof Set || value instanceof ArrayBuffer || ArrayBuffer.isView(value);
+}
+function deepCloneUnfreeze(obj, cloneClassInstances = false, seen = /* @__PURE__ */ new WeakMap()) {
+  if (typeof obj === "undefined" || obj === null || typeof obj !== "object") {
+    return obj;
+  }
+  const source = obj;
+  if (seen.has(source)) {
+    return seen.get(source);
+  }
+  if (canUseStructuredClone(source)) {
+    const cloned = structuredClone(source);
+    seen.set(source, cloned);
+    return cloned;
+  }
+  let clone;
+  switch (true) {
+    case Array.isArray(source): {
+      clone = [];
+      seen.set(source, clone);
+      for (let i = 0, l = source.length; i < l; i++) {
+        clone[i] = deepCloneUnfreeze(source[i], cloneClassInstances, seen);
+      }
+      return clone;
+    }
+    case source instanceof Date: {
+      clone = new Date(source.getTime());
+      seen.set(source, clone);
+      return clone;
+    }
+    case source instanceof RegExp: {
+      clone = new RegExp(source.source, source.flags);
+      seen.set(source, clone);
+      return clone;
+    }
+    case source instanceof Map: {
+      clone = /* @__PURE__ */ new Map();
+      seen.set(source, clone);
+      for (const [key, value] of source.entries()) {
+        clone.set(
+          deepCloneUnfreeze(key, cloneClassInstances, seen),
+          deepCloneUnfreeze(value, cloneClassInstances, seen)
+        );
+      }
+      return clone;
+    }
+    case source instanceof Set: {
+      clone = /* @__PURE__ */ new Set();
+      seen.set(source, clone);
+      for (const value of source.values()) {
+        clone.add(deepCloneUnfreeze(value, cloneClassInstances, seen));
+      }
+      return clone;
+    }
+    case source instanceof ArrayBuffer: {
+      clone = source.slice(0);
+      seen.set(source, clone);
+      return clone;
+    }
+    case ArrayBuffer.isView(source): {
+      clone = new source.constructor(source.buffer.slice(0));
+      seen.set(source, clone);
+      return clone;
+    }
+    case (typeof Buffer !== "undefined" && source instanceof Buffer): {
+      clone = Buffer.from(source);
+      seen.set(source, clone);
+      return clone;
+    }
+    case source instanceof Error: {
+      clone = new source.constructor(source.message);
+      seen.set(source, clone);
+      break;
+    }
+    case (source instanceof Promise || source instanceof WeakMap || source instanceof WeakSet): {
+      clone = source;
+      seen.set(source, clone);
+      return clone;
+    }
+    case (source.constructor && source.constructor !== Object): {
+      if (!cloneClassInstances) {
+        clone = source;
+        seen.set(source, clone);
+        return clone;
+      }
+      clone = Object.create(Object.getPrototypeOf(source));
+      seen.set(source, clone);
+      break;
+    }
+    default: {
+      clone = {};
+      seen.set(source, clone);
+      const keys = Reflect.ownKeys(source);
+      for (let i = 0, l = keys.length; i < l; i++) {
+        const key = keys[i];
+        clone[key] = deepCloneUnfreeze(
+          source[key],
+          cloneClassInstances,
+          seen
+        );
+      }
+      return clone;
+    }
+  }
+  const descriptors = Object.getOwnPropertyDescriptors(source);
+  for (const key of Reflect.ownKeys(descriptors)) {
+    const descriptor = descriptors[key];
+    if ("value" in descriptor) {
+      descriptor.value = deepCloneUnfreeze(
+        descriptor.value,
+        cloneClassInstances,
+        seen
+      );
+    }
+    Object.defineProperty(clone, key, descriptor);
+  }
+  return clone;
+}
+
 // lib/keywords/object-keywords.ts
 var ObjectKeywords = {
   required(schema, data, defineError) {
@@ -747,7 +799,7 @@ var ObjectKeywords = {
     }
     for (let i = 0; i < schema.required.length; i++) {
       const key = schema.required[i];
-      if (!data.hasOwnProperty(key)) {
+      if (!Object.prototype.hasOwnProperty.call(data, key)) {
         return defineError("Required property is missing", {
           item: key,
           data: data[key]
@@ -770,22 +822,21 @@ var ObjectKeywords = {
         writable: false
       });
     }
-    let requiredKeys = schema._requiredKeys;
-    if (requiredKeys === void 0) {
-      requiredKeys = Array.isArray(schema.required) ? schema.required : null;
-      Object.defineProperty(schema, "_requiredKeys", {
-        value: requiredKeys,
+    let requiredSet = schema._requiredSet;
+    if (requiredSet === void 0) {
+      requiredSet = Array.isArray(schema.required) ? new Set(schema.required) : null;
+      Object.defineProperty(schema, "_requiredSet", {
+        value: requiredSet,
         enumerable: false,
         configurable: false,
         writable: false
       });
     }
-    const required = requiredKeys || [];
     for (let i = 0; i < propKeys.length; i++) {
       const key = propKeys[i];
       const schemaProp = schema.properties[key];
       if (!Object.prototype.hasOwnProperty.call(data, key)) {
-        if (required.length && required.indexOf(key) !== -1 && isObject(schemaProp) && "default" in schemaProp) {
+        if (requiredSet && requiredSet.has(key) && isObject(schemaProp) && "default" in schemaProp) {
           const error = schemaProp.$validate(schemaProp.default);
           if (error) {
             return defineError("Default property is invalid", {
@@ -794,7 +845,7 @@ var ObjectKeywords = {
               data: schemaProp.default
             });
           }
-          data[key] = deepClone(schemaProp.default);
+          data[key] = deepCloneUnfreeze(schemaProp.default);
         }
         continue;
       }
@@ -843,14 +894,34 @@ var ObjectKeywords = {
     }
   },
   maxProperties(schema, data, defineError) {
-    if (!isObject(data) || Object.keys(data).length <= schema.maxProperties) {
+    if (!isObject(data)) {
       return;
     }
-    return defineError("Too many properties", { data });
+    let count = 0;
+    for (const key in data) {
+      if (!Object.prototype.hasOwnProperty.call(data, key)) {
+        continue;
+      }
+      count++;
+      if (count > schema.maxProperties) {
+        return defineError("Too many properties", { data });
+      }
+    }
+    return;
   },
   minProperties(schema, data, defineError) {
-    if (!isObject(data) || Object.keys(data).length >= schema.minProperties) {
+    if (!isObject(data)) {
       return;
+    }
+    let count = 0;
+    for (const key in data) {
+      if (!Object.prototype.hasOwnProperty.call(data, key)) {
+        continue;
+      }
+      count++;
+      if (count >= schema.minProperties) {
+        return;
+      }
     }
     return defineError("Too few properties", { data });
   },
@@ -883,7 +954,7 @@ var ObjectKeywords = {
     }
     for (let i = 0; i < keys.length; i++) {
       const key = keys[i];
-      if (schema.properties && schema.properties.hasOwnProperty(key)) {
+      if (schema.properties && Object.prototype.hasOwnProperty.call(schema.properties, key)) {
         continue;
       }
       if (patternList && patternList.length) {
@@ -979,8 +1050,12 @@ var ObjectKeywords = {
     }
     const pn = schema.propertyNames;
     if (typeof pn === "boolean") {
-      if (pn === false && Object.keys(data).length > 0) {
-        return defineError("Properties are not allowed", { data });
+      if (pn === false) {
+        for (const key in data) {
+          if (Object.prototype.hasOwnProperty.call(data, key)) {
+            return defineError("Properties are not allowed", { data });
+          }
+        }
       }
       return;
     }
@@ -1067,14 +1142,35 @@ var ObjectKeywords = {
 // lib/keywords/other-keywords.ts
 var OtherKeywords = {
   enum(schema, data, defineError) {
-    const list = schema.enum;
-    for (let i = 0; i < list.length; i++) {
-      const enumItem = list[i];
-      if (enumItem === data) {
-        return;
+    let enumCache = schema._enumCache;
+    if (!enumCache) {
+      const primitiveSet = /* @__PURE__ */ new Set();
+      const objectValues = [];
+      const list = schema.enum;
+      for (let i = 0; i < list.length; i++) {
+        const enumItem = list[i];
+        if (enumItem !== null && typeof enumItem === "object") {
+          objectValues.push(enumItem);
+        } else {
+          primitiveSet.add(enumItem);
+        }
       }
-      if (enumItem !== null && data !== null && typeof enumItem === "object" && typeof data === "object" && !hasChanged(enumItem, data)) {
-        return;
+      enumCache = { primitiveSet, objectValues };
+      Object.defineProperty(schema, "_enumCache", {
+        value: enumCache,
+        enumerable: false,
+        configurable: false,
+        writable: false
+      });
+    }
+    if (!(typeof data === "number" && Number.isNaN(data)) && enumCache.primitiveSet.has(data)) {
+      return;
+    }
+    if (data !== null && typeof data === "object") {
+      for (let i = 0; i < enumCache.objectValues.length; i++) {
+        if (!hasChanged(enumCache.objectValues[i], data)) {
+          return;
+        }
       }
     }
     return defineError("Value is not one of the allowed values", { data });
@@ -1219,7 +1315,7 @@ var OtherKeywords = {
       if ("$validate" in schema.not) {
         const error = schema.not.$validate(data);
         if (!error) {
-          return defineError("Value is not valid", { cause: error, data });
+          return defineError("Value is not valid", { data });
         }
         return;
       }
@@ -1401,7 +1497,7 @@ var SchemaShield = class {
     }
     const validate = (data) => {
       this.rootSchema = compiledSchema;
-      const clonedData = this.immutable ? deepClone(data) : data;
+      const clonedData = this.immutable ? deepCloneUnfreeze(data) : data;
       const res = compiledSchema.$validate(clonedData);
       if (res) {
         return { data: clonedData, error: res, valid: false };
@@ -1421,7 +1517,9 @@ var SchemaShield = class {
         schema = { oneOf: [schema] };
       }
     }
-    const compiledSchema = deepClone(schema);
+    const compiledSchema = deepCloneUnfreeze(
+      schema
+    );
     if (typeof schema.$id === "string") {
       this.idRegistry.set(schema.$id, compiledSchema);
     }
@@ -1491,10 +1589,9 @@ var SchemaShield = class {
           return defineTypeError("Invalid type", { data });
         };
       }
-      const typeAdapter = (_s, data) => combinedTypeValidator(data);
       validators.push({
-        fn: getNamedFunction(typeMethodName, typeAdapter),
-        defineError: defineTypeError
+        name: typeMethodName,
+        validate: getNamedFunction(typeMethodName, combinedTypeValidator)
       });
       activeNames.push(typeMethodName);
     }
@@ -1510,8 +1607,16 @@ var SchemaShield = class {
         );
         const fnName = keywordFn.name || key;
         validators.push({
-          fn: keywordFn,
-          defineError
+          name: fnName,
+          validate: getNamedFunction(
+            fnName,
+            (data) => keywordFn(
+              compiledSchema,
+              data,
+              defineError,
+              this
+            )
+          )
         });
         activeNames.push(fnName);
       }
@@ -1547,16 +1652,13 @@ var SchemaShield = class {
     }
     if (validators.length === 1) {
       const v = validators[0];
-      compiledSchema.$validate = getNamedFunction(
-        activeNames[0],
-        (data) => v.fn(compiledSchema, data, v.defineError, this)
-      );
+      compiledSchema.$validate = getNamedFunction(v.name, v.validate);
     } else {
       const compositeName = "Validate_" + activeNames.join("_AND_");
       const masterValidator = (data) => {
         for (let i = 0; i < validators.length; i++) {
           const v = validators[i];
-          const error = v.fn(compiledSchema, data, v.defineError, this);
+          const error = v.validate(data);
           if (error) {
             return error;
           }

@@ -1,6 +1,8 @@
-import { hasChanged, isCompiledSchema, isObject } from "../utils";
+import { isCompiledSchema } from "../utils/main-utils";
 
 import { KeywordFunction } from "../index";
+import { hasChanged } from "../utils/has-changed";
+import { isObject } from "../utils/validators";
 
 export const ArrayKeywords: Record<string, KeywordFunction> = {
   // lib/keywords/array-keywords.ts
@@ -153,6 +155,8 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
     }
 
     const primitiveSeen = new Set<any>();
+    const seenArrayItems: any[] = [];
+    const seenObjectItems: any[] = [];
 
     for (let i = 0; i < len; i++) {
       const item = data[i];
@@ -172,12 +176,15 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
       }
 
       if (item && typeof item === "object") {
-        for (let j = 0; j < i; j++) {
-          const prev = data[j];
-          if (prev && typeof prev === "object" && !hasChanged(prev, item)) {
+        const candidates = Array.isArray(item) ? seenArrayItems : seenObjectItems;
+
+        for (let j = 0; j < candidates.length; j++) {
+          if (!hasChanged(candidates[j], item)) {
             return defineError("Array items are not unique", { data: item });
           }
         }
+
+        candidates.push(item);
       }
     }
   },
@@ -197,8 +204,9 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
       return defineError("Array must not contain any items", { data });
     }
 
+    const containsValidate = schema.contains.$validate;
     for (let i = 0; i < data.length; i++) {
-      const error = schema.contains.$validate(data[i]);
+      const error = containsValidate(data[i]);
       if (!error) {
         return;
       }

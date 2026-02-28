@@ -1,4 +1,4 @@
-import { CompiledSchema } from "./index";
+import { CompiledSchema } from "../index";
 interface ErrorTree {
     message: string;
     keyword: string;
@@ -35,13 +35,9 @@ export interface DefineErrorFunction {
     (message: string, options?: DefineErrorOptions): ValidationError | void | true;
 }
 export declare function getDefinedErrorFunctionForKey(key: string, schema: CompiledSchema, failFast: boolean): DefineErrorFunction;
-export declare function hasChanged(prev: any, current: any): boolean;
-export declare function isObject(data: any): boolean;
-export declare function areCloseEnough(a: any, b: any, epsilon?: number): boolean;
 export declare function getUTF16Length(str: any): number;
-export declare function deepClone<T>(obj: T, cloneClassInstances?: boolean, seen?: WeakMap<object, any>): T;
 export declare function isCompiledSchema(subSchema: any): subSchema is CompiledSchema;
 export declare function getNamedFunction<T>(name: string, fn: T): T;
 export declare function resolvePath(root: any, path: string): any;
 export {};
-//# sourceMappingURL=utils.d.ts.map
+//# sourceMappingURL=main-utils.d.ts.map
