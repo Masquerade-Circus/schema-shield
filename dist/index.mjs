@@ -112,6 +112,9 @@ function resolvePath(root, path) {
   }
   return;
 }
+function areCloseEnough(a, b, epsilon = 1e-15) {
+  return Math.abs(a - b) <= epsilon * Math.max(Math.abs(a), Math.abs(b));
+}
 
 // lib/formats.ts
 var UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -894,79 +897,6 @@ var ArrayKeywords = {
   }
 };
 
-// lib/utils/validators.ts
-function areCloseEnough(a, b, epsilon = 1e-15) {
-  return Math.abs(a - b) <= epsilon * Math.max(Math.abs(a), Math.abs(b));
-}
-
-// lib/keywords/number-keywords.ts
-var NumberKeywords = {
-  minimum(schema, data, defineError, instance) {
-    if (typeof data !== "number") {
-      return;
-    }
-    let min = schema.minimum;
-    if (typeof schema.exclusiveMinimum === "number") {
-      min = schema.exclusiveMinimum + 1e-15;
-    } else if (schema.exclusiveMinimum === true) {
-      min += 1e-15;
-    }
-    if (data < min) {
-      return defineError("Value is less than the minimum", { data });
-    }
-    return;
-  },
-  maximum(schema, data, defineError, instance) {
-    if (typeof data !== "number") {
-      return;
-    }
-    let max = schema.maximum;
-    if (typeof schema.exclusiveMaximum === "number") {
-      max = schema.exclusiveMaximum - 1e-15;
-    } else if (schema.exclusiveMaximum === true) {
-      max -= 1e-15;
-    }
-    if (data > max) {
-      return defineError("Value is greater than the maximum", { data });
-    }
-    return;
-  },
-  multipleOf(schema, data, defineError, instance) {
-    if (typeof data !== "number") {
-      return;
-    }
-    const quotient = data / schema.multipleOf;
-    if (!isFinite(quotient)) {
-      return;
-    }
-    if (!areCloseEnough(quotient, Math.round(quotient))) {
-      return defineError("Value is not a multiple of the multipleOf", { data });
-    }
-    return;
-  },
-  exclusiveMinimum(schema, data, defineError, instance) {
-    if (typeof data !== "number" || typeof schema.exclusiveMinimum !== "number" || "minimum" in schema) {
-      return;
-    }
-    if (data <= schema.exclusiveMinimum + 1e-15) {
-      return defineError("Value is less than or equal to the exclusiveMinimum");
-    }
-    return;
-  },
-  exclusiveMaximum(schema, data, defineError, instance) {
-    if (typeof data !== "number" || typeof schema.exclusiveMaximum !== "number" || "maximum" in schema) {
-      return;
-    }
-    if (data >= schema.exclusiveMaximum) {
-      return defineError(
-        "Value is greater than or equal to the exclusiveMaximum",
-        { data }
-      );
-    }
-    return;
-  }
-};
-
 // lib/utils/deep-freeze.ts
 function isPlainObject(value) {
   if (!value || typeof value !== "object") {
@@ -1100,6 +1030,74 @@ function deepCloneUnfreeze(obj, cloneClassInstances = false, seen = /* @__PURE__
   }
   return clone;
 }
+
+// lib/keywords/number-keywords.ts
+var NumberKeywords = {
+  minimum(schema, data, defineError, instance) {
+    if (typeof data !== "number") {
+      return;
+    }
+    let min = schema.minimum;
+    if (typeof schema.exclusiveMinimum === "number") {
+      min = schema.exclusiveMinimum + 1e-15;
+    } else if (schema.exclusiveMinimum === true) {
+      min += 1e-15;
+    }
+    if (data < min) {
+      return defineError("Value is less than the minimum", { data });
+    }
+    return;
+  },
+  maximum(schema, data, defineError, instance) {
+    if (typeof data !== "number") {
+      return;
+    }
+    let max = schema.maximum;
+    if (typeof schema.exclusiveMaximum === "number") {
+      max = schema.exclusiveMaximum - 1e-15;
+    } else if (schema.exclusiveMaximum === true) {
+      max -= 1e-15;
+    }
+    if (data > max) {
+      return defineError("Value is greater than the maximum", { data });
+    }
+    return;
+  },
+  multipleOf(schema, data, defineError, instance) {
+    if (typeof data !== "number") {
+      return;
+    }
+    const quotient = data / schema.multipleOf;
+    if (!isFinite(quotient)) {
+      return;
+    }
+    if (!areCloseEnough(quotient, Math.round(quotient))) {
+      return defineError("Value is not a multiple of the multipleOf", { data });
+    }
+    return;
+  },
+  exclusiveMinimum(schema, data, defineError, instance) {
+    if (typeof data !== "number" || typeof schema.exclusiveMinimum !== "number" || "minimum" in schema) {
+      return;
+    }
+    if (data <= schema.exclusiveMinimum + 1e-15) {
+      return defineError("Value is less than or equal to the exclusiveMinimum");
+    }
+    return;
+  },
+  exclusiveMaximum(schema, data, defineError, instance) {
+    if (typeof data !== "number" || typeof schema.exclusiveMaximum !== "number" || "maximum" in schema) {
+      return;
+    }
+    if (data >= schema.exclusiveMaximum) {
+      return defineError(
+        "Value is greater than or equal to the exclusiveMaximum",
+        { data }
+      );
+    }
+    return;
+  }
+};
 
 // lib/utils/pattern-matcher.ts
 var REGEX_META_CHARS = /[\\.^$*+?()[\]{}|]/;

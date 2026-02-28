@@ -39,5 +39,6 @@ export declare function getUTF16Length(str: any): number;
 export declare function isCompiledSchema(subSchema: any): subSchema is CompiledSchema;
 export declare function getNamedFunction<T>(name: string, fn: T): T;
 export declare function resolvePath(root: any, path: string): any;
+export declare function areCloseEnough(a: number, b: number, epsilon?: number): boolean;
 export {};
 //# sourceMappingURL=main-utils.d.ts.map
