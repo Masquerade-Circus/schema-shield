@@ -1,5 +1,12 @@
 
 
+### [1.0.2](https://github.com/Masquerade-Circus/schema-shield/compare/1.0.1...1.0.2) (2026-02-28)
+
+
+### Documentation
+
+* add Skill.md ([a392285](https://github.com/Masquerade-Circus/schema-shield/commit/a392285fdeffd4eec9d7608b6d5698f85ad2612b))
+
 ### [1.0.1](https://github.com/Masquerade-Circus/schema-shield/compare/1.0.0...1.0.1) (2026-02-28)
 
 
