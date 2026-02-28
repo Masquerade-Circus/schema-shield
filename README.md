@@ -5,8 +5,8 @@
 SchemaShield is a secure interpreter for JSON Schema engineered for strict environments and complex domain logic. It prioritizes **architectural stability** and **developer experience** over raw synthetic throughput.
 
 > 🏆 **Fastest JSON Schema Validator on Bun** — 2.5x faster than ajv, 4x faster than schemasafe
-> 
-> 📊 **#3 fastest on Node.js** — 70% ajv speed, 50x faster than jsonschema
+>
+> 📊 **#3 fastest on Node.js** — 70% ajv speed, 50x faster than others
 
 ## Quick Start
 
@@ -1145,6 +1145,12 @@ If you are interested in contributing, please follow these steps:
 - **Merge:** Once your pull request is approved, it will be merged into the main SchemaShield repository.
 
 We appreciate your interest in contributing to SchemaShield and look forward to your valuable input. Together, we can make SchemaShield an even better library for the community.
+
+## Acknowledgments
+
+- **ajv**: The gold standard for JSON Schema validation. Your performance sets the bar and drives the entire ecosystem forward.
+
+- **@exodus/schemasafe**: Your interpreter-first approach validates that security-first architectures can still deliver strong performance. Competing with you makes us better.
 
 ## Legal
 
