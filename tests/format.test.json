@@ -24,6 +24,11 @@
         "description": "fraction separator must be a dot",
         "data": "1963-06-19T08:30:06a283185Z",
         "valid": false
+      },
+      {
+        "description": "a valid date-time with a leap second, with minus offset",
+        "data": "1998-12-31T15:59:60.123-08:00",
+        "valid": true
       }
     ]
   },

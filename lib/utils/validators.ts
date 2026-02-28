@@ -29,67 +29,72 @@ export function is<T>(value: any, type: string | any): value is T {
 }
 
 export function isFunction(value: any): value is Function {
-  return is<Function>(value, "function");
+  return typeof value === "function";
 }
 
 export function isString(value: any): value is string {
-  return is<string>(value, "string");
+  return typeof value === "string";
 }
 
 export function isNumber(value: any): value is number {
-  return is<number>(value, "number");
+  return typeof value === "number" && !Number.isNaN(value);
 }
 
 export function isFiniteNumber(value: any): value is number {
-  return isNumber(value) && Number.isFinite(value);
+  return typeof value === "number" && Number.isFinite(value);
 }
 
 export function isBoolean(value: any): value is boolean {
-  return is<boolean>(value, "boolean");
+  return typeof value === "boolean";
 }
 
 export function isObject(value: any): value is object {
-  return is<object>(value, "object");
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 export function hasLength(value: any, length: number) {
-  if (isString(value)) {
+  if (typeof value === "string") {
     return value.length === length;
   }
   return Array.isArray(value) && value.length === length;
 }
 
 export function hasMinLength(value: any, length: number) {
-  if (isString(value)) {
+  if (typeof value === "string") {
     return value.length >= length;
   }
   return Array.isArray(value) && value.length >= length;
 }
 
 export function hasMaxLength(value: any, length: number) {
-  if (isString(value)) {
+  if (typeof value === "string") {
     return value.length <= length;
   }
   return Array.isArray(value) && value.length <= length;
 }
 
 export function hasLengthBetween(value: any, min: number, max: number) {
-  if (isString(value)) {
+  if (typeof value === "string") {
     return value.length >= min && value.length <= max;
   }
   return Array.isArray(value) && value.length >= min && value.length <= max;
 }
 
 export function isLessThan(value: any, limit: number) {
-  return isNumber(value) && value < limit;
+  return typeof value === "number" && !Number.isNaN(value) && value < limit;
 }
 
 export function isGreaterThan(value: any, limit: number) {
-  return isNumber(value) && value > limit;
+  return typeof value === "number" && !Number.isNaN(value) && value > limit;
 }
 
 export function isBetween(value: any, min: number, max: number) {
-  return isNumber(value) && value >= min && value <= max;
+  return (
+    typeof value === "number" &&
+    !Number.isNaN(value) &&
+    value >= min &&
+    value <= max
+  );
 }
 
 export function pick<T extends object, K extends keyof T>(

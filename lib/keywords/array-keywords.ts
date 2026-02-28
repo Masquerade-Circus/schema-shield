@@ -2,7 +2,98 @@ import { isCompiledSchema } from "../utils/main-utils";
 
 import { KeywordFunction } from "../index";
 import { hasChanged } from "../utils/has-changed";
-import { isObject } from "../utils/validators";
+
+function isUniquePrimitive(value: any) {
+  return (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  );
+}
+
+function getArrayBucketKey(value: any[]): string {
+  const length = value.length;
+  if (length === 0) {
+    return "0";
+  }
+
+  const first = value[0];
+  const last = value[length - 1];
+  const firstType = first === null ? "null" : typeof first;
+  const lastType = last === null ? "null" : typeof last;
+
+  let firstArrayMarker = "";
+  if (Array.isArray(first)) {
+    const firstSignature = getPrimitiveArraySignature(first);
+    firstArrayMarker = firstSignature === null ? `a:${first.length}` : firstSignature;
+  }
+
+  let lastArrayMarker = "";
+  if (Array.isArray(last)) {
+    const lastSignature = getPrimitiveArraySignature(last);
+    lastArrayMarker = lastSignature === null ? `a:${last.length}` : lastSignature;
+  }
+
+  return `${length}:${firstType}:${firstArrayMarker}:${lastType}:${lastArrayMarker}`;
+}
+
+function getObjectShapeKey(value: Record<string, any>): string {
+  const keys = Object.keys(value).sort();
+  return `${keys.length}:${keys.join("\u0001")}`;
+}
+
+function getPrimitiveArraySignature(value: any[]): string | null {
+  const length = value.length;
+
+  if (length === 0) {
+    return "a:0";
+  }
+
+  if (!isUniquePrimitive(value[0]) || !isUniquePrimitive(value[length - 1])) {
+    return null;
+  }
+
+  let signature = `a:${length}:`;
+
+  for (let i = 0; i < length; i++) {
+    const item = value[i];
+
+    if (item === null) {
+      signature += "l;";
+      continue;
+    }
+
+    if (typeof item === "string") {
+      signature += `s${item.length}:${item};`;
+      continue;
+    }
+
+    if (typeof item === "number") {
+      if (Number.isNaN(item)) {
+        signature += "n:NaN;";
+        continue;
+      }
+
+      if (Object.is(item, -0)) {
+        signature += "n:-0;";
+        continue;
+      }
+
+      signature += `n:${item};`;
+      continue;
+    }
+
+    if (typeof item === "boolean") {
+      signature += item ? "b:1;" : "b:0;";
+      continue;
+    }
+
+    return null;
+  }
+
+  return signature;
+}
 
 export const ArrayKeywords: Record<string, KeywordFunction> = {
   // lib/keywords/array-keywords.ts
@@ -112,20 +203,36 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
   },
 
   additionalItems(schema, data, defineError) {
-    if (!schema.items || isObject(schema.items)) {
+    if (!Array.isArray(data) || !Array.isArray(schema.items)) {
+      return;
+    }
+
+    let tupleLength = (schema as any)._tupleItemsLength as number | undefined;
+    if (tupleLength === undefined) {
+      tupleLength = schema.items.length;
+      Object.defineProperty(schema, "_tupleItemsLength", {
+        value: tupleLength,
+        enumerable: false,
+        configurable: false,
+        writable: false
+      });
+    }
+
+    if (data.length <= tupleLength) {
       return;
     }
 
     if (schema.additionalItems === false) {
-      if (data.length > schema.items.length) {
-        return defineError("Array is too long", { data });
-      }
-      return;
+      return defineError("Array is too long", { data });
     }
 
-    if (isObject(schema.additionalItems)) {
+    if (
+      schema.additionalItems &&
+      typeof schema.additionalItems === "object" &&
+      !Array.isArray(schema.additionalItems)
+    ) {
       if (isCompiledSchema(schema.additionalItems)) {
-        for (let i = schema.items.length; i < data.length; i++) {
+        for (let i = tupleLength; i < data.length; i++) {
           const error = schema.additionalItems.$validate(data[i]);
           if (error) {
             return defineError("Array item is invalid", {
@@ -154,20 +261,50 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
       return;
     }
 
+    if (len <= 8) {
+      for (let i = 0; i < len; i++) {
+        const left = data[i];
+
+        for (let j = i + 1; j < len; j++) {
+          const right = data[j];
+
+          if (left === right) {
+            return defineError("Array items are not unique", { data: right });
+          }
+
+          if (
+            typeof left === "number" &&
+            typeof right === "number" &&
+            Number.isNaN(left) &&
+            Number.isNaN(right)
+          ) {
+            return defineError("Array items are not unique", { data: right });
+          }
+
+          if (
+            left &&
+            right &&
+            typeof left === "object" &&
+            typeof right === "object" &&
+            !hasChanged(left, right)
+          ) {
+            return defineError("Array items are not unique", { data: right });
+          }
+        }
+      }
+
+      return;
+    }
+
     const primitiveSeen = new Set<any>();
-    const seenArrayItems: any[] = [];
-    const seenObjectItems: any[] = [];
+    let primitiveArraySignatures: Set<string> | undefined;
+    let arrayBuckets: Map<string, any[]> | undefined;
+    let objectBuckets: Map<string, any[]> | undefined;
 
     for (let i = 0; i < len; i++) {
       const item = data[i];
-      const type = typeof item;
 
-      if (
-        item === null ||
-        type === "string" ||
-        type === "number" ||
-        type === "boolean"
-      ) {
+      if (isUniquePrimitive(item)) {
         if (primitiveSeen.has(item)) {
           return defineError("Array items are not unique", { data: item });
         }
@@ -175,8 +312,36 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
         continue;
       }
 
-      if (item && typeof item === "object") {
-        const candidates = Array.isArray(item) ? seenArrayItems : seenObjectItems;
+      if (!item || typeof item !== "object") {
+        continue;
+      }
+
+      if (Array.isArray(item)) {
+        const signature = getPrimitiveArraySignature(item);
+        if (signature !== null) {
+          if (!primitiveArraySignatures) {
+            primitiveArraySignatures = new Set<string>();
+          }
+
+          if (primitiveArraySignatures.has(signature)) {
+            return defineError("Array items are not unique", { data: item });
+          }
+
+          primitiveArraySignatures.add(signature);
+          continue;
+        }
+
+        if (!arrayBuckets) {
+          arrayBuckets = new Map<string, any[]>();
+        }
+
+        const bucketKey = getArrayBucketKey(item);
+        let candidates = arrayBuckets.get(bucketKey);
+
+        if (!candidates) {
+          candidates = [];
+          arrayBuckets.set(bucketKey, candidates);
+        }
 
         for (let j = 0; j < candidates.length; j++) {
           if (!hasChanged(candidates[j], item)) {
@@ -185,7 +350,28 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
         }
 
         candidates.push(item);
+        continue;
       }
+
+      if (!objectBuckets) {
+        objectBuckets = new Map<string, any[]>();
+      }
+
+      const bucketKey = getObjectShapeKey(item);
+      let candidates = objectBuckets.get(bucketKey);
+
+      if (!candidates) {
+        candidates = [];
+        objectBuckets.set(bucketKey, candidates);
+      }
+
+      for (let j = 0; j < candidates.length; j++) {
+        if (!hasChanged(candidates[j], item)) {
+          return defineError("Array items are not unique", { data: item });
+        }
+      }
+
+      candidates.push(item);
     }
   },
 

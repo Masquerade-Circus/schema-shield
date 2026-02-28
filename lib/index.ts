@@ -11,7 +11,6 @@ import { Formats } from "./formats";
 import { Types } from "./types";
 import { keywords } from "./keywords";
 import { deepCloneUnfreeze } from "./utils/deep-freeze";
-import { isObject } from "./utils/validators";
 
 export { ValidationError } from "./utils/main-utils";
 export { deepCloneUnfreeze as deepClone } from "./utils/deep-freeze";
@@ -142,17 +141,35 @@ export class SchemaShield {
     this.idRegistry.clear();
     const compiledSchema = this.compileSchema(schema);
     this.rootSchema = compiledSchema;
-    this.linkReferences(compiledSchema);
+    if ((compiledSchema as any)._hasRef === true) {
+      this.linkReferences(compiledSchema);
+    }
 
     if (!compiledSchema.$validate) {
-      if (this.isSchemaLike(schema) === false) {
-        throw new ValidationError("Invalid schema");
-      }
+      if (schema === false) {
+        const defineError = getDefinedErrorFunctionForKey(
+          "oneOf",
+          compiledSchema,
+          this.failFast
+        );
 
-      compiledSchema.$validate = getNamedFunction<ValidateFunction>(
-        "Validate_Any",
-        () => {}
-      );
+        compiledSchema.$validate = getNamedFunction<ValidateFunction>(
+          "Validate_False",
+          (data) => defineError("Value is not valid", { data })
+        );
+      } else if (schema === true) {
+        compiledSchema.$validate = getNamedFunction<ValidateFunction>(
+          "Validate_Any",
+          () => {}
+        );
+      } else if (this.isSchemaLike(schema) === false) {
+        throw new ValidationError("Invalid schema");
+      } else {
+        compiledSchema.$validate = getNamedFunction<ValidateFunction>(
+          "Validate_Any",
+          () => {}
+        );
+      }
     }
 
     const validate: Validator = (data: any) => {
@@ -172,8 +189,257 @@ export class SchemaShield {
     return validate;
   }
 
+  private isPlainObject(value: any): value is Record<string, any> {
+    return !!value && typeof value === "object" && !Array.isArray(value);
+  }
+
+  private isTrivialAlwaysValidSubschema(value: any): boolean {
+    return (
+      value === true ||
+      (this.isPlainObject(value) && Object.keys(value).length === 0)
+    );
+  }
+
+  private shallowArrayEquals(a: any[], b: any[]): boolean {
+    if (a === b) {
+      return true;
+    }
+
+    if (a.length !== b.length) {
+      return false;
+    }
+
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] !== b[i]) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private flattenAssociativeBranches(
+    key: "allOf" | "anyOf",
+    branches: any[]
+  ): any[] {
+    const out: any[] = [];
+
+    for (let i = 0; i < branches.length; i++) {
+      const item = branches[i];
+      if (
+        this.isPlainObject(item) &&
+        Object.keys(item).length === 1 &&
+        Array.isArray(item[key])
+      ) {
+        const nested = this.flattenAssociativeBranches(key, item[key]);
+        for (let j = 0; j < nested.length; j++) {
+          out.push(nested[j]);
+        }
+        continue;
+      }
+      out.push(item);
+    }
+
+    return out;
+  }
+
+  private flattenSingleWrapperOneOf(branches: any[]): any[] {
+    let current = branches;
+
+    while (current.length === 1) {
+      const item = current[0];
+      if (
+        this.isPlainObject(item) &&
+        Object.keys(item).length === 1 &&
+        Array.isArray(item.oneOf)
+      ) {
+        current = item.oneOf;
+        continue;
+      }
+      break;
+    }
+
+    return current;
+  }
+
+  private normalizeSchemaForCompile(schema: Record<string, any>): Record<string, any> {
+    let normalized = schema;
+    const schemaKeys = Object.keys(schema);
+    const hasOnlyKey = (key: string) =>
+      schemaKeys.length === 1 && schemaKeys[0] === key;
+
+    const setNormalized = (key: string, value: any) => {
+      if (normalized === schema) {
+        normalized = { ...schema };
+      }
+      normalized[key] = value;
+    };
+
+    if (Array.isArray(schema.allOf)) {
+      const flattenedAllOf = this.flattenAssociativeBranches(
+        "allOf",
+        schema.allOf
+      ).filter(
+        (item) =>
+          !(
+            this.isPlainObject(item) && Object.keys(item).length === 0
+          )
+      );
+
+      if (
+        hasOnlyKey("allOf") &&
+        flattenedAllOf.length === 1 &&
+        this.isPlainObject(flattenedAllOf[0])
+      ) {
+        return flattenedAllOf[0];
+      }
+
+      if (!this.shallowArrayEquals(flattenedAllOf, schema.allOf)) {
+        setNormalized("allOf", flattenedAllOf);
+      }
+    }
+
+    if (Array.isArray(schema.anyOf)) {
+      const flattenedAnyOf = this.flattenAssociativeBranches(
+        "anyOf",
+        schema.anyOf
+      );
+
+      if (
+        hasOnlyKey("anyOf") &&
+        flattenedAnyOf.length === 1 &&
+        this.isPlainObject(flattenedAnyOf[0])
+      ) {
+        return flattenedAnyOf[0];
+      }
+
+      if (!this.shallowArrayEquals(flattenedAnyOf, schema.anyOf)) {
+        setNormalized("anyOf", flattenedAnyOf);
+      }
+    }
+
+    if (Array.isArray(schema.oneOf)) {
+      const flattenedOneOf = this.flattenSingleWrapperOneOf(schema.oneOf);
+
+      if (
+        hasOnlyKey("oneOf") &&
+        flattenedOneOf.length === 1 &&
+        this.isPlainObject(flattenedOneOf[0])
+      ) {
+        return flattenedOneOf[0];
+      }
+
+      if (!this.shallowArrayEquals(flattenedOneOf, schema.oneOf)) {
+        setNormalized("oneOf", flattenedOneOf);
+      }
+    }
+
+    return normalized;
+  }
+
+  private markSchemaHasRef(schema: CompiledSchema) {
+    if ((schema as any)._hasRef === true) {
+      return;
+    }
+
+    Object.defineProperty(schema, "_hasRef", {
+      value: true,
+      enumerable: false,
+      configurable: false,
+      writable: false
+    });
+  }
+
+  private shouldSkipKeyword(schema: Record<string, any>, key: string): boolean {
+    const value = schema[key];
+
+    switch (key) {
+      case "required":
+        return Array.isArray(value) && value.length === 0;
+      case "uniqueItems":
+        return value === false;
+      case "properties":
+      case "patternProperties":
+      case "dependencies":
+        return (
+          this.isPlainObject(value) &&
+          Object.keys(value).length === 0
+        );
+      case "propertyNames":
+      case "items":
+        return value === true;
+      case "additionalProperties":
+        if (value === true) {
+          return true;
+        }
+
+        return (
+          value === false &&
+          this.isPlainObject(schema.patternProperties) &&
+          Object.keys(schema.patternProperties).length > 0
+        );
+      case "additionalItems":
+        return value === true || !Array.isArray(schema.items);
+      case "allOf": {
+        if (!Array.isArray(value)) {
+          return false;
+        }
+
+        if (value.length === 0) {
+          return true;
+        }
+
+        for (let i = 0; i < value.length; i++) {
+          if (this.isTrivialAlwaysValidSubschema(value[i])) {
+            continue;
+          }
+
+          return false;
+        }
+
+        return true;
+      }
+      case "anyOf": {
+        if (!Array.isArray(value)) {
+          return false;
+        }
+
+        for (let i = 0; i < value.length; i++) {
+          if (this.isTrivialAlwaysValidSubschema(value[i])) {
+            return true;
+          }
+        }
+
+        return false;
+      }
+      default:
+        return false;
+    }
+  }
+
+  private hasRequiredDefaults(schema: Record<string, any>): boolean {
+    const properties = schema.properties;
+    if (!this.isPlainObject(properties)) {
+      return false;
+    }
+
+    const keys = Object.keys(properties);
+    for (let i = 0; i < keys.length; i++) {
+      const subSchema = properties[keys[i]];
+      if (this.isPlainObject(subSchema) && "default" in subSchema) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private isDefaultTypeValidator(type: string, validator: TypeFunction): boolean {
+    return (Types as Record<string, TypeFunction | false>)[type] === validator;
+  }
+
   private compileSchema(schema: Partial<CompiledSchema> | any): CompiledSchema {
-    if (!isObject(schema)) {
+    if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
       if (schema === true) {
         schema = { anyOf: [{}] }; // Always valid
       } else if (schema === false) {
@@ -183,15 +449,20 @@ export class SchemaShield {
       }
     }
 
+    schema = this.normalizeSchemaForCompile(schema);
+
     const compiledSchema: CompiledSchema = deepCloneUnfreeze(
       schema
     ) as CompiledSchema;
+
+    let schemaHasRef = false;
 
     if (typeof schema.$id === "string") {
       this.idRegistry.set(schema.$id, compiledSchema);
     }
 
     if ("$ref" in schema) {
+      schemaHasRef = true;
       const refValidator = this.getKeyword("$ref");
       if (refValidator) {
         const defineError = getDefinedErrorFunctionForKey(
@@ -211,6 +482,8 @@ export class SchemaShield {
             )
         );
       }
+
+      this.markSchemaHasRef(compiledSchema);
       return compiledSchema;
     }
 
@@ -229,12 +502,19 @@ export class SchemaShield {
 
       const typeFunctions: TypeFunction[] = [];
       const typeNames: string[] = [];
+      const defaultTypeNames: string[] = [];
+      let allTypesDefault = true;
 
       for (const type of types) {
         const validator = this.getType(type);
         if (validator) {
           typeFunctions.push(validator);
           typeNames.push(validator.name);
+          if (this.isDefaultTypeValidator(type, validator)) {
+            defaultTypeNames.push(type);
+          } else {
+            allTypesDefault = false;
+          }
         }
       }
 
@@ -249,7 +529,134 @@ export class SchemaShield {
       let combinedTypeValidator: ValidateFunction;
       let typeMethodName = "";
 
-      if (typeFunctions.length === 1) {
+      if (typeFunctions.length === 1 && allTypesDefault) {
+        const singleTypeName = defaultTypeNames[0];
+        typeMethodName = singleTypeName;
+
+        switch (singleTypeName) {
+          case "object":
+            combinedTypeValidator = (data) => {
+              if (data === null || typeof data !== "object" || Array.isArray(data)) {
+                return defineTypeError("Invalid type", { data });
+              }
+            };
+            break;
+          case "array":
+            combinedTypeValidator = (data) => {
+              if (!Array.isArray(data)) {
+                return defineTypeError("Invalid type", { data });
+              }
+            };
+            break;
+          case "string":
+            combinedTypeValidator = (data) => {
+              if (typeof data !== "string") {
+                return defineTypeError("Invalid type", { data });
+              }
+            };
+            break;
+          case "number":
+            combinedTypeValidator = (data) => {
+              if (typeof data !== "number") {
+                return defineTypeError("Invalid type", { data });
+              }
+            };
+            break;
+          case "integer":
+            combinedTypeValidator = (data) => {
+              if (typeof data !== "number" || !Number.isInteger(data)) {
+                return defineTypeError("Invalid type", { data });
+              }
+            };
+            break;
+          case "boolean":
+            combinedTypeValidator = (data) => {
+              if (typeof data !== "boolean") {
+                return defineTypeError("Invalid type", { data });
+              }
+            };
+            break;
+          case "null":
+            combinedTypeValidator = (data) => {
+              if (data !== null) {
+                return defineTypeError("Invalid type", { data });
+              }
+            };
+            break;
+          default: {
+            const singleTypeFn = typeFunctions[0];
+            combinedTypeValidator = (data) => {
+              if (!singleTypeFn(data)) {
+                return defineTypeError("Invalid type", { data });
+              }
+            };
+          }
+        }
+      } else if (typeFunctions.length > 1 && allTypesDefault) {
+        typeMethodName = defaultTypeNames.join("_OR_");
+
+        const allowsObject = defaultTypeNames.includes("object");
+        const allowsArray = defaultTypeNames.includes("array");
+        const allowsString = defaultTypeNames.includes("string");
+        const allowsNumber = defaultTypeNames.includes("number");
+        const allowsInteger = defaultTypeNames.includes("integer");
+        const allowsBoolean = defaultTypeNames.includes("boolean");
+        const allowsNull = defaultTypeNames.includes("null");
+
+        combinedTypeValidator = (data) => {
+          const dataType = typeof data;
+
+          if (dataType === "number") {
+            if (allowsNumber || (allowsInteger && Number.isInteger(data))) {
+              return;
+            }
+
+            return defineTypeError("Invalid type", { data });
+          }
+
+          if (dataType === "string") {
+            if (allowsString) {
+              return;
+            }
+
+            return defineTypeError("Invalid type", { data });
+          }
+
+          if (dataType === "boolean") {
+            if (allowsBoolean) {
+              return;
+            }
+
+            return defineTypeError("Invalid type", { data });
+          }
+
+          if (dataType === "object") {
+            if (data === null) {
+              if (allowsNull) {
+                return;
+              }
+
+              return defineTypeError("Invalid type", { data });
+            }
+
+            if (Array.isArray(data)) {
+              if (allowsArray) {
+                return;
+              }
+
+              return defineTypeError("Invalid type", { data });
+            }
+
+            if (allowsObject) {
+              return;
+            }
+
+            return defineTypeError("Invalid type", { data });
+          }
+
+          return defineTypeError("Invalid type", { data });
+        };
+      } else if (typeFunctions.length === 1) {
         typeMethodName = typeNames[0];
         const singleTypeFn = typeFunctions[0];
         combinedTypeValidator = (data) => {
@@ -281,33 +688,37 @@ export class SchemaShield {
     // In here we create an array of keys putting the require keyword last
     // This is to ensure required properties are checked after defaults are applied
     const keyOrder = required
-      ? [...Object.keys(otherKeys), "required"]
+      ? this.hasRequiredDefaults(schema)
+        ? [...Object.keys(otherKeys), "required"]
+        : ["required", ...Object.keys(otherKeys)]
       : Object.keys(otherKeys);
+
     for (const key of keyOrder) {
       const keywordFn = this.getKeyword(key);
 
-      if (keywordFn) {
-        const defineError = getDefinedErrorFunctionForKey(
-          key,
-          schema[key],
-          this.failFast
-        );
-        const fnName = keywordFn.name || key;
-
-        validators.push({
-          name: fnName,
-          validate: getNamedFunction<ValidateFunction>(fnName, (data) =>
-            (keywordFn as KeywordFunction)(
-              compiledSchema,
-              data,
-              defineError,
-              this
-            )
-          )
-        });
-
-        activeNames.push(fnName);
+      if (!keywordFn) {
+        continue;
       }
+
+      if (this.shouldSkipKeyword(schema, key)) {
+        continue;
+      }
+
+      const defineError = getDefinedErrorFunctionForKey(
+        key,
+        schema[key],
+        this.failFast
+      );
+      const fnName = keywordFn.name || key;
+
+      validators.push({
+        name: fnName,
+        validate: getNamedFunction<ValidateFunction>(fnName, (data) =>
+          (keywordFn as KeywordFunction)(compiledSchema, data, defineError, this)
+        )
+      });
+
+      activeNames.push(fnName);
     }
 
     const literalKeywords = ["enum", "const", "default", "examples"];
@@ -315,27 +726,52 @@ export class SchemaShield {
       if (literalKeywords.includes(key)) {
         continue;
       }
-      if (isObject(schema[key])) {
+
+      if (
+        schema[key] &&
+        typeof schema[key] === "object" &&
+        !Array.isArray(schema[key])
+      ) {
         if (key === "properties") {
           for (const subKey of Object.keys(schema[key])) {
-            compiledSchema[key][subKey] = this.compileSchema(
+            const compiledSubSchema = this.compileSchema(
               schema[key][subKey]
             );
+
+            if ((compiledSubSchema as any)._hasRef === true) {
+              schemaHasRef = true;
+            }
+
+            compiledSchema[key][subKey] = compiledSubSchema;
           }
           continue;
         }
-        compiledSchema[key] = this.compileSchema(schema[key]);
+        const compiledSubSchema = this.compileSchema(schema[key]);
+        if ((compiledSubSchema as any)._hasRef === true) {
+          schemaHasRef = true;
+        }
+
+        compiledSchema[key] = compiledSubSchema;
         continue;
       }
 
       if (Array.isArray(schema[key])) {
         for (let i = 0; i < schema[key].length; i++) {
           if (this.isSchemaLike(schema[key][i])) {
-            compiledSchema[key][i] = this.compileSchema(schema[key][i]);
+            const compiledSubSchema = this.compileSchema(schema[key][i]);
+            if ((compiledSubSchema as any)._hasRef === true) {
+              schemaHasRef = true;
+            }
+
+            compiledSchema[key][i] = compiledSubSchema;
           }
         }
         continue;
       }
+    }
+
+    if (schemaHasRef) {
+      this.markSchemaHasRef(compiledSchema);
     }
 
     if (validators.length === 0) {
@@ -369,7 +805,11 @@ export class SchemaShield {
   }
 
   isSchemaLike(subSchema: any): boolean {
-    if (isObject(subSchema)) {
+    if (
+      subSchema &&
+      typeof subSchema === "object" &&
+      !Array.isArray(subSchema)
+    ) {
       if ("type" in subSchema) {
         return true;
       }

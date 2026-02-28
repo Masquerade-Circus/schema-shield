@@ -48,6 +48,16 @@ export declare class SchemaShield {
     getSchemaRef(path: string): CompiledSchema | undefined;
     getSchemaById(id: string): CompiledSchema | undefined;
     compile(schema: any): Validator;
+    private isPlainObject;
+    private isTrivialAlwaysValidSubschema;
+    private shallowArrayEquals;
+    private flattenAssociativeBranches;
+    private flattenSingleWrapperOneOf;
+    private normalizeSchemaForCompile;
+    private markSchemaHasRef;
+    private shouldSkipKeyword;
+    private hasRequiredDefaults;
+    private isDefaultTypeValidator;
     private compileSchema;
     isSchemaLike(subSchema: any): boolean;
     private linkReferences;

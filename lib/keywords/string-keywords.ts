@@ -1,4 +1,7 @@
 import { FormatFunction, KeywordFunction } from "../index";
+import { compilePatternMatcher } from "../utils/pattern-matcher";
+
+const PATTERN_MATCH_CACHE_LIMIT = 512;
 
 export const StringKeywords: Record<string, KeywordFunction> = {
   minLength(schema, data, defineError) {
@@ -22,12 +25,24 @@ export const StringKeywords: Record<string, KeywordFunction> = {
       return;
     }
 
-    let patternRegexp = (schema as any)._patternRegexp as RegExp | undefined;
-    if (!patternRegexp) {
+    let patternMatch = (schema as any)._patternMatch as
+      | ((value: string) => boolean)
+      | undefined;
+
+    let patternMatchCache = (schema as any)._patternMatchCache as
+      | Map<string, boolean>
+      | undefined;
+
+    if (!patternMatch) {
       try {
-        patternRegexp = new RegExp(schema.pattern, "u");
-        Object.defineProperty(schema, "_patternRegexp", {
-          value: patternRegexp,
+        const compiled = compilePatternMatcher(schema.pattern);
+        patternMatch =
+          compiled instanceof RegExp
+            ? (value: string) => compiled.test(value)
+            : compiled;
+
+        Object.defineProperty(schema, "_patternMatch", {
+          value: patternMatch,
           enumerable: false,
           configurable: false,
           writable: false
@@ -40,7 +55,28 @@ export const StringKeywords: Record<string, KeywordFunction> = {
       }
     }
 
-    if (patternRegexp.test(data)) {
+    if (!patternMatchCache) {
+      patternMatchCache = new Map<string, boolean>();
+      Object.defineProperty(schema, "_patternMatchCache", {
+        value: patternMatchCache,
+        enumerable: false,
+        configurable: false,
+        writable: false
+      });
+    } else if (patternMatchCache.has(data)) {
+      if (patternMatchCache.get(data)) {
+        return;
+      }
+
+      return defineError("Value does not match the pattern", { data });
+    }
+
+    const isMatch = patternMatch(data);
+    if (patternMatchCache.size < PATTERN_MATCH_CACHE_LIMIT) {
+      patternMatchCache.set(data, isMatch);
+    }
+
+    if (isMatch) {
       return;
     }
 

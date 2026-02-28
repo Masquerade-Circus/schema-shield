@@ -2,7 +2,53 @@ import { isCompiledSchema } from "../utils/main-utils";
 
 import { KeywordFunction } from "../index";
 import { hasChanged } from "../utils/has-changed";
-import { isObject } from "../utils/validators";
+
+type BranchEntry =
+  | { kind: "validate"; validate: (data: any) => any }
+  | { kind: "alwaysValid" }
+  | { kind: "alwaysInvalid" }
+  | { kind: "literal"; value: any };
+
+function toBranchEntry(item: any): BranchEntry {
+  if (item && typeof item === "object" && !Array.isArray(item)) {
+    if ("$validate" in item && typeof item.$validate === "function") {
+      return { kind: "validate", validate: item.$validate };
+    }
+
+    return { kind: "alwaysValid" };
+  }
+
+  if (typeof item === "boolean") {
+    return { kind: item ? "alwaysValid" : "alwaysInvalid" };
+  }
+
+  return { kind: "literal", value: item };
+}
+
+function getBranchEntries(schema: any, key: "allOf" | "anyOf" | "oneOf") {
+  const cacheKey = `_${key}BranchEntries`;
+  let entries = schema[cacheKey] as BranchEntry[] | undefined;
+
+  if (entries) {
+    return entries;
+  }
+
+  const source = schema[key] || [];
+  entries = [];
+
+  for (let i = 0; i < source.length; i++) {
+    entries.push(toBranchEntry(source[i]));
+  }
+
+  Object.defineProperty(schema, cacheKey, {
+    value: entries,
+    enumerable: false,
+    configurable: false,
+    writable: false
+  });
+
+  return entries;
+}
 
 export const OtherKeywords: Record<string, KeywordFunction> = {
   enum(schema, data, defineError) {
@@ -54,25 +100,54 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
   },
 
   allOf(schema, data, defineError) {
-    for (let i = 0; i < schema.allOf.length; i++) {
-      if (isObject(schema.allOf[i])) {
-        if ("$validate" in schema.allOf[i]) {
-          const error = schema.allOf[i].$validate(data);
-          if (error) {
-            return defineError("Value is not valid", { cause: error, data });
-          }
+    const branches = getBranchEntries(schema, "allOf");
+
+    if (branches.length === 1) {
+      const onlyBranch = branches[0];
+
+      if (onlyBranch.kind === "validate") {
+        const error = onlyBranch.validate(data);
+        if (error) {
+          return defineError("Value is not valid", { cause: error, data });
+        }
+        return;
+      }
+
+      if (onlyBranch.kind === "alwaysValid") {
+        return;
+      }
+
+      if (onlyBranch.kind === "alwaysInvalid") {
+        return defineError("Value is not valid", { data });
+      }
+
+      if (data !== onlyBranch.value) {
+        return defineError("Value is not valid", { data });
+      }
+
+      return;
+    }
+
+    for (let i = 0; i < branches.length; i++) {
+      const branch = branches[i];
+
+      if (branch.kind === "validate") {
+        const error = branch.validate(data);
+        if (error) {
+          return defineError("Value is not valid", { cause: error, data });
         }
         continue;
       }
 
-      if (typeof schema.allOf[i] === "boolean") {
-        if (Boolean(data) !== schema.allOf[i]) {
-          return defineError("Value is not valid", { data });
-        }
+      if (branch.kind === "alwaysValid") {
         continue;
       }
 
-      if (data !== schema.allOf[i]) {
+      if (branch.kind === "alwaysInvalid") {
+        return defineError("Value is not valid", { data });
+      }
+
+      if (data !== branch.value) {
         return defineError("Value is not valid", { data });
       }
     }
@@ -81,26 +156,55 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
   },
 
   anyOf(schema, data, defineError) {
-    for (let i = 0; i < schema.anyOf.length; i++) {
-      if (isObject(schema.anyOf[i])) {
-        if ("$validate" in schema.anyOf[i]) {
-          const error = schema.anyOf[i].$validate(data);
-          if (!error) {
-            return;
-          }
-          continue;
-        }
-        return;
-      } else {
-        if (typeof schema.anyOf[i] === "boolean") {
-          if (Boolean(data) === schema.anyOf[i]) {
-            return;
-          }
-        }
+    const branches = getBranchEntries(schema, "anyOf");
 
-        if (data === schema.anyOf[i]) {
+    if (branches.length === 1) {
+      const onlyBranch = branches[0];
+
+      if (onlyBranch.kind === "validate") {
+        const error = onlyBranch.validate(data);
+        if (!error) {
           return;
         }
+        return defineError("Value is not valid", { data });
+      }
+
+      if (onlyBranch.kind === "alwaysValid") {
+        return;
+      }
+
+      if (onlyBranch.kind === "alwaysInvalid") {
+        return defineError("Value is not valid", { data });
+      }
+
+      if (data === onlyBranch.value) {
+        return;
+      }
+
+      return defineError("Value is not valid", { data });
+    }
+
+    for (let i = 0; i < branches.length; i++) {
+      const branch = branches[i];
+
+      if (branch.kind === "validate") {
+        const error = branch.validate(data);
+        if (!error) {
+          return;
+        }
+        continue;
+      }
+
+      if (branch.kind === "alwaysValid") {
+        return;
+      }
+
+      if (branch.kind === "alwaysInvalid") {
+        continue;
+      }
+
+      if (data === branch.value) {
+        return;
       }
     }
 
@@ -108,41 +212,51 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
   },
 
   oneOf(schema, data, defineError) {
-    const list = schema.oneOf;
+    const branches = getBranchEntries(schema, "oneOf");
+
+    if (branches.length === 1) {
+      const onlyBranch = branches[0];
+
+      if (onlyBranch.kind === "validate") {
+        const error = onlyBranch.validate(data);
+        if (!error) {
+          return;
+        }
+        return defineError("Value is not valid", { data });
+      }
+
+      if (onlyBranch.kind === "alwaysValid") {
+        return;
+      }
+
+      if (onlyBranch.kind === "alwaysInvalid") {
+        return defineError("Value is not valid", { data });
+      }
+
+      if (data === onlyBranch.value) {
+        return;
+      }
+
+      return defineError("Value is not valid", { data });
+    }
+
     let validCount = 0;
 
-    for (let i = 0; i < list.length; i++) {
-      const sub = list[i];
+    for (let i = 0; i < branches.length; i++) {
+      const branch = branches[i];
+      let isValid = false;
 
-      if (isObject(sub)) {
-        if ("$validate" in sub) {
-          const error = (sub as any).$validate(data);
-          if (!error) {
-            validCount++;
-            if (validCount > 1) {
-              return defineError("Value is not valid", { data });
-            }
-          }
-          continue;
-        }
-        validCount++;
-        if (validCount > 1) {
-          return defineError("Value is not valid", { data });
-        }
-        continue;
+      if (branch.kind === "validate") {
+        isValid = !branch.validate(data);
+      } else if (branch.kind === "alwaysValid") {
+        isValid = true;
+      } else if (branch.kind === "alwaysInvalid") {
+        isValid = false;
+      } else {
+        isValid = data === branch.value;
       }
 
-      if (typeof sub === "boolean") {
-        if (Boolean(data) === sub) {
-          validCount++;
-          if (validCount > 1) {
-            return defineError("Value is not valid", { data });
-          }
-        }
-        continue;
-      }
-
-      if (data === sub) {
+      if (isValid) {
         validCount++;
         if (validCount > 1) {
           return defineError("Value is not valid", { data });
@@ -163,8 +277,12 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
     }
 
     if (
-      (isObject(data) &&
-        isObject(schema.const) &&
+      (data &&
+        typeof data === "object" &&
+        !Array.isArray(data) &&
+        schema.const &&
+        typeof schema.const === "object" &&
+        !Array.isArray(schema.const) &&
         !hasChanged(data, schema.const)) ||
       (Array.isArray(data) &&
         Array.isArray(schema.const) &&
@@ -216,7 +334,11 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
       return;
     }
 
-    if (isObject(schema.not)) {
+    if (
+      schema.not &&
+      typeof schema.not === "object" &&
+      !Array.isArray(schema.not)
+    ) {
       if ("$validate" in schema.not) {
         const error = (schema.not as any).$validate(data);
         if (!error) {
@@ -232,6 +354,10 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
 
   $ref(schema, data, defineError, instance) {
     if (schema._resolvedRef) {
+      if (schema.$validate !== schema._resolvedRef) {
+        schema.$validate = schema._resolvedRef;
+      }
+
       return schema._resolvedRef(data);
     }
 
@@ -251,6 +377,7 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
     }
 
     schema._resolvedRef = targetSchema.$validate;
+    schema.$validate = schema._resolvedRef;
     return schema._resolvedRef(data);
   }
 };

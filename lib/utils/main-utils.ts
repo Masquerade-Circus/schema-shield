@@ -1,5 +1,4 @@
 import { CompiledSchema } from "../index";
-import { isObject } from "./validators";
 
 interface ErrorTree {
   message: string;
@@ -132,7 +131,12 @@ export function getUTF16Length(str) {
 }
 
 export function isCompiledSchema(subSchema: any): subSchema is CompiledSchema {
-  return isObject(subSchema) && "$validate" in subSchema;
+  return (
+    !!subSchema &&
+    typeof subSchema === "object" &&
+    !Array.isArray(subSchema) &&
+    "$validate" in subSchema
+  );
 }
 
 export function getNamedFunction<T>(name: string, fn: T): T {

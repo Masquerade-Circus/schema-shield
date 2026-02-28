@@ -6,53 +6,409 @@ const UUID_REGEX =
 // ISO 8601 Duration (P3Y6M4DT12H30M5S)
 const DURATION_REGEX =
   /^P(?!$)((\d+Y)?(\d+M)?(\d+W)?(\d+D)?)(T(?=\d)(\d+H)?(\d+M)?(\d+S)?)?$/;
-const DATE_TIME_REGEX =
-  /^(\d{4})-(0[0-9]|1[0-2])-(\d{2})T(0[0-9]|1\d|2[0-3]):([0-5]\d):((?:[0-5]\d|60))(?:\.\d+)?(?:([+-])(0[0-9]|1\d|2[0-3]):([0-5]\d)|Z)?$/i;
 const URI_REGEX = /^[a-zA-Z][a-zA-Z0-9+\-.]*:[^\s]*$/;
 const EMAIL_REGEX =
   /^(?!\.)(?!.*\.$)[a-z0-9!#$%&'*+/=?^_`{|}~-]{1,20}(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]{1,21}){0,2}@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,60}[a-z0-9])?){0,3}$/i;
-const IPV4_REGEX =
-  /^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])$/;
-const IPV6_REGEX = /(?:\s+|:::+|^\w{5,}|\w{5}$|^:{1}\w|\w:{1}$)/;
-const IPV6_SHORT_REGEX = /^[0-9a-fA-F:.]*$/;
-const IPV6_FULL_REGEX = /^(?:(?:[0-9a-fA-F]{1,4}:){7}(?:[0-9a-fA-F]{1,4}|:))$/;
-const IPV6_INVALID_CHAR_REGEX = /(?:[0-9a-fA-F]{5,}|\D[0-9a-fA-F]{3}:)/;
-const IPV6_FAST_FAIL_REGEX =
-  /^(?:(?:(?:[0-9a-fA-F]{1,4}(?::|$)){1,6}))|(?:::(?:[0-9a-fA-F]{1,4})){0,5}$/;
 const HOSTNAME_REGEX =
   /^[a-z0-9][a-z0-9-]{0,62}(?:\.[a-z0-9][a-z0-9-]{0,62})*[a-z0-9]$/i;
 const DATE_REGEX = /^(\d{4})-(\d{2})-(\d{2})$/;
-const JSON_POINTER_REGEX = /^\/(?:[^~]|~0|~1)*$/;
-const RELATIVE_JSON_POINTER_REGEX = /^([0-9]+)(#|\/(?:[^~]|~0|~1)*)?$/;
 const TIME_REGEX =
   /^([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(\.\d+)?(Z|([+-])([01]\d|2[0-3]):([0-5]\d))$/;
 const URI_REFERENCE_REGEX =
   /^(([^:/?#]+):)?(\/\/([^/?#]*))?([^?#]*)(\?([^#]*))?(#((?![^#]*\\)[^#]*))?/i;
-const URI_TEMPLATE_REGEX = /^(?:[^{}]|\{[^}]+\})*$/;
 const IRI_REGEX = /^[a-zA-Z][a-zA-Z0-9+\-.]*:[^\s]*$/;
 const IRI_REFERENCE_REGEX =
   /^(([^:/?#]+):)?(\/\/([^/?#]*))?([^?#]*)(\?([^#]*))?(#((?![^#]*\\)[^#]*))?/i;
 const IDN_EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const IDN_HOSTNAME_REGEX = /^[^\s!@#$%^&*()_+\=\[\]{};':"\\|,<>\/?]+$/;
-const BACK_SLASH_REGEX = /\\/;
 
 const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
-export const Formats: Record<string, FormatFunction | false> = {
-  ["date-time"](data) {
-    const match = data.match(DATE_TIME_REGEX);
-    if (!match) {
+function isDigitCharCode(code: number) {
+  return code >= 48 && code <= 57;
+}
+
+function parseTwoDigits(data: string, index: number) {
+  const first = data.charCodeAt(index) - 48;
+  const second = data.charCodeAt(index + 1) - 48;
+
+  if (first < 0 || first > 9 || second < 0 || second > 9) {
+    return -1;
+  }
+
+  return first * 10 + second;
+}
+
+function parseFourDigits(data: string, index: number) {
+  const a = data.charCodeAt(index) - 48;
+  const b = data.charCodeAt(index + 1) - 48;
+  const c = data.charCodeAt(index + 2) - 48;
+  const d = data.charCodeAt(index + 3) - 48;
+
+  if (
+    a < 0 ||
+    a > 9 ||
+    b < 0 ||
+    b > 9 ||
+    c < 0 ||
+    c > 9 ||
+    d < 0 ||
+    d > 9
+  ) {
+    return -1;
+  }
+
+  return a * 1000 + b * 100 + c * 10 + d;
+}
+
+function isValidIpv4Range(data: string, start: number, end: number) {
+  let segmentCount = 0;
+  let segmentStart = start;
+
+  for (let i = start; i <= end; i++) {
+    if (i !== end && data.charCodeAt(i) !== 46) {
+      continue;
+    }
+
+    const segmentLength = i - segmentStart;
+    if (segmentLength < 1 || segmentLength > 3) {
       return false;
     }
 
-    const [, yearStr, monthStr, dayStr, hourStr, minuteStr, secondStr] = match;
+    if (segmentLength > 1 && data.charCodeAt(segmentStart) === 48) {
+      return false;
+    }
 
-    const year = Number(yearStr);
-    const month = Number(monthStr);
-    const day = Number(dayStr);
-    const hour = Number(hourStr);
-    const minute = Number(minuteStr);
-    const second = Number(secondStr);
+    let value = 0;
+    for (let j = segmentStart; j < i; j++) {
+      const digit = data.charCodeAt(j) - 48;
+      if (digit < 0 || digit > 9) {
+        return false;
+      }
+
+      value = value * 10 + digit;
+    }
+
+    if (value > 255) {
+      return false;
+    }
+
+    segmentCount++;
+    segmentStart = i + 1;
+  }
+
+  return segmentCount === 4;
+}
+
+function isValidIpv4(data: string) {
+  return isValidIpv4Range(data, 0, data.length);
+}
+
+function isHexCharCode(code: number) {
+  return (
+    (code >= 48 && code <= 57) ||
+    (code >= 65 && code <= 70) ||
+    (code >= 97 && code <= 102)
+  );
+}
+
+function isValidIpv6(data: string) {
+  const length = data.length;
+  if (length === 0) {
+    return false;
+  }
+
+  let hasColon = false;
+  let hasDoubleColon = false;
+  let hextetCount = 0;
+  let i = 0;
+
+  while (i < length) {
+    if (data.charCodeAt(i) === 58) {
+      hasColon = true;
+
+      if (i + 1 < length && data.charCodeAt(i + 1) === 58) {
+        if (hasDoubleColon) {
+          return false;
+        }
+
+        hasDoubleColon = true;
+        i += 2;
+
+        if (i === length) {
+          break;
+        }
+
+        continue;
+      }
+
+      return false;
+    }
+
+    const segmentStart = i;
+    let segmentLength = 0;
+
+    while (i < length && isHexCharCode(data.charCodeAt(i))) {
+      segmentLength++;
+      if (segmentLength > 4) {
+        return false;
+      }
+
+      i++;
+    }
+
+    if (segmentLength === 0) {
+      return false;
+    }
+
+    if (i < length && data.charCodeAt(i) === 46) {
+      if (!hasColon) {
+        return false;
+      }
+
+      if (!isValidIpv4Range(data, segmentStart, length)) {
+        return false;
+      }
+
+      if (hasDoubleColon) {
+        return hextetCount < 6;
+      }
+
+      return hextetCount === 6;
+    }
+
+    hextetCount++;
+    if (hextetCount > 8) {
+      return false;
+    }
+
+    if (i === length) {
+      break;
+    }
+
+    if (data.charCodeAt(i) !== 58) {
+      return false;
+    }
+
+    hasColon = true;
+    i++;
+
+    if (i === length) {
+      return false;
+    }
+
+    if (data.charCodeAt(i) === 58) {
+      if (hasDoubleColon) {
+        return false;
+      }
+
+      hasDoubleColon = true;
+      i++;
+
+      if (i === length) {
+        break;
+      }
+    }
+  }
+
+  if (!hasColon) {
+    return false;
+  }
+
+  if (hasDoubleColon) {
+    return hextetCount < 8;
+  }
+
+  return hextetCount === 8;
+}
+
+function isValidJsonPointer(data: string) {
+  if (data === "") {
+    return true;
+  }
+
+  if (data.charCodeAt(0) !== 47) {
+    return false;
+  }
+
+  for (let i = 1; i < data.length; i++) {
+    if (data.charCodeAt(i) !== 126) {
+      continue;
+    }
+
+    const next = data.charCodeAt(i + 1);
+    if (next !== 48 && next !== 49) {
+      return false;
+    }
+
+    i++;
+  }
+
+  return true;
+}
+
+function isValidRelativeJsonPointer(data: string) {
+  if (data.length === 0) {
+    return true;
+  }
+
+  let i = 0;
+  while (i < data.length) {
+    const code = data.charCodeAt(i);
+    if (code < 48 || code > 57) {
+      break;
+    }
+    i++;
+  }
+
+  if (i === 0) {
+    return false;
+  }
+
+  if (i === data.length) {
+    return true;
+  }
+
+  if (data.charCodeAt(i) === 35) {
+    return i + 1 === data.length;
+  }
+
+  if (data.charCodeAt(i) !== 47) {
+    return false;
+  }
+
+  for (i = i + 1; i < data.length; i++) {
+    if (data.charCodeAt(i) !== 126) {
+      continue;
+    }
+
+    const next = data.charCodeAt(i + 1);
+    if (next !== 48 && next !== 49) {
+      return false;
+    }
+
+    i++;
+  }
+
+  return true;
+}
+
+function isValidUriTemplate(data: string) {
+  for (let i = 0; i < data.length; i++) {
+    const code = data.charCodeAt(i);
+
+    if (code === 125) {
+      return false;
+    }
+
+    if (code !== 123) {
+      continue;
+    }
+
+    const closeIndex = data.indexOf("}", i + 1);
+    if (closeIndex === -1 || closeIndex === i + 1) {
+      return false;
+    }
+
+    i = closeIndex;
+  }
+
+  return true;
+}
+
+export const Formats: Record<string, FormatFunction | false> = {
+  ["date-time"](data) {
+    const length = data.length;
+    if (length < 19) {
+      return false;
+    }
+
+    if (
+      data.charCodeAt(4) !== 45 ||
+      data.charCodeAt(7) !== 45 ||
+      data.charCodeAt(13) !== 58 ||
+      data.charCodeAt(16) !== 58
+    ) {
+      return false;
+    }
+
+    const tCode = data.charCodeAt(10);
+    if (tCode !== 84 && tCode !== 116) {
+      return false;
+    }
+
+    const year = parseFourDigits(data, 0);
+    const month = parseTwoDigits(data, 5);
+    const day = parseTwoDigits(data, 8);
+    const hour = parseTwoDigits(data, 11);
+    const minute = parseTwoDigits(data, 14);
+    const second = parseTwoDigits(data, 17);
+
+    if (
+      year < 0 ||
+      month < 0 ||
+      day < 0 ||
+      hour < 0 ||
+      minute < 0 ||
+      second < 0
+    ) {
+      return false;
+    }
+
+    if (hour > 23 || minute > 59 || second > 60) {
+      return false;
+    }
+
+    let cursor = 19;
+    let offsetSign: "+" | "-" | null = null;
+    let offsetHour = 0;
+    let offsetMinute = 0;
+
+    if (cursor < length && data.charCodeAt(cursor) === 46) {
+      cursor++;
+      const fracStart = cursor;
+      while (cursor < length && isDigitCharCode(data.charCodeAt(cursor))) {
+        cursor++;
+      }
+
+      if (cursor === fracStart) {
+        return false;
+      }
+    }
+
+    if (cursor < length) {
+      const tzCode = data.charCodeAt(cursor);
+
+      if (tzCode === 90 || tzCode === 122) {
+        cursor++;
+      } else if (tzCode === 43 || tzCode === 45) {
+        offsetSign = tzCode === 43 ? "+" : "-";
+
+        if (cursor + 6 > length || data.charCodeAt(cursor + 3) !== 58) {
+          return false;
+        }
+
+        offsetHour = parseTwoDigits(data, cursor + 1);
+        offsetMinute = parseTwoDigits(data, cursor + 4);
+
+        if (
+          offsetHour < 0 ||
+          offsetMinute < 0 ||
+          offsetHour > 23 ||
+          offsetMinute > 59
+        ) {
+          return false;
+        }
+
+        cursor += 6;
+      } else {
+        return false;
+      }
+    }
+
+    if (cursor !== length) {
+      return false;
+    }
 
     // Mes 1–12
     if (month < 1 || month > 12) {
@@ -74,9 +430,22 @@ export const Formats: Record<string, FormatFunction | false> = {
       return false;
     }
 
-    // Leap seconds (si quieres seguir permitiendo 60)
-    if (second === 60 && (minute !== 59 || hour !== 23)) {
-      return false;
+    if (second === 60) {
+      let utcTotalMinutes = hour * 60 + minute;
+
+      if (offsetSign) {
+        const offsetTotalMinutes = offsetHour * 60 + offsetMinute;
+        utcTotalMinutes +=
+          offsetSign === "+" ? -offsetTotalMinutes : offsetTotalMinutes;
+        utcTotalMinutes %= 24 * 60;
+        if (utcTotalMinutes < 0) {
+          utcTotalMinutes += 24 * 60;
+        }
+      }
+
+      if (utcTotalMinutes !== 23 * 60 + 59) {
+        return false;
+      }
     }
 
     return true;
@@ -88,54 +457,11 @@ export const Formats: Record<string, FormatFunction | false> = {
     return EMAIL_REGEX.test(data);
   },
   ipv4(data) {
-    // Matches a string formed by 4 numbers between 0 and 255 separated by dots without leading zeros
-    return IPV4_REGEX.test(data);
+    return isValidIpv4(data);
   },
 
-  // ipv6: isMyIpValid({ version: 6 }),
   ipv6(data) {
-    if (data === "::") {
-      return true;
-    }
-
-    if (data.indexOf(":") === -1 || IPV6_REGEX.test(data)) {
-      return false;
-    }
-
-    const hasIpv4 = data.indexOf(".") !== -1;
-    let addressParts = data;
-
-    if (hasIpv4) {
-      addressParts = data.split(":");
-      const ipv4Part = addressParts.pop();
-      if (!IPV4_REGEX.test(ipv4Part)) {
-        return false;
-      }
-    }
-
-    const isShortened = data.indexOf("::") !== -1;
-    const ipv6Part = hasIpv4 ? addressParts.join(":") : data;
-
-    if (isShortened) {
-      if (ipv6Part.split("::").length - 1 > 1) {
-        return false;
-      }
-
-      if (!IPV6_SHORT_REGEX.test(ipv6Part)) {
-        return false;
-      }
-
-      return IPV6_FAST_FAIL_REGEX.test(ipv6Part);
-    }
-
-    const isIpv6Valid = IPV6_FULL_REGEX.test(ipv6Part);
-    const hasInvalidChar = IPV6_INVALID_CHAR_REGEX.test(ipv6Part);
-
-    if (hasIpv4) {
-      return isIpv6Valid || !hasInvalidChar;
-    }
-
-    return isIpv6Valid && !hasInvalidChar;
+    return isValidIpv6(data);
   },
 
   hostname(data) {
@@ -177,24 +503,16 @@ export const Formats: Record<string, FormatFunction | false> = {
     }
   },
   "json-pointer"(data) {
-    if (data === "") {
-      return true;
-    }
-
-    return JSON_POINTER_REGEX.test(data);
+    return isValidJsonPointer(data);
   },
   "relative-json-pointer"(data) {
-    if (data === "") {
-      return true;
-    }
-
-    return RELATIVE_JSON_POINTER_REGEX.test(data);
+    return isValidRelativeJsonPointer(data);
   },
   time(data) {
     return TIME_REGEX.test(data);
   },
   "uri-reference"(data) {
-    if (BACK_SLASH_REGEX.test(data)) {
+    if (data.includes("\\")) {
       return false;
     }
 
@@ -202,7 +520,7 @@ export const Formats: Record<string, FormatFunction | false> = {
   },
 
   "uri-template"(data) {
-    return URI_TEMPLATE_REGEX.test(data);
+    return isValidUriTemplate(data);
   },
 
   duration(data) {
@@ -219,7 +537,7 @@ export const Formats: Record<string, FormatFunction | false> = {
   },
 
   "iri-reference"(data) {
-    if (BACK_SLASH_REGEX.test(data)) {
+    if (data.includes("\\")) {
       return false;
     }
     return IRI_REFERENCE_REGEX.test(data);

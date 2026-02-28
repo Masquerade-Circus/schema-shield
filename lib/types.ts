@@ -1,9 +1,8 @@
 import { TypeFunction } from "./index";
-import { isObject } from "./utils/validators";
 
 export const Types: Record<string, TypeFunction | false> = {
   object(data) {
-    return isObject(data);
+    return data !== null && typeof data === "object" && !Array.isArray(data);
   },
   array(data) {
     return Array.isArray(data);
