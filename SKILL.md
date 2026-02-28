@@ -104,6 +104,89 @@ import localSchema from "./schemas/schema.json";
 
 Treat schemas like code dependencies — version, audit, and bundle.
 
+## Interpreter Architecture
+
+### How SchemaShield Processes Schemas
+
+Unlike JIT compilers that generate code at runtime, SchemaShield uses a flat-loop interpreter:
+
+1. **Compilation**: Schema is compiled into a tree of validator functions at compile-time
+2. **Reference Resolution**: $ref links are resolved once during compilation
+3. **Validation**: Data flows through the validator tree in a flat loop (no recursion)
+
+```javascript
+// This schema gets compiled into a function tree
+const schema = {
+  type: "object",
+  properties: {
+    user: { type: "object", properties: { name: { type: "string" }}}
+  }
+};
+
+// Internally becomes a flat function:
+function validate(data) {
+  if (typeof data !== "object") return error;
+  if (data.user) validate_user(data.user);
+}
+```
+
+### Performance Characteristics
+
+| Schema Type | Performance | Notes |
+|-------------|-------------|-------|
+| Simple (type, properties) | Very fast | ~same as JIT |
+| allOf/anyOf/oneOf | ~70% JIT | Sequential branch evaluation |
+| Deep nesting | Stack-safe | Constant memory, no recursion |
+| Many $refs | Fast | Resolved at compile-time |
+
+### Performance Optimization Tips
+
+```javascript
+// Best: Flat structure
+const fastSchema = {
+  type: "object",
+  properties: {
+    name: { type: "string" },
+    email: { type: "string", format: "email" }
+  }
+};
+
+// Slower: Deeply nested allOf/anyOf
+const slowSchema = {
+  allOf: [
+    { allOf: [{ allOf: [...] }]}
+  ]
+};
+
+// Better: Flatten your schema
+const betterSchema = {
+  type: "object",
+  properties: { /* ... */ }
+};
+```
+
+## Comparison
+
+If your schema uses remote refs:
+
+```javascript
+// Instead of:
+{ "$ref": "https://example.com/schema.json" }
+
+// Do this:
+// 1. Download the schema at build time
+// 2. Bundle it locally
+import localSchema from "./schemas/schema.json";
+
+// 3. Reference it
+{ "$ref": "#/definitions/User" }
+
+// In the same file, define:
+{ "definitions": { "User": { ... } }
+```
+
+Treat schemas like code dependencies — version, audit, and bundle.
+
 ## Comparison
 
 | Feature | SchemaShield | ajv | schemasafe |
@@ -186,28 +269,100 @@ validator({ owner: new User("John", "john@example.com") });
 
 ### Error Handling
 
+SchemaShield provides rich error information — one of its strongest features:
+
 ```javascript
 const shield = new SchemaShield({ failFast: false });
 const validator = shield.compile({
   type: "object",
   properties: {
-    name: { type: "string", minLength: 2 }
+    user: {
+      type: "object",
+      properties: {
+        name: { type: "string", minLength: 2 },
+        email: { type: "string", format: "email" }
+      },
+      required: ["name", "email"]
+    }
   },
-  required: ["name"]
+  required: ["user"]
 });
 
-const result = validator({ name: "J" });
+const result = validator({ user: { name: "J", email: "invalid" } });
+```
 
+#### Get Error Path (JSON Pointers)
+
+```javascript
 if (!result.valid) {
   console.log(result.error.getPath());
-  // { schemaPath: "#/properties/name/minLength", instancePath: "#/name" }
-  
-  console.log(result.error.getCause().message);
-  // "String is too short"
-  
-  console.log(result.error.getTree());
-  // Full error tree with nested causes
+  // { schemaPath: "#/properties/user/properties/email/format", 
+  //   instancePath: "#/user/email" }
 }
+```
+
+#### Get Root Cause
+
+```javascript
+console.log(result.error.getCause().message);
+// "Value does not match the format"
+```
+
+#### Get Full Error Tree
+
+```javascript
+console.log(JSON.stringify(result.error.getTree(), null, 2));
+// {
+//   message: "Property is invalid",
+//   keyword: "properties",
+//   item: "user",
+//   schemaPath: "#/properties/user",
+//   instancePath: "#/user",
+//   cause: {
+//     message: "Property is invalid",
+//     keyword: "properties",
+//     item: "email",
+//     schemaPath: "#/properties/user/properties/email",
+//     instancePath: "#/user/email",
+//     cause: {
+//       message: "Value does not match the format",
+//       keyword: "format",
+//       schemaPath: "#/properties/user/properties/email/format",
+//       instancePath: "#/user/email"
+//     }
+//   }
+// }
+```
+
+#### Multiple Errors with failFast: false
+
+```javascript
+const validator2 = new SchemaShield({ failFast: false }).compile({
+  type: "object",
+  properties: {
+    name: { type: "string", minLength: 2 },
+    age: { type: "number", minimum: 18 }
+  }
+});
+
+// Get all errors by traversing the tree
+function getAllErrors(error, path = []) {
+  const errors = [];
+  if (error.message && error.instancePath) {
+    errors.push({ path: error.instancePath, message: error.message });
+  }
+  if (error.cause) {
+    errors.push(...getAllErrors(error.cause, path));
+  }
+  return errors;
+}
+
+const result2 = validator2({ name: "J", age: 5 });
+console.log(getAllErrors(result2.error));
+// [
+//   { path: "#/name", message: "String is too short" },
+//   { path: "#/age", message: "Value is less than minimum" }
+// ]
 ```
 
 ### Custom Formats
@@ -378,10 +533,11 @@ app.get("/user/:id", (req) => {
 
 ## Limitations (Be Honest)
 
-- **No remote $ref**: Must bundle schemas locally
-- **Draft support**: Only 06 and 07
-- **Unicode length**: minLength/maxLength use UTF-16 code units
-- **Speed**: ~70% of ajv in Node.js (but zero compile overhead)
+- **No remote $ref**: Must bundle schemas locally (security by design)
+- **Draft support**: Only JSON Schema draft-06 and draft-07
+- **Unicode length**: minLength/maxLength use UTF-16 code units, not Unicode codepoints (emoji counts as 2)
+- **Dynamic ID scope**: Limited support for dynamic $id scope resolution in nested sub-schemas
+- **Speed**: ~70% of ajv in Node.js, but zero compile overhead and stack-safe
 
 ## Security Implementation Examples
 

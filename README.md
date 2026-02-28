@@ -238,6 +238,92 @@ SchemaShield is designed to run seamlessly in restrictive environments like **Cl
 - **CSP Compliant:** Works in environments where `eval()` and `new Function()` are banned for security.
 - **Instant Startup:** No compilation overhead, minimizing "cold start" latency in Serverless functions.
 
+### Serverless Example
+
+```javascript
+// Compile at module level - runs once at cold start
+const validateRequest = new SchemaShield().compile({
+  type: "object",
+  properties: {
+    name: { type: "string" },
+    email: { type: "string", format: "email" }
+  },
+  required: ["name", "email"]
+});
+
+// Vercel Edge / Cloudflare Worker handler
+export default function handler(request) {
+  const result = validateRequest(request.body);
+  
+  if (!result.valid) {
+    return new Response(JSON.stringify({ error: result.error.message }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+  
+  return new Response(JSON.stringify(result.data), { status: 200 });
+}
+```
+
+### Sharing Compiled Validators
+
+Compiled validators are safe to share across requests:
+
+```javascript
+// Compile once at startup
+const validateUser = new SchemaShield().compile(userSchema);
+
+// Reuse across requests - no mutable state
+app.get("/user/:id", (req) => {
+  const result = validateUser(req.body);
+  // ...
+});
+```
+
+## Interpreter Architecture
+
+Unlike JIT compilers that generate code at runtime, SchemaShield uses a flat-loop interpreter:
+
+1. **Compilation:** Schema is compiled into a tree of validator functions at compile-time
+2. **Reference Resolution:** $ref links are resolved once during compilation
+3. **Validation:** Data flows through the validator tree in a flat loop (no recursion)
+
+### Performance Characteristics
+
+| Schema Type | Performance | Notes |
+|-------------|-------------|-------|
+| Simple (type, properties) | Very fast | ~same as JIT |
+| allOf/anyOf/oneOf | ~70% JIT | Sequential branch evaluation |
+| Deep nesting | Stack-safe | Constant memory, no recursion |
+| Many $refs | Fast | Resolved at compile-time |
+
+### Performance Optimization Tips
+
+```javascript
+// Best: Flat structure
+const fastSchema = {
+  type: "object",
+  properties: {
+    name: { type: "string" },
+    email: { type: "string", format: "email" }
+  }
+};
+
+// Slower: Deeply nested allOf/anyOf
+const slowSchema = {
+  allOf: [
+    { allOf: [{ allOf: [...] }]}
+  ]
+};
+
+// Better: Flatten your schema
+const betterSchema = {
+  type: "object",
+  properties: { /* ... */ }
+};
+```
+
 ## Features
 
 - Supports draft-06 and draft-07 of the [JSON Schema](https://json-schema.org/) specification.
@@ -278,6 +364,70 @@ schemaShield.addType("date-class", (data) => data instanceof Date);
 // or use your custom classes, functions or references
 class CustomDate extends Date {}
 schemaShield.addType("custom-date-class", (data) => data instanceof CustomDate);
+```
+
+## Security Implementation Examples
+
+### CSP-Compliant Validation
+
+SchemaShield works in strict CSP environments because it uses no code generation:
+
+```javascript
+// No eval(), no new Function() - CSP-safe
+const validator = new SchemaShield().compile({
+  type: "object",
+  properties: {
+    name: { type: "string" }
+  }
+});
+
+// This works in strict CSP policies
+const result = validator({ name: "John" });
+```
+
+### Preventing Prototype Pollution
+
+SchemaShield prevents prototype pollution by design:
+
+```javascript
+const schema = {
+  type: "object",
+  properties: {
+    name: { type: "string" }
+  },
+  additionalProperties: false
+};
+
+const validator = new SchemaShield().compile(schema);
+
+// Malicious input {"__proto__": {"evil": "value"}} will fail
+validator({ "__proto__": { "evil": "value" } });
+// { valid: false, error: ValidationError }
+
+// Only explicitly defined properties are allowed
+validator({ name: "John", age: 30 });
+// { valid: false, error: ValidationError (additionalProperties: false) }
+```
+
+### Immutable Mode
+
+Protect input data from accidental modification:
+
+```javascript
+const shield = new SchemaShield({ immutable: true });
+const validator = shield.compile({
+  type: "object",
+  properties: {
+    name: { type: "string" }
+  }
+});
+
+const input = { name: "John" };
+const result = validator(input);
+
+// Input remains unchanged
+console.log(input);
+// { name: "John" }
 ```
 
 ## Error Handling
