@@ -1,5 +1,12 @@
 
 
+### [1.0.3](https://github.com/Masquerade-Circus/schema-shield/compare/1.0.2...1.0.3) (2026-02-28)
+
+
+### Documentation
+
+* add acknowledgments to other libraries ([d834110](https://github.com/Masquerade-Circus/schema-shield/commit/d834110769a08171a5c508c12489f52a8d221616))
+
 ### [1.0.2](https://github.com/Masquerade-Circus/schema-shield/compare/1.0.1...1.0.2) (2026-02-28)
 
 
