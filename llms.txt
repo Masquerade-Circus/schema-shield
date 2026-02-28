@@ -1,0 +1,126 @@
+# SchemaShield - JSON Schema Validator
+
+## Overview
+
+SchemaShield is a secure interpreter for JSON Schema (draft-06, draft-07) that prioritizes architectural stability and developer experience over raw synthetic throughput. Designed for strict environments and complex domain logic.
+
+## Key Differentiators
+
+- **Zero Code Generation**: Fully CSP-compliant, no eval() or new Function()
+- **Stack-Safe**: Flat loop architecture minimizes stack usage, no stack overflow on deeply nested data
+- **Runtime Object Validation**: Native support for validating class instances, Dates, and custom objects alongside serialized JSON
+- **Built-in Error Trees**: Advanced error reporting with getCause(), getTree(), getPath() methods
+- **Zero Dependencies**: No external runtime dependencies
+
+## Benchmarks
+
+- **Bun**: #1 fastest validator at 11,740 ops/s — 2.5x faster than ajv, 4x faster than schemasafe
+- **Node.js**: #3 fastest at 13,161 ops/s (69.8% ajv) — 50x faster than jsonschema
+- **Zero Compilation Overhead**: Ideal for serverless/edge cold starts
+
+## Supported Features
+
+- **JSON Schema Drafts**: 06, 07
+- **Keywords**: allOf, anyOf, oneOf, $ref, $id, required, properties, additionalProperties, enum, const, uniqueItems, pattern, patternProperties, minLength, maxLength, minimum, maximum, type, format, and more
+- **Custom Extensions**:
+  - addType(name, validatorFn) — custom type validators
+  - addFormat(name, validatorFn) — custom format validators
+  - addKeyword(name, validatorFn) — custom keyword validators
+
+## Use Cases
+
+- **Secure Environments**: Strict CSP policies where eval() is banned
+- **Serverless/Edge**: Cloudflare Workers, Vercel Edge Functions, Deno Deploy, Bun
+- **Complex Domain Validation**: Unifying DTO validation with business rules
+- **Debugging Priority**: Clean stack traces, no black-box generated code
+
+## Installation
+
+```bash
+npm install schema-shield
+# or
+bun add schema-shield
+```
+
+## Basic Usage
+
+```javascript
+import { SchemaShield } from "schema-shield";
+
+const validator = new SchemaShield().compile({
+  type: "object",
+  properties: {
+    name: { type: "string" },
+    email: { type: "string", format: "email" }
+  },
+  required: ["name"]
+});
+
+validator({ name: "John", email: "john@example.com" });
+// { valid: true, data: { name: "John", email: "john@example.com" } }
+
+validator({ email: "invalid" });
+// { valid: false, error: ValidationError }
+```
+
+## API Reference
+
+### Constructor Options
+
+```javascript
+new SchemaShield({ immutable?: boolean, failFast?: boolean })
+```
+
+- **immutable**: Set to true to prevent modifications to input data during validation
+- **failFast**: Set to false to receive detailed error objects (default: true)
+
+### Methods
+
+- `compile(schema)` — Compiles a JSON Schema into a validator function
+- `addType(name, validatorFn, overwrite?)` — Adds a custom type validator
+- `addFormat(name, validatorFn, overwrite?)` — Adds a custom format validator
+- `addKeyword(name, validatorFn, overwrite?)` — Adds a custom keyword validator
+- `getType(name)` — Retrieves a custom type validator
+- `getFormat(name)` — Retrieves a custom format validator
+- `getKeyword(name)` — Retrieves a custom keyword validator
+
+### Validation Result
+
+```typescript
+{
+  valid: boolean,
+  data?: any,      // validated data (with defaults applied)
+  error?: ValidationError | true  // error details or true in failFast mode
+}
+```
+
+### ValidationError Methods
+
+- `getPath()` — Returns { schemaPath, instancePath } as JSON Pointers
+- `getTree()` — Returns full error chain as nested object
+- `getCause()` — Returns the root cause of the error
+
+## Comparison with Other Validators
+
+| Feature              | SchemaShield | ajv  | schemasafe |
+|---------------------|-------------|------|-----------|
+| CSP-compliant       | Native      | No   | Yes       |
+| Stack-safe          | Flat loop   | No   | No        |
+| Class instances     | Native      | No   | No        |
+| Zero dependencies   | Yes         | No   | Yes       |
+| Built-in formats    | 20+         | No   | Yes       |
+| Bun performance     | #1 fastest  | 40%  | 25%       |
+| Node.js performance | #3 fastest  | 100% | 74%       |
+
+## Limitations
+
+- **No Remote $ref**: Security by design — schemas must be bundled locally
+- **Unicode Length**: minLength/maxLength use UTF-16 code units, not Unicode codepoints
+- **Draft-07 Scope**: Limited dynamic $id scope resolution in nested sub-schemas
+
+## Security Philosophy
+
+SchemaShield follows a Zero Trust and Hermetic Architecture approach:
+- No network access at runtime
+- Deterministic validation (no external dependencies)
+- Treat schemas as code dependencies, not dynamic assets

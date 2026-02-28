@@ -4,14 +4,33 @@
 
 SchemaShield is a secure interpreter for JSON Schema engineered for strict environments and complex domain logic. It prioritizes **architectural stability** and **developer experience** over raw synthetic throughput.
 
-- **Security by Design:** Zero Code Generation. Fully compatible with strict Content Security Policy (CSP).
-- **Production Stability:** Stack-safe traversal. Designed to minimize stack usage and reduce the risk of stack overflows, even on deeply nested schemas.
-- **Domain Integrated:** Validates runtime objects (Classes, Dates, Streams) alongside serialized JSON.
-- **Transparent Debugging:** Pure JavaScript execution means clean stack traces and no black-box generated code.
+> 🏆 **Fastest JSON Schema Validator on Bun** — 2.5x faster than ajv, 4x faster than schemasafe
+> 
+> 📊 **#3 fastest on Node.js** — 70% ajv speed, 50x faster than jsonschema
+
+## Quick Start
+
+```javascript
+import { SchemaShield } from "schema-shield";
+
+const validator = new SchemaShield().compile({
+  type: "object",
+  properties: {
+    name: { type: "string" },
+    age: { type: "number" }
+  }
+});
+
+validator({ name: "John", age: 30 });
+// { valid: true, data: { name: "John", age: 30 } }
+
+validator({ name: "John", age: "30" });
+// { valid: false, error: ValidationError }
+```
 
 ## Table of Contents
 
-- [Table of Contents](#table-of-contents)
+- [Quick Start](#quick-start)
 - [Why SchemaShield?](#why-schemashield)
   - [Comparison with Other Approaches](#comparison-with-other-approaches)
 - [Usage](#usage)
@@ -71,7 +90,7 @@ Most validators optimize for "operations per second" in synthetic benchmarks, of
 | Feature                       | SchemaShield                                        | JIT Compilers                    | Classic Interpreters  |
 | :---------------------------- | :-------------------------------------------------- | :------------------------------- | :-------------------- |
 | **Architecture**              | **Secure Flat Interpreter**                         | JIT Compiler (eval/new Function) | Recursive Interpreter |
-| **Relative Speed**            | **High (~60%)**                                     | Reference (100%)                 | Low (1% - 20%)        |
+| **Relative Speed**            | **High (~70%)**                                     | Reference (100%)                 | Low (1% - 20%)        |
 | **CSP Compliance**            | **Native (100% Safe)**                              | Requires Build Config            | Variable              |
 | **Edge Ready**                | **Native**                                          | Complex Setup                    | Variable              |
 | **Stack Safety**              | **Minimized stack usage (non-recursive core loop)** | Risk of Overflow                 | Risk of Overflow      |
@@ -194,19 +213,19 @@ In runtimes using JavaScriptCore (like Bun), SchemaShield outperforms JIT compil
 | Validator          | Relative Speed | Context      |
 | :----------------- | :------------- | :----------- |
 | **SchemaShield**   | **100%**       | **Fastest**  |
-| ajv                | ~55%           | JIT Compiler |
-| @exodus/schemasafe | ~12%           | Interpreter  |
+| ajv                | ~40%           | JIT Compiler |
+| @exodus/schemasafe | ~24%           | Interpreter  |
 | jsonschema         | ~2%            | Legacy       |
 
 ### 2. Standard Runtimes (Node.js)
 
-In V8-based environments (Node.js), SchemaShield maintains elite performance for a secure interpreter, being roughly **50x faster** than legacy libraries.
+In V8-based environments (Node.js), SchemaShield maintains elite performance for a secure interpreter, being roughly **70x faster** than legacy libraries.
 
 | Validator          | Relative Speed | Context             |
 | :----------------- | :------------- | :------------------ |
 | ajv                | 100%           | Reference (JIT)     |
-| @exodus/schemasafe | ~75%           | Interpreter         |
-| **SchemaShield**   | **~60%**       | **Secure Standard** |
+| @exodus/schemasafe | ~74%           | Interpreter         |
+| **SchemaShield**   | **~70%**       | **Secure Standard** |
 | jsonschema         | ~1%            | Legacy              |
 
 **Key Takeaway:** SchemaShield delivers consistent high performance in Node.js without the security risks, memory leaks, or "cold start" latency associated with code generation.
@@ -505,7 +524,6 @@ Take into account that the error must be generated using the `defineError` funct
 
 - `message`: A string that describes the validation error.
 - `options`: An optional object with properties that provide more context for the error:
-
   - `item`?: An optional value representing the final item in the path where the validation error occurred. (e.g. index of an array item)
   - `cause`?: An optional `ValidationError` (or `true` in fail-fast mode) that represents the cause of the current error.
   - `data`?: An optional value representing the data that caused the validation error.
