@@ -1,5 +1,12 @@
 
 
+### [1.0.4](https://github.com/Masquerade-Circus/schema-shield/compare/1.0.3...1.0.4) (2026-02-28)
+
+
+### Documentation
+
+* improve documentation about severless implementations ([be28d26](https://github.com/Masquerade-Circus/schema-shield/commit/be28d263b94463a63c6de0cb5a9f7ef17e7f64b4))
+
 ### [1.0.3](https://github.com/Masquerade-Circus/schema-shield/compare/1.0.2...1.0.3) (2026-02-28)
 
 
