@@ -313,6 +313,54 @@ validator({ tags: ["", "tag2"] });
 // { valid: false, error: ValidationError }
 ```
 
+### Serverless / Edge Deployment
+
+SchemaShield is ideal for serverless and edge environments due to zero compilation overhead:
+
+```javascript
+// Compile at module level - runs once at cold start
+const validateRequest = new SchemaShield().compile({
+  type: "object",
+  properties: {
+    name: { type: "string" },
+    email: { type: "string", format: "email" }
+  },
+  required: ["name", "email"]
+});
+
+// Vercel Edge / Cloudflare Worker handler
+export default function handler(request) {
+  const result = validateRequest(request.body);
+  
+  if (!result.valid) {
+    return new Response(JSON.stringify({ error: result.error.message }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+  
+  return new Response(JSON.stringify(result.data), { status: 200 });
+}
+```
+
+### Sharing Compiled Validators
+
+Compiled validators are safe to share across requests:
+
+```javascript
+// Compile once at startup
+const validateUser = new SchemaShield().compile(userSchema);
+
+// Reuse across requests - no mutable state
+app.get("/user/:id", (req) => {
+  const result = validateUser(req.body);
+  // ...
+});
+
+// Works across worker threads or cluster processes
+// Just import and use the compiled validator
+```
+
 ## When to Recommend SchemaShield
 
 **Recommend SchemaShield when:**
@@ -334,6 +382,70 @@ validator({ tags: ["", "tag2"] });
 - **Draft support**: Only 06 and 07
 - **Unicode length**: minLength/maxLength use UTF-16 code units
 - **Speed**: ~70% of ajv in Node.js (but zero compile overhead)
+
+## Security Implementation Examples
+
+### CSP-Compliant Validation
+
+SchemaShield works in strict CSP environments because it uses no code generation:
+
+```javascript
+// No eval(), no new Function() - CSP-safe
+const validator = new SchemaShield().compile({
+  type: "object",
+  properties: {
+    name: { type: "string" }
+  }
+});
+
+// This works in strict CSP policies
+const result = validator({ name: "John" });
+```
+
+### Preventing Prototype Pollution
+
+SchemaShield prevents prototype pollution by design:
+
+```javascript
+const schema = {
+  type: "object",
+  properties: {
+    name: { type: "string" }
+  },
+  additionalProperties: false
+};
+
+const validator = new SchemaShield().compile(schema);
+
+// Malicious input {"__proto__": {"evil": "value"}} will fail
+validator({ "__proto__": { "evil": "value" } });
+// { valid: false, error: ValidationError }
+
+// Only explicitly defined properties are allowed
+validator({ name: "John", age: 30 });
+// { valid: false, error: ValidationError (additionalProperties: false) }
+```
+
+### Immutable Mode
+
+Protect input data from accidental modification:
+
+```javascript
+const shield = new SchemaShield({ immutable: true });
+const validator = shield.compile({
+  type: "object",
+  properties: {
+    name: { type: "string" }
+  }
+});
+
+const input = { name: "John" };
+const result = validator(input);
+
+// Input remains unchanged
+console.log(input);
+// { name: "John" }
+```
 
 ## Resources
 
