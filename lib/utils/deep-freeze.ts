@@ -47,6 +47,8 @@ function isPlainObject(value: any): boolean {
   return proto === Object.prototype || proto === null;
 }
 
+export { isPlainObject };
+
 function canUseStructuredClone(value: any): boolean {
   if (typeof structuredClone !== "function") {
     return false;

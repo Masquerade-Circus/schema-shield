@@ -184,3 +184,7 @@ export function resolvePath(root: any, path: string): any {
 
   return;
 }
+
+export function areCloseEnough(a: number, b: number, epsilon = 1e-15): boolean {
+  return Math.abs(a - b) <= epsilon * Math.max(Math.abs(a), Math.abs(b));
+}

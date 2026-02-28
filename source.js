@@ -138,10 +138,20 @@ async function build({
             content: codeToMinify.outputFiles[0].text.toString()
           },
           compress: {
-            booleans_as_integers: false
+            booleans_as_integers: false,
+            passes: 2,
+            unsafe_arrows: true,
+            unsafe_methods: true,
+            unsafe_proto: true,
+            unsafe_regexp: true,
+            unsafe_undefined: true
+          },
+          mangle: {
+            properties: false
           },
           output: {
-            wrap_func_args: false
+            wrap_func_args: false,
+            comments: false
           },
           ecma: 2022
         });
