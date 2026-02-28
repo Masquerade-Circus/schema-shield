@@ -43,6 +43,7 @@ export declare class SchemaShield {
     getType(type: string): TypeFunction | false;
     addFormat(name: string, validator: FormatFunction, overwrite?: boolean): void;
     getFormat(format: string): FormatFunction | false;
+    isDefaultFormatValidator(format: string, validator: FormatFunction): boolean;
     addKeyword(name: string, validator: KeywordFunction, overwrite?: boolean): void;
     getKeyword(keyword: string): KeywordFunction | false;
     getSchemaRef(path: string): CompiledSchema | undefined;

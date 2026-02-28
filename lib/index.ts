@@ -115,6 +115,10 @@ export class SchemaShield {
     return this.formats[format];
   }
 
+  isDefaultFormatValidator(format: string, validator: FormatFunction): boolean {
+    return (Formats as Record<string, FormatFunction | false>)[format] === validator;
+  }
+
   addKeyword(name: string, validator: KeywordFunction, overwrite = false) {
     if (this.keywords[name] && !overwrite) {
       throw new ValidationError(`Keyword "${name}" already exists`);

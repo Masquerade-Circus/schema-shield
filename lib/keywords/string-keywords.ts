@@ -2,6 +2,7 @@ import { FormatFunction, KeywordFunction } from "../index";
 import { compilePatternMatcher } from "../utils/pattern-matcher";
 
 const PATTERN_MATCH_CACHE_LIMIT = 512;
+const FORMAT_RESULT_CACHE_LIMIT = 512;
 
 export const StringKeywords: Record<string, KeywordFunction> = {
   minLength(schema, data, defineError) {
@@ -94,6 +95,12 @@ export const StringKeywords: Record<string, KeywordFunction> = {
       | FormatFunction
       | false
       | undefined;
+    let formatResultCacheEnabled = (schema as any)._formatResultCacheEnabled as
+      | boolean
+      | undefined;
+    let formatResultCache = (schema as any)._formatResultCache as
+      | Map<string, boolean>
+      | undefined;
 
     if (formatValidate === undefined) {
       formatValidate = instance.getFormat(schema.format);
@@ -105,7 +112,54 @@ export const StringKeywords: Record<string, KeywordFunction> = {
       });
     }
 
-    if (!formatValidate || formatValidate(data)) {
+    if (!formatValidate) {
+      return;
+    }
+
+    if (formatResultCacheEnabled === undefined) {
+      formatResultCacheEnabled = instance.isDefaultFormatValidator(
+        schema.format,
+        formatValidate
+      );
+
+      Object.defineProperty(schema, "_formatResultCacheEnabled", {
+        value: formatResultCacheEnabled,
+        enumerable: false,
+        configurable: false,
+        writable: false
+      });
+    }
+
+    if (!formatResultCacheEnabled) {
+      if (formatValidate(data)) {
+        return;
+      }
+
+      return defineError("Value does not match the format", { data });
+    }
+
+    if (!formatResultCache) {
+      formatResultCache = new Map<string, boolean>();
+      Object.defineProperty(schema, "_formatResultCache", {
+        value: formatResultCache,
+        enumerable: false,
+        configurable: false,
+        writable: false
+      });
+    } else if (formatResultCache.has(data)) {
+      if (formatResultCache.get(data)) {
+        return;
+      }
+
+      return defineError("Value does not match the format", { data });
+    }
+
+    const isValid = formatValidate(data);
+    if (formatResultCache.size < FORMAT_RESULT_CACHE_LIMIT) {
+      formatResultCache.set(data, isValid);
+    }
+
+    if (isValid) {
       return;
     }
 

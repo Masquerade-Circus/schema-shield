@@ -1106,42 +1106,58 @@ var REGEX_META_CHARS = /[\\.^$*+?()[\]{}|]/;
 function hasRegexMeta(value) {
   return REGEX_META_CHARS.test(value);
 }
+var PATTERN_CACHE = /* @__PURE__ */ new Map();
 function compilePatternMatcher(pattern) {
+  const cached = PATTERN_CACHE.get(pattern);
+  if (cached) {
+    return cached;
+  }
+  let compiled;
   if (pattern.length === 0) {
-    return (_value) => true;
-  }
-  if (!hasRegexMeta(pattern)) {
-    return (value) => value.includes(pattern);
-  }
-  const patternLength = pattern.length;
-  if (patternLength >= 2 && pattern[0] === "^" && pattern[patternLength - 1] === "$") {
-    const inner = pattern.slice(1, -1);
-    if (!hasRegexMeta(inner)) {
-      if (inner.length === 0) {
-        return (value) => value.length === 0;
+    compiled = (_value) => true;
+  } else if (!hasRegexMeta(pattern)) {
+    compiled = (value) => value.includes(pattern);
+  } else {
+    const patternLength = pattern.length;
+    if (patternLength >= 2 && pattern[0] === "^" && pattern[patternLength - 1] === "$") {
+      const inner = pattern.slice(1, -1);
+      if (!hasRegexMeta(inner)) {
+        if (inner.length === 0) {
+          compiled = (value) => value.length === 0;
+        } else {
+          compiled = (value) => value === inner;
+        }
+      } else {
+        compiled = new RegExp(pattern, "u");
       }
-      return (value) => value === inner;
+    } else if (pattern[0] === "^") {
+      const inner = pattern.slice(1);
+      if (!hasRegexMeta(inner)) {
+        if (inner.length === 0) {
+          compiled = (_value) => true;
+        } else {
+          compiled = (value) => value.startsWith(inner);
+        }
+      } else {
+        compiled = new RegExp(pattern, "u");
+      }
+    } else if (pattern[patternLength - 1] === "$") {
+      const inner = pattern.slice(0, -1);
+      if (!hasRegexMeta(inner)) {
+        if (inner.length === 0) {
+          compiled = (_value) => true;
+        } else {
+          compiled = (value) => value.endsWith(inner);
+        }
+      } else {
+        compiled = new RegExp(pattern, "u");
+      }
+    } else {
+      compiled = new RegExp(pattern, "u");
     }
   }
-  if (pattern[0] === "^") {
-    const inner = pattern.slice(1);
-    if (!hasRegexMeta(inner)) {
-      if (inner.length === 0) {
-        return (_value) => true;
-      }
-      return (value) => value.startsWith(inner);
-    }
-  }
-  if (pattern[patternLength - 1] === "$") {
-    const inner = pattern.slice(0, -1);
-    if (!hasRegexMeta(inner)) {
-      if (inner.length === 0) {
-        return (_value) => true;
-      }
-      return (value) => value.endsWith(inner);
-    }
-  }
-  return new RegExp(pattern, "u");
+  PATTERN_CACHE.set(pattern, compiled);
+  return compiled;
 }
 
 // lib/keywords/object-keywords.ts
@@ -1806,6 +1822,7 @@ var OtherKeywords = {
 
 // lib/keywords/string-keywords.ts
 var PATTERN_MATCH_CACHE_LIMIT = 512;
+var FORMAT_RESULT_CACHE_LIMIT = 512;
 var StringKeywords = {
   minLength(schema, data, defineError) {
     if (typeof data !== "string" || data.length >= schema.minLength) {
@@ -1872,6 +1889,8 @@ var StringKeywords = {
       return;
     }
     let formatValidate = schema._formatValidate;
+    let formatResultCacheEnabled = schema._formatResultCacheEnabled;
+    let formatResultCache = schema._formatResultCache;
     if (formatValidate === void 0) {
       formatValidate = instance.getFormat(schema.format);
       Object.defineProperty(schema, "_formatValidate", {
@@ -1881,7 +1900,46 @@ var StringKeywords = {
         writable: false
       });
     }
-    if (!formatValidate || formatValidate(data)) {
+    if (!formatValidate) {
+      return;
+    }
+    if (formatResultCacheEnabled === void 0) {
+      formatResultCacheEnabled = instance.isDefaultFormatValidator(
+        schema.format,
+        formatValidate
+      );
+      Object.defineProperty(schema, "_formatResultCacheEnabled", {
+        value: formatResultCacheEnabled,
+        enumerable: false,
+        configurable: false,
+        writable: false
+      });
+    }
+    if (!formatResultCacheEnabled) {
+      if (formatValidate(data)) {
+        return;
+      }
+      return defineError("Value does not match the format", { data });
+    }
+    if (!formatResultCache) {
+      formatResultCache = /* @__PURE__ */ new Map();
+      Object.defineProperty(schema, "_formatResultCache", {
+        value: formatResultCache,
+        enumerable: false,
+        configurable: false,
+        writable: false
+      });
+    } else if (formatResultCache.has(data)) {
+      if (formatResultCache.get(data)) {
+        return;
+      }
+      return defineError("Value does not match the format", { data });
+    }
+    const isValid = formatValidate(data);
+    if (formatResultCache.size < FORMAT_RESULT_CACHE_LIMIT) {
+      formatResultCache.set(data, isValid);
+    }
+    if (isValid) {
       return;
     }
     return defineError("Value does not match the format", { data });
@@ -1943,6 +2001,9 @@ var SchemaShield = class {
   }
   getFormat(format) {
     return this.formats[format];
+  }
+  isDefaultFormatValidator(format, validator) {
+    return Formats[format] === validator;
   }
   addKeyword(name, validator, overwrite = false) {
     if (this.keywords[name] && !overwrite) {
