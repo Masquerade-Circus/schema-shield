@@ -17,6 +17,7 @@ export declare class ValidationError extends Error {
     instancePath: string;
     data?: any;
     schema?: CompiledSchema;
+    constructor(message: string);
     private _getCause;
     getCause(): ValidationError;
     private _getTree;

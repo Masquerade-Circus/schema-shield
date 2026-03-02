@@ -1,5 +1,22 @@
 
 
+### [1.0.5](https://github.com/Masquerade-Circus/schema-shield/compare/1.0.4...1.0.5) (2026-03-02)
+
+
+### Bug Fixes
+
+* fix error when additionalProperties false,  getCause() throws cant get property of null ([ebb2db1](https://github.com/Masquerade-Circus/schema-shield/commit/ebb2db15a5bb7e4bfe8988d83e85da66f08506d8))
+
+
+### Miscellaneous Chores
+
+* add context7.json ([4524666](https://github.com/Masquerade-Circus/schema-shield/commit/4524666beb3d05e17a5f7b2b341d2660931f0e47))
+
+
+### Documentation
+
+* improve documentation ([4f46450](https://github.com/Masquerade-Circus/schema-shield/commit/4f464507220cc98344480b2f7844590d5da9e93c))
+
 ### [1.0.4](https://github.com/Masquerade-Circus/schema-shield/compare/1.0.3...1.0.4) (2026-02-28)
 
 
