@@ -20,11 +20,21 @@ export class ValidationError extends Error {
   data?: any;
   schema?: CompiledSchema;
 
+  constructor(message: string) {
+    super(message);
+    this.message = message;
+  }
+
   private _getCause(pointer = "#", instancePointer = "#"): ValidationError {
     let schemaPath = `${pointer}/${this.keyword}`;
     let instancePath = `${instancePointer}`;
     if (typeof this.item !== "undefined") {
-      if (typeof this.item === "string" && this.item in this.schema) {
+      if (
+        typeof this.item === "string" &&
+        this.schema &&
+        typeof this.schema === "object" &&
+        this.item in this.schema
+      ) {
         schemaPath += `/${this.item}`;
       }
       instancePath += `/${this.item}`;
@@ -88,6 +98,7 @@ export interface DefineErrorFunction {
     options?: DefineErrorOptions
   ): ValidationError | void | true;
 }
+
 const FAIL_FAST_DEFINE_ERROR: DefineErrorFunction = () => true;
 
 export function getDefinedErrorFunctionForKey(

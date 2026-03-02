@@ -736,8 +736,16 @@ describe("Vs schemasafe", () => {
         benchmarkIterations
       );
 
-      runBenchmarkLoop(schemaShieldValidate, benchmarkCase.data, warmupIterations);
-      runBenchmarkLoop(schemaSafeValidate, benchmarkCase.data, warmupIterations);
+      runBenchmarkLoop(
+        schemaShieldValidate,
+        benchmarkCase.data,
+        warmupIterations
+      );
+      runBenchmarkLoop(
+        schemaSafeValidate,
+        benchmarkCase.data,
+        warmupIterations
+      );
 
       let schemaShieldSeconds: number;
       let schemaSafeSeconds: number;
@@ -835,7 +843,10 @@ describe("Vs schemasafe", () => {
     const fileTotals = Object.entries(
       slowerResults.reduce(
         (
-          acc: Record<string, { count: number; totalDelta: number; ratioSum: number }>,
+          acc: Record<
+            string,
+            { count: number; totalDelta: number; ratioSum: number }
+          >,
           result
         ) => {
           const current = acc[result.file] || {
@@ -845,7 +856,8 @@ describe("Vs schemasafe", () => {
           };
 
           current.count++;
-          current.totalDelta += result.schemaShieldSeconds - result.schemaSafeSeconds;
+          current.totalDelta +=
+            result.schemaShieldSeconds - result.schemaSafeSeconds;
           current.ratioSum += result.ratio;
 
           acc[result.file] = current;
@@ -866,7 +878,10 @@ describe("Vs schemasafe", () => {
     const groupTotals = Object.entries(
       slowerResults.reduce(
         (
-          acc: Record<string, { count: number; totalDelta: number; ratioSum: number }>,
+          acc: Record<
+            string,
+            { count: number; totalDelta: number; ratioSum: number }
+          >,
           result
         ) => {
           const key = `${result.file} :: ${result.group}`;
@@ -877,7 +892,8 @@ describe("Vs schemasafe", () => {
           };
 
           current.count++;
-          current.totalDelta += result.schemaShieldSeconds - result.schemaSafeSeconds;
+          current.totalDelta +=
+            result.schemaShieldSeconds - result.schemaSafeSeconds;
           current.ratioSum += result.ratio;
 
           acc[key] = current;
