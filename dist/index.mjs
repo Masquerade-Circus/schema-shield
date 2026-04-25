@@ -1,5 +1,5 @@
 // lib/utils/main-utils.ts
-var ValidationError = class extends Error {
+class ValidationError extends Error {
   message;
   item;
   keyword;
@@ -56,7 +56,7 @@ var ValidationError = class extends Error {
       instancePath: cause.instancePath
     };
   }
-};
+}
 var FAIL_FAST_DEFINE_ERROR = () => true;
 function getDefinedErrorFunctionForKey(key, schema, failFast) {
   if (failFast) {
@@ -68,14 +68,11 @@ function getDefinedErrorFunctionForKey(key, schema, failFast) {
   const defineError = (message, options = {}) => {
     KeywordError.message = message;
     KeywordError.item = options.item;
-    KeywordError.cause = options.cause && options.cause !== true ? options.cause : void 0;
+    KeywordError.cause = options.cause && options.cause !== true ? options.cause : undefined;
     KeywordError.data = options.data;
     return KeywordError;
   };
-  return getNamedFunction(
-    `defineError_${key}`,
-    defineError
-  );
+  return getNamedFunction(`defineError_${key}`, defineError);
 }
 function isCompiledSchema(subSchema) {
   return !!subSchema && typeof subSchema === "object" && !Array.isArray(subSchema) && "$validate" in subSchema;
@@ -116,7 +113,7 @@ function resolvePath(root, path) {
   }
   return;
 }
-function areCloseEnough(a, b, epsilon = 1e-15) {
+function areCloseEnough(a, b, epsilon = 0.000000000000001) {
   return Math.abs(a - b) <= epsilon * Math.max(Math.abs(a), Math.abs(b));
 }
 
@@ -153,12 +150,12 @@ function parseFourDigits(data, index) {
   if (a < 0 || a > 9 || b < 0 || b > 9 || c < 0 || c > 9 || d < 0 || d > 9) {
     return -1;
   }
-  return a * 1e3 + b * 100 + c * 10 + d;
+  return a * 1000 + b * 100 + c * 10 + d;
 }
 function isValidIpv4Range(data, start, end) {
   let segmentCount = 0;
   let segmentStart = start;
-  for (let i = start; i <= end; i++) {
+  for (let i = start;i <= end; i++) {
     if (i !== end && data.charCodeAt(i) !== 46) {
       continue;
     }
@@ -170,7 +167,7 @@ function isValidIpv4Range(data, start, end) {
       return false;
     }
     let value = 0;
-    for (let j = segmentStart; j < i; j++) {
+    for (let j = segmentStart;j < i; j++) {
       const digit = data.charCodeAt(j) - 48;
       if (digit < 0 || digit > 9) {
         return false;
@@ -281,7 +278,7 @@ function isValidJsonPointer(data) {
   if (data.charCodeAt(0) !== 47) {
     return false;
   }
-  for (let i = 1; i < data.length; i++) {
+  for (let i = 1;i < data.length; i++) {
     if (data.charCodeAt(i) !== 126) {
       continue;
     }
@@ -317,7 +314,7 @@ function isValidRelativeJsonPointer(data) {
   if (data.charCodeAt(i) !== 47) {
     return false;
   }
-  for (i = i + 1; i < data.length; i++) {
+  for (i = i + 1;i < data.length; i++) {
     if (data.charCodeAt(i) !== 126) {
       continue;
     }
@@ -330,7 +327,7 @@ function isValidRelativeJsonPointer(data) {
   return true;
 }
 function isValidUriTemplate(data) {
-  for (let i = 0; i < data.length; i++) {
+  for (let i = 0;i < data.length; i++) {
     const code = data.charCodeAt(i);
     if (code === 125) {
       return false;
@@ -498,7 +495,6 @@ var Formats = {
   uuid(data) {
     return UUID_REGEX.test(data);
   },
-  // IRI is like URI but allows Unicode. We reuse a permissive logic.
   iri(data) {
     return IRI_REGEX.test(data);
   },
@@ -508,7 +504,6 @@ var Formats = {
     }
     return IRI_REFERENCE_REGEX.test(data);
   },
-  // Best-effort structural validation for IDN (no punycode/tables)
   "idn-email"(data) {
     return IDN_EMAIL_REGEX.test(data);
   },
@@ -540,7 +535,6 @@ var Types = {
   null(data) {
     return data === null;
   },
-  // Not implemented yet
   timestamp: false,
   int8: false,
   uint8: false,
@@ -564,7 +558,7 @@ function hasChanged(prev, current) {
     if (prev.length !== current.length) {
       return true;
     }
-    for (let i = 0; i < current.length; i++) {
+    for (let i = 0;i < current.length; i++) {
       if (hasChanged(prev[i], current[i])) {
         return true;
       }
@@ -584,7 +578,7 @@ function hasChanged(prev, current) {
       if (key in current) {
         continue;
       }
-      if (hasChanged(prev[key], void 0)) {
+      if (hasChanged(prev[key], undefined)) {
         return true;
       }
     }
@@ -620,7 +614,7 @@ function getArrayBucketKey(value) {
 }
 function getObjectShapeKey(value) {
   const keys = Object.keys(value).sort();
-  return `${keys.length}:${keys.join("")}`;
+  return `${keys.length}:${keys.join("\x01")}`;
 }
 function getPrimitiveArraySignature(value) {
   const length = value.length;
@@ -631,7 +625,7 @@ function getPrimitiveArraySignature(value) {
     return null;
   }
   let signature = `a:${length}:`;
-  for (let i = 0; i < length; i++) {
+  for (let i = 0;i < length; i++) {
     const item = value[i];
     if (item === null) {
       signature += "l;";
@@ -662,7 +656,6 @@ function getPrimitiveArraySignature(value) {
   return signature;
 }
 var ArrayKeywords = {
-  // lib/keywords/array-keywords.ts
   items(schema, data, defineError) {
     if (!Array.isArray(data)) {
       return;
@@ -678,10 +671,10 @@ var ArrayKeywords = {
     if (Array.isArray(schemaItems)) {
       const schemaItemsLength = schemaItems.length;
       const itemsLength = schemaItemsLength < dataLength ? schemaItemsLength : dataLength;
-      for (let i = 0; i < itemsLength; i++) {
+      for (let i = 0;i < itemsLength; i++) {
         const schemaItem = schemaItems[i];
         if (typeof schemaItem === "boolean") {
-          if (schemaItem === false && data[i] !== void 0) {
+          if (schemaItem === false && data[i] !== undefined) {
             return defineError("Array item is not allowed", {
               item: i,
               data: data[i]
@@ -707,7 +700,7 @@ var ArrayKeywords = {
     if (typeof validate !== "function") {
       return;
     }
-    for (let i = 0; i < dataLength; i++) {
+    for (let i = 0;i < dataLength; i++) {
       const error = validate(data[i]);
       if (error) {
         return defineError("Array item is invalid", {
@@ -727,7 +720,7 @@ var ArrayKeywords = {
     if (typeof validate !== "function") {
       return;
     }
-    for (let i = 0; i < data.length; i++) {
+    for (let i = 0;i < data.length; i++) {
       const error = validate(data[i]);
       if (error) {
         return defineError("Array item is invalid", {
@@ -755,7 +748,7 @@ var ArrayKeywords = {
       return;
     }
     let tupleLength = schema._tupleItemsLength;
-    if (tupleLength === void 0) {
+    if (tupleLength === undefined) {
       tupleLength = schema.items.length;
       Object.defineProperty(schema, "_tupleItemsLength", {
         value: tupleLength,
@@ -772,7 +765,7 @@ var ArrayKeywords = {
     }
     if (schema.additionalItems && typeof schema.additionalItems === "object" && !Array.isArray(schema.additionalItems)) {
       if (isCompiledSchema(schema.additionalItems)) {
-        for (let i = tupleLength; i < data.length; i++) {
+        for (let i = tupleLength;i < data.length; i++) {
           const error = schema.additionalItems.$validate(data[i]);
           if (error) {
             return defineError("Array item is invalid", {
@@ -797,9 +790,9 @@ var ArrayKeywords = {
       return;
     }
     if (len <= 8) {
-      for (let i = 0; i < len; i++) {
+      for (let i = 0;i < len; i++) {
         const left = data[i];
-        for (let j = i + 1; j < len; j++) {
+        for (let j = i + 1;j < len; j++) {
           const right = data[j];
           if (left === right) {
             return defineError("Array items are not unique", { data: right });
@@ -814,11 +807,11 @@ var ArrayKeywords = {
       }
       return;
     }
-    const primitiveSeen = /* @__PURE__ */ new Set();
+    const primitiveSeen = new Set;
     let primitiveArraySignatures;
     let arrayBuckets;
     let objectBuckets;
-    for (let i = 0; i < len; i++) {
+    for (let i = 0;i < len; i++) {
       const item = data[i];
       if (isUniquePrimitive(item)) {
         if (primitiveSeen.has(item)) {
@@ -834,7 +827,7 @@ var ArrayKeywords = {
         const signature = getPrimitiveArraySignature(item);
         if (signature !== null) {
           if (!primitiveArraySignatures) {
-            primitiveArraySignatures = /* @__PURE__ */ new Set();
+            primitiveArraySignatures = new Set;
           }
           if (primitiveArraySignatures.has(signature)) {
             return defineError("Array items are not unique", { data: item });
@@ -843,7 +836,7 @@ var ArrayKeywords = {
           continue;
         }
         if (!arrayBuckets) {
-          arrayBuckets = /* @__PURE__ */ new Map();
+          arrayBuckets = new Map;
         }
         const bucketKey2 = getArrayBucketKey(item);
         let candidates2 = arrayBuckets.get(bucketKey2);
@@ -851,7 +844,7 @@ var ArrayKeywords = {
           candidates2 = [];
           arrayBuckets.set(bucketKey2, candidates2);
         }
-        for (let j = 0; j < candidates2.length; j++) {
+        for (let j = 0;j < candidates2.length; j++) {
           if (!hasChanged(candidates2[j], item)) {
             return defineError("Array items are not unique", { data: item });
           }
@@ -860,7 +853,7 @@ var ArrayKeywords = {
         continue;
       }
       if (!objectBuckets) {
-        objectBuckets = /* @__PURE__ */ new Map();
+        objectBuckets = new Map;
       }
       const bucketKey = getObjectShapeKey(item);
       let candidates = objectBuckets.get(bucketKey);
@@ -868,7 +861,7 @@ var ArrayKeywords = {
         candidates = [];
         objectBuckets.set(bucketKey, candidates);
       }
-      for (let j = 0; j < candidates.length; j++) {
+      for (let j = 0;j < candidates.length; j++) {
         if (!hasChanged(candidates[j], item)) {
           return defineError("Array items are not unique", { data: item });
         }
@@ -890,7 +883,7 @@ var ArrayKeywords = {
       return defineError("Array must not contain any items", { data });
     }
     const containsValidate = schema.contains.$validate;
-    for (let i = 0; i < data.length; i++) {
+    for (let i = 0;i < data.length; i++) {
       const error = containsValidate(data[i]);
       if (!error) {
         return;
@@ -918,7 +911,7 @@ function canUseStructuredClone(value) {
   }
   return Array.isArray(value) || isPlainObject(value) || value instanceof Date || value instanceof RegExp || value instanceof Map || value instanceof Set || value instanceof ArrayBuffer || ArrayBuffer.isView(value);
 }
-function deepCloneUnfreeze(obj, cloneClassInstances = false, seen = /* @__PURE__ */ new WeakMap()) {
+function deepCloneUnfreeze(obj, cloneClassInstances = false, seen = new WeakMap) {
   if (typeof obj === "undefined" || obj === null || typeof obj !== "object") {
     return obj;
   }
@@ -936,7 +929,7 @@ function deepCloneUnfreeze(obj, cloneClassInstances = false, seen = /* @__PURE__
     case Array.isArray(source): {
       clone = [];
       seen.set(source, clone);
-      for (let i = 0, l = source.length; i < l; i++) {
+      for (let i = 0, l = source.length;i < l; i++) {
         clone[i] = deepCloneUnfreeze(source[i], cloneClassInstances, seen);
       }
       return clone;
@@ -952,18 +945,15 @@ function deepCloneUnfreeze(obj, cloneClassInstances = false, seen = /* @__PURE__
       return clone;
     }
     case source instanceof Map: {
-      clone = /* @__PURE__ */ new Map();
+      clone = new Map;
       seen.set(source, clone);
       for (const [key, value] of source.entries()) {
-        clone.set(
-          deepCloneUnfreeze(key, cloneClassInstances, seen),
-          deepCloneUnfreeze(value, cloneClassInstances, seen)
-        );
+        clone.set(deepCloneUnfreeze(key, cloneClassInstances, seen), deepCloneUnfreeze(value, cloneClassInstances, seen));
       }
       return clone;
     }
     case source instanceof Set: {
-      clone = /* @__PURE__ */ new Set();
+      clone = new Set;
       seen.set(source, clone);
       for (const value of source.values()) {
         clone.add(deepCloneUnfreeze(value, cloneClassInstances, seen));
@@ -1009,13 +999,9 @@ function deepCloneUnfreeze(obj, cloneClassInstances = false, seen = /* @__PURE__
       clone = {};
       seen.set(source, clone);
       const keys = Reflect.ownKeys(source);
-      for (let i = 0, l = keys.length; i < l; i++) {
+      for (let i = 0, l = keys.length;i < l; i++) {
         const key = keys[i];
-        clone[key] = deepCloneUnfreeze(
-          source[key],
-          cloneClassInstances,
-          seen
-        );
+        clone[key] = deepCloneUnfreeze(source[key], cloneClassInstances, seen);
       }
       return clone;
     }
@@ -1024,11 +1010,7 @@ function deepCloneUnfreeze(obj, cloneClassInstances = false, seen = /* @__PURE__
   for (const key of Reflect.ownKeys(descriptors)) {
     const descriptor = descriptors[key];
     if ("value" in descriptor) {
-      descriptor.value = deepCloneUnfreeze(
-        descriptor.value,
-        cloneClassInstances,
-        seen
-      );
+      descriptor.value = deepCloneUnfreeze(descriptor.value, cloneClassInstances, seen);
     }
     Object.defineProperty(clone, key, descriptor);
   }
@@ -1043,9 +1025,9 @@ var NumberKeywords = {
     }
     let min = schema.minimum;
     if (typeof schema.exclusiveMinimum === "number") {
-      min = schema.exclusiveMinimum + 1e-15;
+      min = schema.exclusiveMinimum + 0.000000000000001;
     } else if (schema.exclusiveMinimum === true) {
-      min += 1e-15;
+      min += 0.000000000000001;
     }
     if (data < min) {
       return defineError("Value is less than the minimum", { data });
@@ -1058,9 +1040,9 @@ var NumberKeywords = {
     }
     let max = schema.maximum;
     if (typeof schema.exclusiveMaximum === "number") {
-      max = schema.exclusiveMaximum - 1e-15;
+      max = schema.exclusiveMaximum - 0.000000000000001;
     } else if (schema.exclusiveMaximum === true) {
-      max -= 1e-15;
+      max -= 0.000000000000001;
     }
     if (data > max) {
       return defineError("Value is greater than the maximum", { data });
@@ -1084,7 +1066,7 @@ var NumberKeywords = {
     if (typeof data !== "number" || typeof schema.exclusiveMinimum !== "number" || "minimum" in schema) {
       return;
     }
-    if (data <= schema.exclusiveMinimum + 1e-15) {
+    if (data <= schema.exclusiveMinimum + 0.000000000000001) {
       return defineError("Value is less than or equal to the exclusiveMinimum");
     }
     return;
@@ -1094,10 +1076,7 @@ var NumberKeywords = {
       return;
     }
     if (data >= schema.exclusiveMaximum) {
-      return defineError(
-        "Value is greater than or equal to the exclusiveMaximum",
-        { data }
-      );
+      return defineError("Value is greater than or equal to the exclusiveMaximum", { data });
     }
     return;
   }
@@ -1108,7 +1087,7 @@ var REGEX_META_CHARS = /[\\.^$*+?()[\]{}|]/;
 function hasRegexMeta(value) {
   return REGEX_META_CHARS.test(value);
 }
-var PATTERN_CACHE = /* @__PURE__ */ new Map();
+var PATTERN_CACHE = new Map;
 function compilePatternMatcher(pattern) {
   const cached = PATTERN_CACHE.get(pattern);
   if (cached) {
@@ -1170,11 +1149,11 @@ function getPatternPropertyEntries(schema) {
     return entries;
   }
   if (!schema.patternProperties || typeof schema.patternProperties !== "object" || Array.isArray(schema.patternProperties)) {
-    return void 0;
+    return;
   }
   const patternKeys = Object.keys(schema.patternProperties);
   entries = new Array(patternKeys.length);
-  for (let i = 0; i < patternKeys.length; i++) {
+  for (let i = 0;i < patternKeys.length; i++) {
     const key = patternKeys[i];
     const compiledMatcher = compilePatternMatcher(key);
     const match = compiledMatcher instanceof RegExp ? (value) => compiledMatcher.test(value) : compiledMatcher;
@@ -1199,7 +1178,7 @@ function getPatternKeyMatchIndexes(schema, key, entries) {
       return cached;
     }
   } else {
-    cache = /* @__PURE__ */ new Map();
+    cache = new Map;
     Object.defineProperty(schema, "_patternKeyMatchIndexCache", {
       value: cache,
       enumerable: false,
@@ -1208,7 +1187,7 @@ function getPatternKeyMatchIndexes(schema, key, entries) {
     });
   }
   const indexes = [];
-  for (let i = 0; i < entries.length; i++) {
+  for (let i = 0;i < entries.length; i++) {
     if (entries[i].match(key)) {
       indexes.push(i);
     }
@@ -1223,7 +1202,7 @@ var ObjectKeywords = {
     if (!data || typeof data !== "object" || Array.isArray(data)) {
       return;
     }
-    for (let i = 0; i < schema.required.length; i++) {
+    for (let i = 0;i < schema.required.length; i++) {
       const key = schema.required[i];
       if (!Object.prototype.hasOwnProperty.call(data, key)) {
         return defineError("Required property is missing", {
@@ -1249,7 +1228,7 @@ var ObjectKeywords = {
       });
     }
     let requiredSet = schema._requiredSet;
-    if (requiredSet === void 0) {
+    if (requiredSet === undefined) {
       requiredSet = Array.isArray(schema.required) ? new Set(schema.required) : null;
       Object.defineProperty(schema, "_requiredSet", {
         value: requiredSet,
@@ -1258,7 +1237,7 @@ var ObjectKeywords = {
         writable: false
       });
     }
-    for (let i = 0; i < propKeys.length; i++) {
+    for (let i = 0;i < propKeys.length; i++) {
       const key = propKeys[i];
       const schemaProp = schema.properties[key];
       if (!Object.prototype.hasOwnProperty.call(data, key)) {
@@ -1357,7 +1336,7 @@ var ObjectKeywords = {
       return;
     }
     let apValidate = schema._apValidate;
-    if (apValidate === void 0) {
+    if (apValidate === undefined) {
       apValidate = isCompiledSchema(schema.additionalProperties) ? schema.additionalProperties.$validate : null;
       Object.defineProperty(schema, "_apValidate", {
         value: apValidate,
@@ -1420,7 +1399,7 @@ var ObjectKeywords = {
         }
         continue;
       }
-      for (let j = 0; j < matchingIndexes.length; j++) {
+      for (let j = 0;j < matchingIndexes.length; j++) {
         const schemaProp = patternEntries[matchingIndexes[j]].schemaProp;
         if (typeof schemaProp === "boolean") {
           if (schemaProp === false) {
@@ -1488,7 +1467,7 @@ var ObjectKeywords = {
       }
       const dependency = schema.dependencies[key];
       if (Array.isArray(dependency)) {
-        for (let i = 0; i < dependency.length; i++) {
+        for (let i = 0;i < dependency.length; i++) {
           if (!(dependency[i] in data)) {
             return defineError("Dependency is not satisfied", {
               item: i,
@@ -1520,22 +1499,18 @@ var ObjectKeywords = {
     }
     return;
   },
-  // Required by other keywords but not used as a function itself
   then: false,
   else: false,
   default: false,
-  // Not implemented yet
   definitions: false,
   $id: false,
   $schema: false,
-  // Metadata keywords (not used as a function)
   title: false,
   description: false,
   $comment: false,
   examples: false,
   contentMediaType: false,
   contentEncoding: false,
-  // Not supported Open API keywords
   discriminator: false,
   nullable: false
 };
@@ -1561,7 +1536,7 @@ function getBranchEntries(schema, key) {
   }
   const source = schema[key] || [];
   entries = [];
-  for (let i = 0; i < source.length; i++) {
+  for (let i = 0;i < source.length; i++) {
     entries.push(toBranchEntry(source[i]));
   }
   Object.defineProperty(schema, cacheKey, {
@@ -1576,10 +1551,10 @@ var OtherKeywords = {
   enum(schema, data, defineError) {
     let enumCache = schema._enumCache;
     if (!enumCache) {
-      const primitiveSet = /* @__PURE__ */ new Set();
+      const primitiveSet = new Set;
       const objectValues = [];
       const list = schema.enum;
-      for (let i = 0; i < list.length; i++) {
+      for (let i = 0;i < list.length; i++) {
         const enumItem = list[i];
         if (enumItem !== null && typeof enumItem === "object") {
           objectValues.push(enumItem);
@@ -1599,7 +1574,7 @@ var OtherKeywords = {
       return;
     }
     if (data !== null && typeof data === "object") {
-      for (let i = 0; i < enumCache.objectValues.length; i++) {
+      for (let i = 0;i < enumCache.objectValues.length; i++) {
         if (!hasChanged(enumCache.objectValues[i], data)) {
           return;
         }
@@ -1629,7 +1604,7 @@ var OtherKeywords = {
       }
       return;
     }
-    for (let i = 0; i < branches.length; i++) {
+    for (let i = 0;i < branches.length; i++) {
       const branch = branches[i];
       if (branch.kind === "validate") {
         const error = branch.validate(data);
@@ -1672,7 +1647,7 @@ var OtherKeywords = {
       }
       return defineError("Value is not valid", { data });
     }
-    for (let i = 0; i < branches.length; i++) {
+    for (let i = 0;i < branches.length; i++) {
       const branch = branches[i];
       if (branch.kind === "validate") {
         const error = branch.validate(data);
@@ -1716,7 +1691,7 @@ var OtherKeywords = {
       return defineError("Value is not valid", { data });
     }
     let validCount = 0;
-    for (let i = 0; i < branches.length; i++) {
+    for (let i = 0;i < branches.length; i++) {
       const branch = branches[i];
       let isValid = false;
       if (branch.kind === "validate") {
@@ -1862,7 +1837,7 @@ var StringKeywords = {
       }
     }
     if (!patternMatchCache) {
-      patternMatchCache = /* @__PURE__ */ new Map();
+      patternMatchCache = new Map;
       Object.defineProperty(schema, "_patternMatchCache", {
         value: patternMatchCache,
         enumerable: false,
@@ -1884,8 +1859,6 @@ var StringKeywords = {
     }
     return defineError("Value does not match the pattern", { data });
   },
-  // Take into account that if we receive a format that is not defined, we
-  // will not throw an error, we just ignore it.
   format(schema, data, defineError, instance) {
     if (typeof data !== "string") {
       return;
@@ -1893,7 +1866,7 @@ var StringKeywords = {
     let formatValidate = schema._formatValidate;
     let formatResultCacheEnabled = schema._formatResultCacheEnabled;
     let formatResultCache = schema._formatResultCache;
-    if (formatValidate === void 0) {
+    if (formatValidate === undefined) {
       formatValidate = instance.getFormat(schema.format);
       Object.defineProperty(schema, "_formatValidate", {
         value: formatValidate,
@@ -1905,11 +1878,8 @@ var StringKeywords = {
     if (!formatValidate) {
       return;
     }
-    if (formatResultCacheEnabled === void 0) {
-      formatResultCacheEnabled = instance.isDefaultFormatValidator(
-        schema.format,
-        formatValidate
-      );
+    if (formatResultCacheEnabled === undefined) {
+      formatResultCacheEnabled = instance.isDefaultFormatValidator(schema.format, formatValidate);
       Object.defineProperty(schema, "_formatResultCacheEnabled", {
         value: formatResultCacheEnabled,
         enumerable: false,
@@ -1924,7 +1894,7 @@ var StringKeywords = {
       return defineError("Value does not match the format", { data });
     }
     if (!formatResultCache) {
-      formatResultCache = /* @__PURE__ */ new Map();
+      formatResultCache = new Map;
       Object.defineProperty(schema, "_formatResultCache", {
         value: formatResultCache,
         enumerable: false,
@@ -1958,13 +1928,13 @@ var keywords = {
 };
 
 // lib/index.ts
-var SchemaShield = class {
+class SchemaShield {
   types = {};
   formats = {};
   keywords = {};
   immutable = false;
   rootSchema = null;
-  idRegistry = /* @__PURE__ */ new Map();
+  idRegistry = new Map;
   failFast = true;
   constructor({
     immutable = false,
@@ -2034,29 +2004,14 @@ var SchemaShield = class {
     }
     if (!compiledSchema.$validate) {
       if (schema === false) {
-        const defineError = getDefinedErrorFunctionForKey(
-          "oneOf",
-          compiledSchema,
-          this.failFast
-        );
-        compiledSchema.$validate = getNamedFunction(
-          "Validate_False",
-          (data) => defineError("Value is not valid", { data })
-        );
+        const defineError = getDefinedErrorFunctionForKey("oneOf", compiledSchema, this.failFast);
+        compiledSchema.$validate = getNamedFunction("Validate_False", (data) => defineError("Value is not valid", { data }));
       } else if (schema === true) {
-        compiledSchema.$validate = getNamedFunction(
-          "Validate_Any",
-          () => {
-          }
-        );
+        compiledSchema.$validate = getNamedFunction("Validate_Any", () => {});
       } else if (this.isSchemaLike(schema) === false) {
         throw new ValidationError("Invalid schema");
       } else {
-        compiledSchema.$validate = getNamedFunction(
-          "Validate_Any",
-          () => {
-          }
-        );
+        compiledSchema.$validate = getNamedFunction("Validate_Any", () => {});
       }
     }
     const validate = (data) => {
@@ -2084,7 +2039,7 @@ var SchemaShield = class {
     if (a.length !== b.length) {
       return false;
     }
-    for (let i = 0; i < a.length; i++) {
+    for (let i = 0;i < a.length; i++) {
       if (a[i] !== b[i]) {
         return false;
       }
@@ -2093,11 +2048,11 @@ var SchemaShield = class {
   }
   flattenAssociativeBranches(key, branches) {
     const out = [];
-    for (let i = 0; i < branches.length; i++) {
+    for (let i = 0;i < branches.length; i++) {
       const item = branches[i];
       if (this.isPlainObject(item) && Object.keys(item).length === 1 && Array.isArray(item[key])) {
         const nested = this.flattenAssociativeBranches(key, item[key]);
-        for (let j = 0; j < nested.length; j++) {
+        for (let j = 0;j < nested.length; j++) {
           out.push(nested[j]);
         }
         continue;
@@ -2129,12 +2084,7 @@ var SchemaShield = class {
       normalized[key] = value;
     };
     if (Array.isArray(schema.allOf)) {
-      const flattenedAllOf = this.flattenAssociativeBranches(
-        "allOf",
-        schema.allOf
-      ).filter(
-        (item) => !(this.isPlainObject(item) && Object.keys(item).length === 0)
-      );
+      const flattenedAllOf = this.flattenAssociativeBranches("allOf", schema.allOf).filter((item) => !(this.isPlainObject(item) && Object.keys(item).length === 0));
       if (hasOnlyKey("allOf") && flattenedAllOf.length === 1 && this.isPlainObject(flattenedAllOf[0])) {
         return flattenedAllOf[0];
       }
@@ -2143,10 +2093,7 @@ var SchemaShield = class {
       }
     }
     if (Array.isArray(schema.anyOf)) {
-      const flattenedAnyOf = this.flattenAssociativeBranches(
-        "anyOf",
-        schema.anyOf
-      );
+      const flattenedAnyOf = this.flattenAssociativeBranches("anyOf", schema.anyOf);
       if (hasOnlyKey("anyOf") && flattenedAnyOf.length === 1 && this.isPlainObject(flattenedAnyOf[0])) {
         return flattenedAnyOf[0];
       }
@@ -2204,7 +2151,7 @@ var SchemaShield = class {
         if (value.length === 0) {
           return true;
         }
-        for (let i = 0; i < value.length; i++) {
+        for (let i = 0;i < value.length; i++) {
           if (this.isTrivialAlwaysValidSubschema(value[i])) {
             continue;
           }
@@ -2216,7 +2163,7 @@ var SchemaShield = class {
         if (!Array.isArray(value)) {
           return false;
         }
-        for (let i = 0; i < value.length; i++) {
+        for (let i = 0;i < value.length; i++) {
           if (this.isTrivialAlwaysValidSubschema(value[i])) {
             return true;
           }
@@ -2233,7 +2180,7 @@ var SchemaShield = class {
       return false;
     }
     const keys = Object.keys(properties);
-    for (let i = 0; i < keys.length; i++) {
+    for (let i = 0;i < keys.length; i++) {
       const subSchema = properties[keys[i]];
       if (this.isPlainObject(subSchema) && "default" in subSchema) {
         return true;
@@ -2255,9 +2202,7 @@ var SchemaShield = class {
       }
     }
     schema = this.normalizeSchemaForCompile(schema);
-    const compiledSchema = deepCloneUnfreeze(
-      schema
-    );
+    const compiledSchema = deepCloneUnfreeze(schema);
     let schemaHasRef = false;
     if (typeof schema.$id === "string") {
       this.idRegistry.set(schema.$id, compiledSchema);
@@ -2266,20 +2211,8 @@ var SchemaShield = class {
       schemaHasRef = true;
       const refValidator = this.getKeyword("$ref");
       if (refValidator) {
-        const defineError = getDefinedErrorFunctionForKey(
-          "$ref",
-          schema["$ref"],
-          this.failFast
-        );
-        compiledSchema.$validate = getNamedFunction(
-          "Validate_Reference",
-          (data) => refValidator(
-            compiledSchema,
-            data,
-            defineError,
-            this
-          )
-        );
+        const defineError = getDefinedErrorFunctionForKey("$ref", schema["$ref"], this.failFast);
+        compiledSchema.$validate = getNamedFunction("Validate_Reference", (data) => refValidator(compiledSchema, data, defineError, this));
       }
       this.markSchemaHasRef(compiledSchema);
       return compiledSchema;
@@ -2287,11 +2220,7 @@ var SchemaShield = class {
     const validators = [];
     const activeNames = [];
     if ("type" in schema) {
-      const defineTypeError = getDefinedErrorFunctionForKey(
-        "type",
-        schema,
-        this.failFast
-      );
+      const defineTypeError = getDefinedErrorFunctionForKey("type", schema, this.failFast);
       const types = Array.isArray(schema.type) ? schema.type : schema.type.split(",").map((t) => t.trim());
       const typeFunctions = [];
       const typeNames = [];
@@ -2310,11 +2239,7 @@ var SchemaShield = class {
         }
       }
       if (typeFunctions.length === 0) {
-        throw getDefinedErrorFunctionForKey(
-          "type",
-          schema,
-          this.failFast
-        )("Invalid type for schema", { data: schema.type });
+        throw getDefinedErrorFunctionForKey("type", schema, this.failFast)("Invalid type for schema", { data: schema.type });
       }
       let combinedTypeValidator;
       let typeMethodName = "";
@@ -2440,7 +2365,7 @@ var SchemaShield = class {
       } else {
         typeMethodName = typeNames.join("_OR_");
         combinedTypeValidator = (data) => {
-          for (let i = 0; i < typeFunctions.length; i++) {
+          for (let i = 0;i < typeFunctions.length; i++) {
             if (typeFunctions[i](data)) {
               return;
             }
@@ -2464,18 +2389,11 @@ var SchemaShield = class {
       if (this.shouldSkipKeyword(schema, key)) {
         continue;
       }
-      const defineError = getDefinedErrorFunctionForKey(
-        key,
-        schema[key],
-        this.failFast
-      );
+      const defineError = getDefinedErrorFunctionForKey(key, schema[key], this.failFast);
       const fnName = keywordFn.name || key;
       validators.push({
         name: fnName,
-        validate: getNamedFunction(
-          fnName,
-          (data) => keywordFn(compiledSchema, data, defineError, this)
-        )
+        validate: getNamedFunction(fnName, (data) => keywordFn(compiledSchema, data, defineError, this))
       });
       activeNames.push(fnName);
     }
@@ -2487,9 +2405,7 @@ var SchemaShield = class {
       if (schema[key] && typeof schema[key] === "object" && !Array.isArray(schema[key])) {
         if (key === "properties") {
           for (const subKey of Object.keys(schema[key])) {
-            const compiledSubSchema2 = this.compileSchema(
-              schema[key][subKey]
-            );
+            const compiledSubSchema2 = this.compileSchema(schema[key][subKey]);
             if (compiledSubSchema2._hasRef === true) {
               schemaHasRef = true;
             }
@@ -2505,7 +2421,7 @@ var SchemaShield = class {
         continue;
       }
       if (Array.isArray(schema[key])) {
-        for (let i = 0; i < schema[key].length; i++) {
+        for (let i = 0;i < schema[key].length; i++) {
           if (this.isSchemaLike(schema[key][i])) {
             const compiledSubSchema = this.compileSchema(schema[key][i]);
             if (compiledSubSchema._hasRef === true) {
@@ -2529,7 +2445,7 @@ var SchemaShield = class {
     } else {
       const compositeName = "Validate_" + activeNames.join("_AND_");
       const masterValidator = (data) => {
-        for (let i = 0; i < validators.length; i++) {
+        for (let i = 0;i < validators.length; i++) {
           const v = validators[i];
           const error = v.validate(data);
           if (error) {
@@ -2538,10 +2454,7 @@ var SchemaShield = class {
         }
         return;
       };
-      compiledSchema.$validate = getNamedFunction(
-        compositeName,
-        masterValidator
-      );
+      compiledSchema.$validate = getNamedFunction(compositeName, masterValidator);
     }
     return compiledSchema;
   }
@@ -2572,18 +2485,10 @@ var SchemaShield = class {
         }
         if (typeof target === "boolean") {
           if (target === true) {
-            node.$validate = getNamedFunction("Validate_Ref_True", () => {
-            });
+            node.$validate = getNamedFunction("Validate_Ref_True", () => {});
           } else {
-            const defineError = getDefinedErrorFunctionForKey(
-              "$ref",
-              node,
-              this.failFast
-            );
-            node.$validate = getNamedFunction(
-              "Validate_Ref_False",
-              (_data) => defineError("Value is not valid")
-            );
+            const defineError = getDefinedErrorFunctionForKey("$ref", node, this.failFast);
+            node.$validate = getNamedFunction("Validate_Ref_False", (_data) => defineError("Value is not valid"));
           }
           continue;
         }
@@ -2596,7 +2501,7 @@ var SchemaShield = class {
         if (!value)
           continue;
         if (Array.isArray(value)) {
-          for (let i = 0; i < value.length; i++) {
+          for (let i = 0;i < value.length; i++) {
             const v = value[i];
             if (v && typeof v === "object") {
               stack.push(v);
@@ -2608,9 +2513,11 @@ var SchemaShield = class {
       }
     }
   }
-};
+}
 export {
-  SchemaShield,
+  deepCloneUnfreeze as deepClone,
   ValidationError,
-  deepCloneUnfreeze as deepClone
+  SchemaShield
 };
+
+//# debugId=B4F0E66F7D9E8A6864756E2164756E21

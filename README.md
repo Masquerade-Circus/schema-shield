@@ -36,8 +36,8 @@ validator({ name: "John", age: "30" });
 - [Usage](#usage)
 - [Performance](#performance)
   - [Understanding Performance Context](#understanding-performance-context)
-  - [1. Modern Runtimes (Bun)](#1-modern-runtimes-bun)
-  - [2. Standard Runtimes (Node.js)](#2-standard-runtimes-nodejs)
+  - [1. Standard Runtimes (Node.js)](#1-standard-runtimes-nodejs)
+  - [2. Modern Runtimes (Bun)](#2-modern-runtimes-bun)
 - [Edge \& Serverless Ready](#edge--serverless-ready)
 - [Features](#features)
 - [Security Philosophy: Hermetic Validation](#security-philosophy-hermetic-validation)
@@ -115,6 +115,23 @@ bun add schema-shield
 import { SchemaShield } from "schema-shield";
 // or
 const { SchemaShield } = require("schema-shield");
+```
+
+For direct browser usage without a bundler, load the minified browser artifact and use the global namespace:
+
+```html
+<script src="https://unpkg.com/schema-shield/dist/index.min.js"></script>
+<script>
+  const validator = new self.SchemaShield.SchemaShield().compile({
+    type: "object",
+    properties: {
+      name: { type: "string" }
+    },
+    required: ["name"]
+  });
+
+  console.log(validator({ name: "Ada" }));
+</script>
 ```
 
 **3. Instantiate the SchemaShield class**
@@ -206,18 +223,7 @@ SchemaShield is engineered to be **"Elite Fast" (Sufficiently Fast)**:
 
 While JIT compilers may show higher numbers in micro-benchmarks on V8, SchemaShield processes thousands of requests per second—more than enough for high-traffic APIs—without the architectural risks of code generation.
 
-### 1. Modern Runtimes (Bun)
-
-In runtimes using JavaScriptCore (like Bun), SchemaShield outperforms JIT compilers because it avoids the heavy cost of runtime code generation and optimization overhead.
-
-| Validator          | Relative Speed | Context      |
-| :----------------- | :------------- | :----------- |
-| **SchemaShield**   | **100%**       | **Fastest**  |
-| ajv                | ~40%           | JIT Compiler |
-| @exodus/schemasafe | ~24%           | Interpreter  |
-| jsonschema         | ~2%            | Legacy       |
-
-### 2. Standard Runtimes (Node.js)
+### 1. Standard Runtimes (Node.js)
 
 In V8-based environments (Node.js), SchemaShield maintains elite performance for a secure interpreter, being roughly **70x faster** than legacy libraries.
 
@@ -230,11 +236,22 @@ In V8-based environments (Node.js), SchemaShield maintains elite performance for
 
 **Key Takeaway:** SchemaShield delivers consistent high performance in Node.js without the security risks, memory leaks, or "cold start" latency associated with code generation.
 
+### 2. Modern Runtimes (Bun)
+
+In runtimes using JavaScriptCore, SchemaShield outperforms JIT compilers because it avoids the heavy cost of runtime code generation and optimization overhead.
+
+| Validator          | Relative Speed | Context      |
+| :----------------- | :------------- | :----------- |
+| **SchemaShield**   | **100%**       | **Fastest**  |
+| ajv                | ~40%           | JIT Compiler |
+| @exodus/schemasafe | ~24%           | Interpreter  |
+| jsonschema         | ~2%            | Legacy       |
+
 ## Edge & Serverless Ready
 
 SchemaShield is designed to run seamlessly in restrictive environments like **Cloudflare Workers**, **Vercel Edge Functions**, **Deno Deploy**, and **Bun**.
 
-- **Zero Dependencies:** No strict reliance on Node.js built-ins.
+- **Zero Runtime Dependencies:** Install and run without pulling additional runtime packages.
 - **CSP Compliant:** Works in environments where `eval()` and `new Function()` are banned for security.
 - **Instant Startup:** No compilation overhead, minimizing "cold start" latency in Serverless functions.
 
@@ -254,14 +271,14 @@ const validateRequest = new SchemaShield().compile({
 // Vercel Edge / Cloudflare Worker handler
 export default function handler(request) {
   const result = validateRequest(request.body);
-  
+
   if (!result.valid) {
     return new Response(JSON.stringify({ error: result.error.message }), {
       status: 400,
       headers: { "Content-Type": "application/json" }
     });
   }
-  
+
   return new Response(JSON.stringify(result.data), { status: 200 });
 }
 ```
@@ -291,12 +308,12 @@ Unlike JIT compilers that generate code at runtime, SchemaShield uses a flat-loo
 
 ### Performance Characteristics
 
-| Schema Type | Performance | Notes |
-|-------------|-------------|-------|
-| Simple (type, properties) | Very fast | ~same as JIT |
-| allOf/anyOf/oneOf | ~70% JIT | Sequential branch evaluation |
-| Deep nesting | Stack-safe | Constant memory, no recursion |
-| Many $refs | Fast | Resolved at compile-time |
+| Schema Type               | Performance | Notes                         |
+| ------------------------- | ----------- | ----------------------------- |
+| Simple (type, properties) | Very fast   | ~same as JIT                  |
+| allOf/anyOf/oneOf         | ~70% JIT    | Sequential branch evaluation  |
+| Deep nesting              | Stack-safe  | Constant memory, no recursion |
+| Many $refs                | Fast        | Resolved at compile-time      |
 
 ### Performance Optimization Tips
 
@@ -334,7 +351,7 @@ const betterSchema = {
 - Immutable mode for data protection.
 - Lightweight and fast.
 - Easy to use and extend.
-- No dependencies.
+- No runtime dependencies.
 - TypeScript support.
 
 ## Security Philosophy: Hermetic Validation
@@ -401,7 +418,7 @@ const schema = {
 const validator = new SchemaShield().compile(schema);
 
 // Malicious input {"__proto__": {"evil": "value"}} will fail
-validator({ "__proto__": { "evil": "value" } });
+validator({ __proto__: { evil: "value" } });
 // { valid: false, error: ValidationError }
 
 // Only explicitly defined properties are allowed
@@ -1269,9 +1286,9 @@ SchemaShield prioritizes reliability and accuracy in JSON Schema validation by u
 This comprehensive test suite ensures compliance with the JSON Schema standard, providing developers with a dependable and consistent validation experience.
 
 ```bash
-npm test
+bun test
 # or
-npm run test:dev # for development
+bun run dev:test # for development
 ```
 
 ## Contribute

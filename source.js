@@ -1,9 +1,19 @@
 /* eslint-disable no-console */
-const esbuild = require("esbuild");
-const terser = require("terser");
 const fs = require("fs");
+const path = require("path");
 const zlib = require("zlib");
+const { spawnSync } = require("child_process");
 const { hrtime } = require("process");
+
+const outdir = path.join(__dirname, "dist");
+const entryPoint = path.join(__dirname, "lib", "index.ts");
+const sizeReportArtifacts = [
+  "index.mjs",
+  "index.js",
+  "index.min.js",
+  "index.min.js.map",
+  "index.d.ts"
+];
 
 function convertToUMD(text, globalName) {
   // HACK: convert to UMD - only supports cjs and global var
@@ -31,189 +41,171 @@ function convertToUMD(text, globalName) {
   return code;
 }
 
-// eslint-disable-next-line sonarjs/cognitive-complexity
-async function build({
-  globalName,
-  entryPoint,
-  outfileName,
-  clean = false,
-  emitDeclarations = false,
-  libCheck = false,
-  minify = "cjs",
-  embedSourceMap = false,
-  external = []
-}) {
-  try {
-    let header = `\n/*** ${entryPoint} ***/`;
-    console.log(header);
-
-    let outdir = outfileName.split("/").slice(0, -1).join("/");
-    let outfile = outfileName.split("/").pop();
-
-    // If clean is true, delete the outdir
-    if (clean && fs.existsSync(outdir)) {
-      fs.rmSync(outdir, { recursive: true });
+function emitDeclarations() {
+  const tscBin = path.join(
+    __dirname,
+    "node_modules",
+    ".bin",
+    process.platform === "win32" ? "tsc.cmd" : "tsc"
+  );
+  const result = spawnSync(
+    tscBin,
+    [
+      "--project",
+      "tsconfig.json",
+      "--declaration",
+      "--declarationMap",
+      "--emitDeclarationOnly",
+      "--outDir",
+      outdir,
+      "--skipLibCheck"
+    ],
+    {
+      cwd: __dirname,
+      stdio: "inherit"
     }
+  );
 
-    // Ensure outdir exists recursively, if not create it
-    if (!fs.existsSync(outdir)) {
-      fs.mkdirSync(outdir, { recursive: true });
-    }
+  if (result.error) {
+    throw result.error;
+  }
 
-    if ((libCheck || emitDeclarations) && entryPoint.endsWith(".ts")) {
-      const tsc = require("tsc-prog");
-      let tscProgOptions2 = {
-        basePath: __dirname, // always required, used for relative paths
-        configFilePath: "tsconfig.json", // config to inherit from (optional)
-        files: [entryPoint],
-        pretty: true,
-        copyOtherToOutDir: false,
-        clean: [],
-        skipLibCheck: true,
-        compilerOptions: {
-          declarationMap: emitDeclarations,
-          noEmit: !emitDeclarations,
-          declaration: emitDeclarations,
-          outDir: outdir,
-          emitDeclarationOnly: emitDeclarations
-        }
-      };
-
-      tsc.build(tscProgOptions2);
-    }
-
-    let cjs = esbuild.buildSync({
-      entryPoints: [entryPoint],
-      bundle: true,
-      sourcemap: "external",
-      write: false,
-      minify: false,
-      outdir: outdir,
-      target: "esnext",
-      loader: { ".js": "jsx", ".ts": "tsx", ".mjs": "jsx" },
-      format: "cjs",
-      metafile: true,
-      external
-    });
-
-    let esm = esbuild.buildSync({
-      entryPoints: [entryPoint],
-      bundle: true,
-      sourcemap: "external",
-      write: false,
-      minify: false,
-      outdir: outdir,
-      target: "esnext",
-      loader: { ".js": "jsx", ".ts": "tsx", ".mjs": "jsx" },
-      format: "esm",
-      metafile: true,
-      external
-    });
-
-    let esmContent = esm.outputFiles[1].text;
-
-    // HACK: simulate __dirname and __filename for esm
-    if (
-      esmContent.indexOf("__dirname") !== -1 ||
-      esmContent.indexOf("__filename") !== -1
-    ) {
-      esmContent =
-        `import { fileURLToPath } from 'url';const __filename = fileURLToPath(import.meta.url);const __dirname = path.dirname(__filename);` +
-        esmContent;
-      if (esmContent.indexOf("import path from") === -1) {
-        esmContent = `import path from 'path';` + esmContent;
-      }
-    }
-
-    fs.writeFileSync(`${outfileName}.mjs`, esmContent);
-    fs.writeFileSync(`${outfileName}.js`, cjs.outputFiles[1].text);
-
-    let result2;
-    if (minify) {
-      let codeToMinify = minify === "esm" ? esm : cjs;
-      if (codeToMinify) {
-        let code = convertToUMD(codeToMinify.outputFiles[1].text, globalName);
-        result2 = await terser.minify(code, {
-          sourceMap: {
-            content: codeToMinify.outputFiles[0].text.toString()
-          },
-          compress: {
-            booleans_as_integers: false,
-            passes: 2,
-            unsafe_arrows: true,
-            unsafe_methods: true,
-            unsafe_proto: true,
-            unsafe_regexp: true,
-            unsafe_undefined: true
-          },
-          mangle: {
-            properties: false
-          },
-          output: {
-            wrap_func_args: false,
-            comments: false
-          },
-          ecma: 2022
-        });
-
-        let mapBase64 = Buffer.from(result2.map.toString()).toString("base64");
-        let map = `//# sourceMappingURL=data:application/json;charset=utf-8;base64,${mapBase64}`;
-        if (embedSourceMap) {
-          fs.writeFileSync(`${outfileName}.min.js`, result2.code + map);
-        } else {
-          fs.writeFileSync(
-            `${outfileName}.min.js`,
-            result2.code + `//# sourceMappingURL=${outfile}.min.js.map`
-          );
-          fs.writeFileSync(`${outfileName}.min.js.map`, map);
-        }
-      }
-    }
-
-    function formatBytesToKiloBytes(bytes) {
-      return (bytes / 1024).toFixed(2) + "kb";
-    }
-
-    let text = await esbuild.analyzeMetafile(esm.metafile, { verbose: true });
-    console.log(text);
-    console.log("Esm", formatBytesToKiloBytes(esm.outputFiles[1].text.length));
-    if (minify) {
-      console.log("Minified:", formatBytesToKiloBytes(result2.code.length));
-      // Get the size using gzip compression
-      const gzip = zlib.gzipSync(result2.code);
-      console.log("Gzip:", formatBytesToKiloBytes(gzip.length));
-      // Get the size using brotli algorithm
-      const brotli = zlib.brotliCompressSync(result2.code);
-      console.log("Brotli:", formatBytesToKiloBytes(brotli.length));
-    }
-    console.log(`/${Array(header.length).fill("*").join("")}/`);
-  } catch (e) {
-    console.error(e);
+  if (result.status !== 0) {
+    throw new Error(
+      `tsc declaration emit failed with exit code ${result.status}`
+    );
   }
 }
 
-(async () => {
-  let isDev = process.env.NODE_ENV === "development";
-  let libCheck = !isDev;
-  let emitDeclarations = !isDev;
-  let clean = !isDev;
-
-  let buildStart = hrtime();
-
-  await build({
-    globalName: "SchemaShield",
-    entryPoint: "./lib/index.ts",
-    outfileName: "./dist/index",
-    clean,
-    minify: "esm",
-    libCheck,
-    emitDeclarations
+async function buildWithBun(outfile, options) {
+  const result = await Bun.build({
+    entrypoints: [options.entrypoint ?? entryPoint],
+    outdir: path.dirname(outfile),
+    naming: path.basename(outfile),
+    target: options.target ?? "node",
+    format: options.format,
+    minify: options.minify ?? false,
+    bundle: options.bundle ?? true,
+    sourcemap: "external"
   });
 
-  const buildEnd = hrtime(buildStart);
+  if (!result.success) {
+    throw new AggregateError(result.logs, `Bun build failed for ${outfile}`);
+  }
 
-  // Log the build time in seconds with two decimal places
-  console.log(
-    `Build time: ${(buildEnd[0] + buildEnd[1] / 1e9).toFixed(2)} seconds`
+  for (const output of result.outputs) {
+    fs.mkdirSync(path.dirname(output.path), { recursive: true });
+    fs.writeFileSync(output.path, Buffer.from(await output.arrayBuffer()));
+  }
+
+  return result;
+}
+
+function finalizeBrowserGlobalArtifact(outfile) {
+  const code = fs.readFileSync(outfile, "utf8");
+  const browserCode = code.replace(
+    /export\s+default\s+([A-Za-z_$][\w$]*)\(\);?\s*(\/\/#[^\n]+)?\s*$/,
+    (_, factoryName, sourceMapComment = "") =>
+      `self.SchemaShield=${factoryName}();${sourceMapComment}`
   );
-})();
+
+  if (browserCode === code) {
+    return;
+  }
+
+  fs.writeFileSync(outfile, browserCode);
+}
+
+function formatBytes(bytes) {
+  return `${(bytes / 1024).toFixed(2)}kb`;
+}
+
+function printSizeReport() {
+  console.log("\nSize report (dist)");
+  console.log("Artifact             raw       gzip       br");
+
+  for (const artifact of sizeReportArtifacts) {
+    const distFile = path.join(outdir, artifact);
+
+    if (!fs.existsSync(distFile)) {
+      console.log(`${artifact.padEnd(17)} missing`);
+      continue;
+    }
+
+    const buffer = fs.readFileSync(distFile);
+
+    const dist = {
+      raw: buffer.length,
+      gzip: zlib.gzipSync(buffer).length,
+      brotli: zlib.brotliCompressSync(buffer).length
+    };
+
+    console.log(
+      `${artifact.padEnd(17)} ${formatBytes(dist.raw).padStart(8)} ${formatBytes(dist.gzip).padStart(10)} ${formatBytes(dist.brotli).padStart(8)}`
+    );
+  }
+}
+
+async function build() {
+  try {
+    if (typeof Bun === "undefined") {
+      throw new Error(
+        "source.js must be run with Bun, for example: bun source.js"
+      );
+    }
+
+    const buildStart = hrtime();
+
+    fs.rmSync(outdir, { recursive: true, force: true });
+    fs.mkdirSync(outdir, { recursive: true });
+
+    emitDeclarations();
+
+    await buildWithBun(path.join(outdir, "index.mjs"), { format: "esm" });
+    await buildWithBun(path.join(outdir, "index.js"), { format: "cjs" });
+
+    const browser = await buildWithBun(path.join(outdir, "index.browser.mjs"), {
+      format: "esm",
+      target: "browser"
+    });
+    const browserOutput = browser.outputs.find(
+      (file) => !file.path.endsWith(".map")
+    );
+
+    if (!browserOutput) {
+      throw new Error("Bun browser output was not found");
+    }
+
+    const browserUmd = path.join(outdir, "index.browser.umd.js");
+    fs.writeFileSync(
+      browserUmd,
+      convertToUMD(await browserOutput.text(), "SchemaShield")
+    );
+
+    await buildWithBun(path.join(outdir, "index.min.js"), {
+      entrypoint: browserUmd,
+      format: "esm",
+      target: "browser",
+      minify: true,
+      bundle: false
+    });
+
+    finalizeBrowserGlobalArtifact(path.join(outdir, "index.min.js"));
+
+    fs.rmSync(browserUmd, { force: true });
+    fs.rmSync(path.join(outdir, "index.browser.mjs"), { force: true });
+    fs.rmSync(path.join(outdir, "index.browser.mjs.map"), { force: true });
+
+    printSizeReport();
+
+    const buildEnd = hrtime(buildStart);
+    console.log(
+      `Build time: ${(buildEnd[0] + buildEnd[1] / 1e9).toFixed(2)} seconds`
+    );
+  } catch (error) {
+    console.log("Build failed with error:", error);
+    process.exitCode = 1;
+  }
+}
+
+build();

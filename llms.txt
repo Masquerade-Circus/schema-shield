@@ -11,6 +11,7 @@ SchemaShield is a secure interpreter for JSON Schema (draft-06, draft-07) that p
 - **Runtime Object Validation**: Native support for validating class instances, Dates, and custom objects alongside serialized JSON
 - **Built-in Error Trees**: Advanced error reporting with getCause(), getTree(), getPath() methods
 - **Zero Dependencies**: No external runtime dependencies
+- **Browser Global Namespace**: Direct browser builds expose `self.SchemaShield` for script-tag usage
 
 ## Benchmarks
 
@@ -61,6 +62,21 @@ validator({ name: "John", email: "john@example.com" });
 
 validator({ email: "invalid" });
 // { valid: false, error: ValidationError }
+```
+
+### Browser Global Usage
+
+```html
+<script src="https://unpkg.com/schema-shield/dist/index.min.js"></script>
+<script>
+  const validator = new self.SchemaShield.SchemaShield().compile({
+    type: "object",
+    properties: { name: { type: "string" } },
+    required: ["name"]
+  });
+
+  validator({ name: "Ada" });
+</script>
 ```
 
 ### Serverless / Edge Deployment

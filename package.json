@@ -19,11 +19,6 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
       "require": "./dist/index.js"
-    },
-    "./*": {
-      "types": "./dist/*.d.ts",
-      "import": "./dist/*/index.mjs",
-      "require": "./dist/*/index.js"
     }
   },
   "files": [
@@ -71,18 +66,11 @@
   "scripts": {
     "test": "mocha --bail --recursive --no-timeouts  --forbid-only --exit --require ts-node/register --enable-source-maps tests/**/*.test.ts",
     "dev:test": "nodemon -e ts,js -w ./tests -w ./lib --exec mocha --bail --recursive --no-timeouts --exit --require ts-node/register --enable-source-maps tests/**/*.test.ts",
-    "dev:source": "NODE_ENV=development nodemon --enable-source-maps -e tsx,ts,json,css -w ./lib -w ./www source.js",
-    "build": "node source.js",
+    "build": "bun source.js",
     "coverage": "nyc report --reporter=lcov",
     "commit": "git add . && git-cz && git push",
     "release": "release-it --verbose",
     "release-test": "release-it --dry-run --verbose"
-  },
-  "dependencies": {
-    "ts-node": "^10.9.1",
-    "tsc-prog": "^2.2.1",
-    "tslib": "^2.5.0",
-    "typescript": "^5.0.2"
   },
   "devDependencies": {
     "@exodus/schemasafe": "^1.0.0",
@@ -92,7 +80,6 @@
     "@typescript-eslint/parser": "^5.56.0",
     "ajv": "^8.12.0",
     "cz-conventional-changelog": "^3.3.0",
-    "esbuild": "^0.17.12",
     "eslint": "^8.36.0",
     "eslint-plugin-sonarjs": "^0.19.0",
     "expect": "^29.5.0",
@@ -101,7 +88,8 @@
     "nodemon": "^2.0.22",
     "nyc": "^15.1.0",
     "release-it": "^15.9.3",
-    "terser": "^5.16.6"
+    "ts-node": "^10.9.1",
+    "typescript": "^5.0.2"
   },
   "nyc": {
     "exclude": [
