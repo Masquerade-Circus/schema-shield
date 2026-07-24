@@ -50,10 +50,6 @@ function isPlainObject(value: any): boolean {
 export { isPlainObject };
 
 function canUseStructuredClone(value: any): boolean {
-  if (typeof structuredClone !== "function") {
-    return false;
-  }
-
   if (typeof Buffer !== "undefined" && value instanceof Buffer) {
     return false;
   }
@@ -68,6 +64,66 @@ function canUseStructuredClone(value: any): boolean {
     value instanceof ArrayBuffer ||
     ArrayBuffer.isView(value)
   );
+}
+
+function clonePlainObjectOrArrayIteratively<T>(
+  value: T,
+  cloneClassInstances: boolean,
+  seen: WeakMap<object, any>
+): T {
+  const sourceRoot = value as any;
+  const cloneRoot: any = Array.isArray(sourceRoot)
+    ? []
+    : Object.create(Object.getPrototypeOf(sourceRoot));
+  seen.set(sourceRoot, cloneRoot);
+  const pending: Array<{ source: any; clone: any }> = [
+    { source: sourceRoot, clone: cloneRoot }
+  ];
+
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    const keys = Reflect.ownKeys(current.source);
+
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      const descriptor = Object.getOwnPropertyDescriptor(current.source, key)!;
+
+      if (!("value" in descriptor)) {
+        Object.defineProperty(current.clone, key, descriptor);
+        continue;
+      }
+
+      const item = descriptor.value;
+      if (item === null || typeof item !== "object") {
+        Object.defineProperty(current.clone, key, descriptor);
+        continue;
+      }
+
+      if (!Array.isArray(item) && !isPlainObject(item)) {
+        descriptor.value = deepCloneUnfreeze(
+          item,
+          cloneClassInstances,
+          seen
+        );
+        Object.defineProperty(current.clone, key, descriptor);
+        continue;
+      }
+
+      let clonedItem = seen.get(item);
+      if (!clonedItem) {
+        clonedItem = Array.isArray(item)
+          ? []
+          : Object.create(Object.getPrototypeOf(item));
+        seen.set(item, clonedItem);
+        pending.push({ source: item, clone: clonedItem });
+      }
+
+      descriptor.value = clonedItem;
+      Object.defineProperty(current.clone, key, descriptor);
+    }
+  }
+
+  return cloneRoot;
 }
 
 export function deepCloneUnfreeze<T>(
@@ -86,22 +142,29 @@ export function deepCloneUnfreeze<T>(
   }
 
   if (canUseStructuredClone(source)) {
-    const cloned = structuredClone(source);
-    seen.set(source, cloned);
-    return cloned;
+    try {
+      const cloned = structuredClone(source);
+      seen.set(source, cloned);
+      return cloned;
+    } catch (error) {
+      if (
+        !(error instanceof RangeError) ||
+        (!Array.isArray(source) && !isPlainObject(source))
+      ) {
+        throw error;
+      }
+
+      return clonePlainObjectOrArrayIteratively(
+        source,
+        cloneClassInstances,
+        seen
+      );
+    }
   }
 
   let clone: any;
 
   switch (true) {
-    case Array.isArray(source): {
-      clone = [];
-      seen.set(source, clone);
-      for (let i = 0, l = source.length; i < l; i++) {
-        clone[i] = deepCloneUnfreeze(source[i], cloneClassInstances, seen);
-      }
-      return clone;
-    }
     case source instanceof Date: {
       clone = new Date(source.getTime());
       seen.set(source, clone);

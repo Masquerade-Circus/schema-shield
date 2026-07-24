@@ -8,8 +8,16 @@ interface ErrorTree {
     data?: any;
     cause?: ErrorTree;
 }
+export interface CompactValidationPath {
+    messages: string[];
+    keywords: string[];
+    schemas: CompiledSchema[];
+    items: Array<string | number | undefined>;
+    data: any[];
+}
 export declare class ValidationError extends Error {
     message: string;
+    code?: string;
     item?: string | number;
     keyword: string;
     cause?: ValidationError;
@@ -17,10 +25,12 @@ export declare class ValidationError extends Error {
     instancePath: string;
     data?: any;
     schema?: CompiledSchema;
+    private compactPath?;
+    private compactLeaf?;
     constructor(message: string);
-    private _getCause;
+    setCompactPath(path: CompactValidationPath, leaf: ValidationError): void;
+    private visitPath;
     getCause(): ValidationError;
-    private _getTree;
     getTree(): ErrorTree;
     getPath(): {
         schemaPath: string;

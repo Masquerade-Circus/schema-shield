@@ -7,7 +7,7 @@ import fs from "fs";
 import { stringifySchema } from "./test-utils";
 
 const files = fs.readdirSync(
-  "./node_modules/json-schema-test-suite/tests/draft6"
+  "./node_modules/json-schema-test-suite/tests/draft7"
 );
 
 const jsonTestFiles = files.reduce((acc, file) => {
@@ -31,12 +31,7 @@ const jsonTestsToSkip = {
       "No one supports this"
   },
 
-  // Sub items
-  "items and subitems": "Not implemented",
-
   // Id and remote refs
-  "$id inside an unknown keyword is not a real identifier": "Not implemented",
-  "$ref prevents a sibling $id from changing the base uri": "Not implemented",
   "remote ref, containing refs itself":
     "Remote references are not supported in SchemaShield v1",
   "Location-independent identifier with base URI change in subschema":
@@ -47,21 +42,12 @@ const jsonTestsToSkip = {
     "ID scope resolution not supported",
   "URN base URI with URN and JSON pointer ref": "URN refs not supported",
   "URN base URI with URN and anchor ref": "URN refs not supported",
-  "ref with absolute-path-reference": "Absolute path references not supported",
-
-  // Needs investigation
-  "evaluating the same schema location against the same data location twice is not a sign of an infinite loop":
-    "Needs investigation",
-  "float division = inf": {
-    "always invalid, but naive implementations may raise an overflow error":
-      "Needs investigation"
-  }
+  "ref with absolute-path-reference": "Absolute path references not supported"
 };
 
 const filesToSkip: string[] = [
-  // References
-  "refRemote",
-  "id"
+  // Remote references require schemas that SchemaShield does not fetch.
+  "refRemote"
 ];
 
 const schemaShield = new SchemaShield();

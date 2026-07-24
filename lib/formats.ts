@@ -8,7 +8,7 @@ const DURATION_REGEX =
   /^P(?!$)((\d+Y)?(\d+M)?(\d+W)?(\d+D)?)(T(?=\d)(\d+H)?(\d+M)?(\d+S)?)?$/;
 const URI_REGEX = /^[a-zA-Z][a-zA-Z0-9+\-.]*:[^\s]*$/;
 const EMAIL_REGEX =
-  /^(?!\.)(?!.*\.$)[a-z0-9!#$%&'*+/=?^_`{|}~-]{1,20}(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]{1,21}){0,2}@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,60}[a-z0-9])?){0,3}$/i;
+  /^(?!\.)(?!.*\.$)(?=[^@]{1,64}@)[a-z0-9!#$%&'*+/=?^_`{|}~-]{1,64}(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]{1,64}){0,2}@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,60}[a-z0-9])?){0,3}$/i;
 const HOSTNAME_REGEX =
   /^[a-z0-9][a-z0-9-]{0,62}(?:\.[a-z0-9][a-z0-9-]{0,62})*[a-z0-9]$/i;
 const DATE_REGEX = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -451,6 +451,10 @@ export const Formats: Record<string, FormatFunction | false> = {
     return true;
   },
   uri(data) {
+    if (data.includes("[") && !data.includes("]")) {
+      return false;
+    }
+
     return URI_REGEX.test(data);
   },
   email(data) {

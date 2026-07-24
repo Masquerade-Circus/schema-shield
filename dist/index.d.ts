@@ -34,10 +34,17 @@ export declare class SchemaShield {
     private immutable;
     private rootSchema;
     private idRegistry;
+    private schemaLocations;
     private failFast;
-    constructor({ immutable, failFast }?: {
+    private maxDepth;
+    private guardedValidationDepth;
+    private depthErrorCount;
+    private iterativeWorkspaces;
+    private activeIterativeWorkspaces;
+    constructor({ immutable, failFast, maxDepth }?: {
         immutable?: boolean;
         failFast?: boolean;
+        maxDepth?: number;
     });
     addType(name: string, validator: TypeFunction, overwrite?: boolean): void;
     getType(type: string): TypeFunction | false;
@@ -49,17 +56,29 @@ export declare class SchemaShield {
     getSchemaRef(path: string): CompiledSchema | undefined;
     getSchemaById(id: string): CompiledSchema | undefined;
     compile(schema: any): Validator;
+    private createDepthError;
+    private guardCompiledValidators;
+    private requiresIterativeValidation;
+    private wrapIterativeError;
+    private validateIterative;
+    private runIterativeValidation;
     private isPlainObject;
+    private collectSchemaLocations;
     private isTrivialAlwaysValidSubschema;
     private shallowArrayEquals;
     private flattenAssociativeBranches;
     private flattenSingleWrapperOneOf;
     private normalizeSchemaForCompile;
+    private defineHiddenValue;
+    private prepareObjectKeywordCaches;
+    private toCombinatorBranchEntry;
+    private prepareCombinatorKeywordCaches;
     private markSchemaHasRef;
     private shouldSkipKeyword;
     private hasRequiredDefaults;
     private isDefaultTypeValidator;
     private compileSchema;
+    private compileSchemaNode;
     isSchemaLike(subSchema: any): boolean;
     private linkReferences;
 }

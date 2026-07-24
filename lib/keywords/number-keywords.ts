@@ -48,7 +48,7 @@ export const NumberKeywords: Record<string, KeywordFunction> = {
     const quotient = data / schema.multipleOf;
 
     if (!isFinite(quotient)) {
-      return;
+      return defineError("Value is not a multiple of the multipleOf", { data });
     }
 
     if (!areCloseEnough(quotient, Math.round(quotient))) {

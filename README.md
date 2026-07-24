@@ -142,6 +142,7 @@ const schemaShield = new SchemaShield();
 
 - **`immutable`** (optional): Set to `true` to ensure that input data remains unmodified during validation. Default is `false` for better performance.
 - **`failFast`** (optional): Set to `false` to receive detailed error objects on validation failure. Default is `true` for lightweight failure indication.
+- **`maxDepth`** (optional): Maximum structural validation depth. It must be a positive integer and defaults to `10,000`. Inputs that exceed it fail with the normal fail-fast sentinel or a detailed `ValidationError` whose `code` is `MAX_DEPTH_EXCEEDED`.
 
 **3.5. Add custom types, keywords, and formats (optional)**
 
@@ -1286,9 +1287,27 @@ SchemaShield prioritizes reliability and accuracy in JSON Schema validation by u
 This comprehensive test suite ensures compliance with the JSON Schema standard, providing developers with a dependable and consistent validation experience.
 
 ```bash
+npm test
+# Runs the normal Mocha suite through Node.js without the long scratchpad benchmark.
+
+npm run benchmark:short -- <baseline-entrypoint> [candidate-entrypoint]
+# Runs the versioned 1,003-case performance gate. The candidate defaults to
+# lib/index.ts. The command fails above 1.05x globally, above 1.10x in any
+# cohort, or after five minutes.
+
+npm run test:scratchpad
+# Runs the scratchpad and its long benchmark explicitly.
+
+bun run test
+# Runs the same package script and Mocha suite. This does not select Bun's
+# native test runner.
+
 bun test
-# or
-bun run dev:test # for development
+# Selects Bun's native test runner. The project suite uses Mocha APIs, so this
+# command is not the release gate for this repository.
+
+bun run dev:test
+# Watches tests and library sources, then reruns the normal Mocha suite through Node.js.
 ```
 
 ## Contribute

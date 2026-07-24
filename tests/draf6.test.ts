@@ -30,11 +30,7 @@ const jsonTestsToSkip = {
       "No one supports this"
   },
 
-  // Sub items
-  "items and subitems": "Not implemented",
-
   // Ref
-  "$id inside an unknown keyword is not a real identifier": "Not implemented",
   "validate definition against metaschema": "Not implemented",
   "remote ref, containing refs itself": "Not supported",
   "Location-independent identifier with base URI change in subschema":
@@ -44,21 +40,12 @@ const jsonTestsToSkip = {
   "RN base URI with URN and JSON pointer ref": "Not supported",
   "URN base URI with URN and JSON pointer ref": "Not supported",
   "URN base URI with URN and anchor ref": "Not supported",
-  "ref with absolute-path-reference": "Not supported",
-
-  // Needs investigation
-  "evaluating the same schema location against the same data location twice is not a sign of an infinite loop":
-    "Needs investigation",
-  "float division = inf": {
-    "always invalid, but naive implementations may raise an overflow error":
-      "Needs investigation"
-  }
+  "ref with absolute-path-reference": "Not supported"
 };
 
 const filesToSkip: string[] = [
-  // References
-  "refRemote",
-  "id"
+  // Remote references require schemas that SchemaShield does not fetch.
+  "refRemote"
 ];
 
 const schemaShield = new SchemaShield();

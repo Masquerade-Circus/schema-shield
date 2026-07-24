@@ -13,7 +13,7 @@
   "module": "dist/index.mjs",
   "unpkg": "dist/index.min.js",
   "browser": "dist/index.min.js",
-  "types": "dist/**/*.d.ts",
+  "types": "dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -24,7 +24,6 @@
   "files": [
     "dist",
     "lib",
-    "package-lock.json",
     "LICENSE",
     "tsconfig.json"
   ],
@@ -61,11 +60,13 @@
     "User friendly"
   ],
   "engines": {
-    "node": ">=12.0.0"
+    "node": ">=18.0.0"
   },
   "scripts": {
-    "test": "mocha --bail --recursive --no-timeouts  --forbid-only --exit --require ts-node/register --enable-source-maps tests/**/*.test.ts",
-    "dev:test": "nodemon -e ts,js -w ./tests -w ./lib --exec mocha --bail --recursive --no-timeouts --exit --require ts-node/register --enable-source-maps tests/**/*.test.ts",
+    "test": "mocha --bail --recursive --no-timeouts --forbid-only --exit --require ts-node/register --enable-source-maps --ignore tests/scratchpad.test.ts tests/**/*.test.ts",
+    "test:scratchpad": "mocha --no-timeouts --forbid-only --exit --require ts-node/register --enable-source-maps tests/scratchpad.test.ts",
+    "benchmark:short": "node --require ts-node/register performance/short-gate.cjs",
+    "dev:test": "nodemon -e ts,js -w ./tests -w ./lib --exec mocha --bail --recursive --no-timeouts --exit --require ts-node/register --enable-source-maps --ignore tests/scratchpad.test.ts tests/**/*.test.ts",
     "build": "bun source.js",
     "coverage": "nyc report --reporter=lcov",
     "commit": "git add . && git-cz && git push",

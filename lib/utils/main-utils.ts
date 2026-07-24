@@ -10,8 +10,17 @@ interface ErrorTree {
   cause?: ErrorTree;
 }
 
+export interface CompactValidationPath {
+  messages: string[];
+  keywords: string[];
+  schemas: CompiledSchema[];
+  items: Array<string | number | undefined>;
+  data: any[];
+}
+
 export class ValidationError extends Error {
   message: string;
+  code?: string;
   item?: string | number;
   keyword: string;
   cause?: ValidationError;
@@ -19,62 +28,150 @@ export class ValidationError extends Error {
   instancePath: string = "";
   data?: any;
   schema?: CompiledSchema;
+  private compactPath?: CompactValidationPath;
+  private compactLeaf?: ValidationError;
 
   constructor(message: string) {
     super(message);
     this.message = message;
   }
 
-  private _getCause(pointer = "#", instancePointer = "#"): ValidationError {
-    let schemaPath = `${pointer}/${this.keyword}`;
-    let instancePath = `${instancePointer}`;
-    if (typeof this.item !== "undefined") {
-      if (
-        typeof this.item === "string" &&
-        this.schema &&
-        typeof this.schema === "object" &&
-        this.item in this.schema
-      ) {
-        schemaPath += `/${this.item}`;
+  setCompactPath(path: CompactValidationPath, leaf: ValidationError) {
+    this.compactPath = path;
+    this.compactLeaf = leaf;
+    this.cause = leaf;
+  }
+
+  private visitPath(
+    visitor: (error: ValidationError) => void
+  ): ValidationError {
+    let pointer = "#";
+    let instancePointer = "#";
+    const compactPath = this.compactPath;
+
+    if (compactPath) {
+      for (let i = 0; i < compactPath.keywords.length; i++) {
+        const item = compactPath.items[i];
+        let schemaPath = `${pointer}/${compactPath.keywords[i]}`;
+        let instancePath = instancePointer;
+
+        if (typeof item !== "undefined") {
+          const escapedItem = String(item)
+            .replace(/~/g, "~0")
+            .replace(/\//g, "~1");
+          const frameSchema = compactPath.schemas[i];
+          if (
+            typeof item === "string" &&
+            frameSchema &&
+            typeof frameSchema === "object" &&
+            item in frameSchema
+          ) {
+            schemaPath += `/${escapedItem}`;
+          }
+          instancePath += `/${escapedItem}`;
+        }
+
+        const frameError = i === 0 ? this : new ValidationError(compactPath.messages[i]);
+        frameError.message = compactPath.messages[i];
+        frameError.keyword = compactPath.keywords[i];
+        frameError.schema = compactPath.schemas[i];
+        frameError.item = item;
+        frameError.data = compactPath.data[i];
+        frameError.schemaPath = schemaPath;
+        frameError.instancePath = instancePath;
+        visitor(frameError);
+        pointer = schemaPath;
+        instancePointer = instancePath;
       }
-      instancePath += `/${this.item}`;
+
+      let current = this.compactLeaf!;
+      while (true) {
+        let schemaPath = `${pointer}/${current.keyword}`;
+        let instancePath = instancePointer;
+        if (typeof current.item !== "undefined") {
+          const escapedItem = String(current.item)
+            .replace(/~/g, "~0")
+            .replace(/\//g, "~1");
+          if (
+            typeof current.item === "string" &&
+            current.schema &&
+            typeof current.schema === "object" &&
+            current.item in current.schema
+          ) {
+            schemaPath += `/${escapedItem}`;
+          }
+          instancePath += `/${escapedItem}`;
+        }
+
+        current.schemaPath = schemaPath;
+        current.instancePath = instancePath;
+        visitor(current);
+        if (!current.cause || !(current.cause instanceof ValidationError)) {
+          return current;
+        }
+        pointer = schemaPath;
+        instancePointer = instancePath;
+        current = current.cause;
+      }
     }
 
-    this.instancePath = instancePath;
-    this.schemaPath = schemaPath;
+    let current: ValidationError = this;
+    while (true) {
+      let schemaPath = `${pointer}/${current.keyword}`;
+      let instancePath = instancePointer;
+      if (typeof current.item !== "undefined") {
+        const escapedItem = String(current.item)
+          .replace(/~/g, "~0")
+          .replace(/\//g, "~1");
+        if (
+          typeof current.item === "string" &&
+          current.schema &&
+          typeof current.schema === "object" &&
+          current.item in current.schema
+        ) {
+          schemaPath += `/${escapedItem}`;
+        }
+        instancePath += `/${escapedItem}`;
+      }
 
-    // If there is no cause or the cause is not a ValidationError, return this
-    if (!this.cause || !(this.cause instanceof ValidationError)) {
-      return this;
+      current.instancePath = instancePath;
+      current.schemaPath = schemaPath;
+      visitor(current);
+      if (!current.cause || !(current.cause instanceof ValidationError)) {
+        return current;
+      }
+      pointer = schemaPath;
+      instancePointer = instancePath;
+      current = current.cause;
     }
-
-    return this.cause._getCause(schemaPath, instancePath);
   }
 
   getCause(): ValidationError {
-    return this._getCause();
-  }
-
-  private _getTree(): ErrorTree {
-    const tree: ErrorTree = {
-      message: this.message,
-      keyword: this.keyword,
-      item: this.item,
-      schemaPath: this.schemaPath,
-      instancePath: this.instancePath,
-      data: this.data
-    };
-
-    if (this.cause) {
-      tree.cause = this.cause._getTree();
-    }
-
-    return tree;
+    return this.visitPath(() => {});
   }
 
   getTree(): ErrorTree {
-    this.getCause();
-    return this._getTree();
+    let root: ErrorTree | undefined;
+    let previous: ErrorTree | undefined;
+    this.visitPath((current) => {
+      const tree: ErrorTree = {
+        message: current.message,
+        keyword: current.keyword,
+        item: current.item,
+        schemaPath: current.schemaPath,
+        instancePath: current.instancePath,
+        data: current.data
+      };
+      if (!root) {
+        root = tree;
+      }
+      if (previous) {
+        previous.cause = tree;
+      }
+      previous = tree;
+    });
+
+    return root!;
   }
 
   getPath() {
@@ -110,15 +207,15 @@ export function getDefinedErrorFunctionForKey(
     return FAIL_FAST_DEFINE_ERROR;
   }
 
-  const KeywordError = new ValidationError(`Invalid ${key}`);
-  KeywordError.keyword = key;
-  KeywordError.schema = schema;
-
   const defineError: DefineErrorFunction = (message, options = {}) => {
+    const KeywordError = new ValidationError(message);
+    KeywordError.keyword = key;
+    KeywordError.schema = schema;
     KeywordError.message = message;
     KeywordError.item = options.item;
     KeywordError.cause =
       options.cause && options.cause !== true ? options.cause : undefined;
+    KeywordError.code = KeywordError.cause?.code;
     KeywordError.data = options.data;
     return KeywordError;
   };

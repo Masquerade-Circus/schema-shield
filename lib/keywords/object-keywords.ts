@@ -11,6 +11,12 @@ type PatternPropertyEntry = {
   match: (key: string) => boolean;
 };
 
+type PropertyValidationEntry = {
+  key: string;
+  schemaProp: any;
+  hasDefault: boolean;
+};
+
 function getPatternPropertyEntries(schema: Record<string, any>) {
   let entries = (schema as any)._patternPropertyEntries as
     | PatternPropertyEntry[]
@@ -118,17 +124,6 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
       return;
     }
 
-    let propKeys = (schema as any)._propKeys as string[] | undefined;
-    if (!propKeys) {
-      propKeys = Object.keys(schema.properties || {});
-      Object.defineProperty(schema, "_propKeys", {
-        value: propKeys,
-        enumerable: false,
-        configurable: false,
-        writable: false
-      });
-    }
-
     let requiredSet = (schema as any)._requiredSet as
       | Set<string>
       | null
@@ -145,29 +140,127 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
       });
     }
 
-    for (let i = 0; i < propKeys.length; i++) {
-      const key = propKeys[i];
-      const schemaProp = schema.properties[key];
+    let validationEntries = (schema as any)._propertyValidationEntries as
+      | PropertyValidationEntry[]
+      | undefined;
 
-      if (!Object.prototype.hasOwnProperty.call(data, key)) {
-        if (
-          requiredSet &&
+    if (!validationEntries) {
+      const propKeys = Object.keys(schema.properties || {});
+      validationEntries = [];
+
+      for (let i = 0; i < propKeys.length; i++) {
+        const key = propKeys[i];
+        const schemaProp = schema.properties[key];
+        const hasDefault =
+          !!requiredSet &&
           requiredSet.has(key) &&
           schemaProp &&
           typeof schemaProp === "object" &&
           !Array.isArray(schemaProp) &&
-          "default" in schemaProp
+          "default" in schemaProp;
+
+        if (schemaProp === false) {
+          validationEntries.push({ key, schemaProp, hasDefault: false });
+          continue;
+        }
+
+        if (schemaProp === true) {
+          continue;
+        }
+
+        if (
+          schemaProp &&
+          typeof schemaProp === "object" &&
+          !Array.isArray(schemaProp) &&
+          (typeof schemaProp.$validate === "function" || hasDefault)
         ) {
-          const error = (schemaProp as any).$validate(schemaProp.default);
-          if (error) {
-            return defineError("Default property is invalid", {
+          validationEntries.push({ key, schemaProp, hasDefault });
+        }
+      }
+
+      Object.defineProperty(schema, "_propertyValidationEntries", {
+        value: validationEntries,
+        enumerable: false,
+        configurable: false,
+        writable: false
+      });
+      Object.defineProperty(schema, "_hasRequiredDefaults", {
+        value: validationEntries.some((entry) => entry.hasDefault),
+        enumerable: false,
+        configurable: false,
+        writable: false
+      });
+    }
+
+    if ((schema as any)._hasRequiredDefaults !== true) {
+      for (let i = 0; i < validationEntries.length; i++) {
+        const { key, schemaProp } = validationEntries[i];
+        if (!Object.prototype.hasOwnProperty.call(data, key)) {
+          continue;
+        }
+        if (typeof schemaProp === "boolean") {
+          if (schemaProp === false) {
+            return defineError("Property is not allowed", {
               item: key,
-              cause: error,
-              data: schemaProp.default
+              data: data[key]
             });
           }
-          data[key] = deepCloneUnfreeze(schemaProp.default);
+          continue;
         }
+        if (schemaProp && "$validate" in schemaProp) {
+          const error = schemaProp.$validate(data[key]);
+          if (error) {
+            return defineError("Property is invalid", {
+              item: key,
+              cause: error,
+              data: data[key]
+            });
+          }
+        }
+      }
+      return;
+    }
+
+    const stagedDefaults: Array<{ key: string; value: any }> = [];
+    for (let i = 0; i < validationEntries.length; i++) {
+      const { key, schemaProp, hasDefault } = validationEntries[i];
+      if (Object.prototype.hasOwnProperty.call(data, key) || !hasDefault) {
+        continue;
+      }
+      const defaultValue = deepCloneUnfreeze(schemaProp.default);
+      const validate = (schemaProp as any).$validate;
+      const error = typeof validate === "function" ? validate(defaultValue) : undefined;
+      if (error) {
+        return defineError("Default property is invalid", {
+          item: key,
+          cause: error,
+          data: defaultValue
+        });
+      }
+      stagedDefaults.push({ key, value: defaultValue });
+    }
+
+    for (let i = 0; i < stagedDefaults.length; i++) {
+      const { key, value } = stagedDefaults[i];
+      if (key === "__proto__") {
+        Object.defineProperty(data, key, {
+          value,
+          enumerable: true,
+          configurable: true,
+          writable: true
+        });
+      } else {
+        data[key] = value;
+      }
+    }
+
+    for (let i = 0; i < validationEntries.length; i++) {
+      const { key, schemaProp } = validationEntries[i];
+
+      if (!Object.prototype.hasOwnProperty.call(data, key)) {
+        continue;
+      }
+      if (stagedDefaults.some((item) => item.key === key)) {
         continue;
       }
 
