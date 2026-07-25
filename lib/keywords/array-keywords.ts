@@ -207,7 +207,16 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
       return;
     }
 
-    const tupleLength = schema.items.length;
+    let tupleLength = (schema as any)._tupleItemsLength as number | undefined;
+    if (tupleLength === undefined) {
+      tupleLength = schema.items.length;
+      Object.defineProperty(schema, "_tupleItemsLength", {
+        value: tupleLength,
+        enumerable: false,
+        configurable: false,
+        writable: false
+      });
+    }
 
     if (data.length <= tupleLength) {
       return;
@@ -287,7 +296,9 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
       return;
     }
 
-    let primitiveSeen: Set<any> | null = null;
+    let hasFirstPrimitive = false;
+    let firstPrimitive: any;
+    let primitiveSeen: Set<any> | undefined;
     let primitiveArraySignatures: Set<string> | undefined;
     let arrayBuckets: Map<string, any[]> | undefined;
     let objectBuckets: Map<string, any[]> | undefined;
@@ -296,8 +307,14 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
       const item = data[i];
 
       if (isUniquePrimitive(item)) {
-        if (primitiveSeen === null) {
-          primitiveSeen = new Set<any>();
+        if (!hasFirstPrimitive) {
+          hasFirstPrimitive = true;
+          firstPrimitive = item;
+          continue;
+        }
+
+        if (!primitiveSeen) {
+          primitiveSeen = new Set<any>([firstPrimitive]);
         }
 
         if (primitiveSeen.has(item)) {

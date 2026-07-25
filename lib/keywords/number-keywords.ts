@@ -6,6 +6,9 @@ export const NumberKeywords: Record<string, KeywordFunction> = {
     if (typeof data !== "number") {
       return;
     }
+    if (!Number.isFinite(data)) {
+      return defineError("Value must be finite", { data });
+    }
 
     let min = schema.minimum;
     if (typeof schema.exclusiveMinimum === "number") {
@@ -24,6 +27,9 @@ export const NumberKeywords: Record<string, KeywordFunction> = {
   maximum(schema, data, defineError, instance) {
     if (typeof data !== "number") {
       return;
+    }
+    if (!Number.isFinite(data)) {
+      return defineError("Value must be finite", { data });
     }
 
     let max = schema.maximum;
@@ -45,13 +51,21 @@ export const NumberKeywords: Record<string, KeywordFunction> = {
       return;
     }
 
-    const quotient = data / schema.multipleOf;
-
-    if (!isFinite(quotient)) {
-      return defineError("Value is not a multiple of the multipleOf", { data });
+    if (
+      !Number.isFinite(data) ||
+      !Number.isFinite(schema.multipleOf) ||
+      schema.multipleOf <= 0
+    ) {
+      return defineError("Value must use a finite positive multipleOf", {
+        data
+      });
     }
 
-    if (!areCloseEnough(quotient, Math.round(quotient))) {
+    const quotient = data / schema.multipleOf;
+    const valid = Number.isFinite(quotient)
+      ? areCloseEnough(quotient, Math.round(quotient))
+      : data % schema.multipleOf === 0;
+    if (!valid) {
       return defineError("Value is not a multiple of the multipleOf", { data });
     }
 

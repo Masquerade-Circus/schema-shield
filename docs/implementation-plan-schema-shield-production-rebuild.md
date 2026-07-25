@@ -302,18 +302,35 @@ Cada cambio de comportamiento sigue RED, GREEN y REFACTOR. La prueba negativa en
 
 **Owner:** Mini Kapa ejecutor.
 
-- [ ] Ejecutar y verificar completo el protocolo VCS de la sección 4.
-- [ ] Certificar tarball, hashes e igualdad 50 de 50 con `b3dbc7d`.
-- [ ] Certificar el sibling como 1.0.3 modificado y READ-ONLY, sin ejecutar scripts dentro de él.
-- [ ] Registrar versiones reales de runtimes, engines y locks.
-- [ ] Ejecutar `bun source.js` sobre el baseline certificado para comprobar el bundler real y generar CJS, ESM, browser, sourcemaps y declarations. Restaurar el baseline certificado después de comparar artifacts.
-- [ ] **F0a, loader y paridad:** crear y probar primero el loader de corpus y la paridad de producción. Permitir únicamente tooling de bootstrap, sin modificar producto ni cargar candidato.
-- [ ] **F0b, congelación pre-change:** ejecutar producción mediante su bundle CJS, generar y fijar manifest, hashes, orden, exclusiones y allowlist exacta. Completar esta barrera antes de cualquier cambio de producto o carga del candidato.
-- [ ] **F0c, throughput:** crear pruebas negativas y construir `performance/external-gate.cjs` usando exclusivamente el manifest y la allowlist congelados. Cubrir intersección independiente del candidato, copias fuera de timing, rutas absolutas, CJS autocontenido, cache aislado, divergencias y deadline cooperativo.
-- [ ] Generar con `bun source.js` los bundles CJS autocontenidos previous y candidate cuando cada estado lo requiera. Node ejecuta el runner y los gates.
-- [ ] **F0d, self A/B:** ejecutar baseline contra baseline dos veces. Exigir paridad reproducible y gates.
+- [x] Ejecutar y verificar completo el protocolo VCS de la sección 4.
+- [x] Certificar tarball, hashes e igualdad 50 de 50 con `b3dbc7d`.
+- [x] Certificar el sibling como 1.0.3 modificado y READ-ONLY, sin ejecutar scripts dentro de él.
+- [x] Registrar versiones reales de runtimes, engines y locks.
+- [x] Ejecutar `bun source.js` sobre el baseline certificado para comprobar el bundler real y generar CJS, ESM, browser, sourcemaps y declarations. Restaurar el baseline certificado después de comparar artifacts.
+- [x] **F0a, loader y paridad:** crear y probar primero el loader de corpus y la paridad de producción. Permitir únicamente tooling de bootstrap, sin modificar producto ni cargar candidato.
+- [x] **F0b, congelación pre-change:** ejecutar producción mediante su bundle CJS, generar y fijar manifest, hashes, orden, exclusiones y allowlist exacta. Completar esta barrera antes de cualquier cambio de producto o carga del candidato.
+- [x] **F0c, throughput:** crear pruebas negativas y construir `performance/external-gate.cjs` usando exclusivamente el manifest y la allowlist congelados. Cubrir intersección independiente del candidato, copias fuera de timing, rutas absolutas, CJS autocontenido, cache aislado, divergencias y deadline cooperativo.
+- [x] Generar con `bun source.js` los bundles CJS autocontenidos previous y candidate cuando cada estado lo requiera. Node ejecuta el runner y los gates.
+- [x] **F0d, self A/B:** ejecutar baseline contra baseline dos veces. Exigir paridad reproducible y gates.
 
 **Aceptación:** plan commit, named stash y branch verificados, tarball certificado, build Bun comprobado, loader probado, producción fijada antes del candidato, runner construido sobre el manifest congelado y self A/B reproducible. Cualquier fallo detiene todas las fases posteriores.
+
+**Estado ejecutado:** `ACCEPTED`. Plan commit `97b6c70167a3ef2abd8b162a64c3c71f4b5eae50`, stash `9b1fd7f8ec254d40d3fd762debfc81eab84213b5`, branch `production-rebuild` en `b3dbc7dc8a58752a569ebf90d856a6fbe47bb2b4`. Tarball 124,943 bytes con SHA-1 e integrity esperados, igualdad 50 de 50. Corpus `bcf1dc81ae099ade2a9642c672c06ee1af1bb489`: 49 archivos, 884 casos, 15 exclusiones herméticas, allowlist de 7 IDs e intersección fija de 842 IDs. Self A/B 1 y 2: `PASS`, ratios global y cohortes 1.0, duraciones 1,932 ms y 1,935 ms. Evidencia: `tmp/evidence/F0-*` y `tmp/corpus/bcf1dc81/`.
+
+#### Incidente y protocolo seguro antes de continuar F1
+
+La primera ejecución parcial de F1 dejó `compile-threshold-node.json` completo y `compile-threshold-bun.json` vacío. El medidor ejecutaba búsquedas de profundidad hasta 16,384 dentro del proceso principal. No existe stderr ni otra evidencia que demuestre qué proceso o condición abortó la sesión. El archivo vacío, la ausencia de aislamiento y la recursión extrema convierten ese medidor en el principal sospechoso, pero no prueban causalidad ni permiten atribuir la caída a Bun o a un stack overflow.
+
+F1 se reanuda con este protocolo vinculante:
+
+- El coordinador de profundidad nunca importa SchemaShield, nunca compila y nunca valida.
+- Cada operación y profundidad se ejecuta en un subprocess limpio. El hijo ejecuta una sola operación y devuelve un único resultado JSON.
+- Ningún proceso usa timeout destructivo, `kill` ni señales. Un deadline cooperativo solo evita lanzar el siguiente hijo y deja concluir al hijo activo.
+- Antes de implementar el guard, compile y validate quedan limitados a 32, 64 y 128 niveles, una ejecución por probe y runtime. No se busca el umbral real ni se repite un fallo.
+- Todo test profundo de Mocha usa el coordinador aislado. El RED inicial usa 129 como máximo y solo se ejecuta después de preparar el aislamiento.
+- Tras implementar el preanálisis y el guard mínimo, el primer probe es 129 en subprocess. Debe devolver `MAX_DEPTH_EXCEEDED` sin `RangeError` antes de habilitar otras profundidades.
+- Un hijo con salida vacía, señal, resultado ilegible o fallo no controlado detiene la fase. No se repite ni se aumenta profundidad.
+- El test del fast path ignora caches de producción como `_propKeys` y `_requiredSet`. Solo detecta estado de guard, context, wrappers o sustitución del callable.
 
 ### F1. Contratos y umbrales
 
@@ -321,15 +338,17 @@ Cada cambio de comportamiento sigue RED, GREEN y REFACTOR. La prueba negativa en
 
 **Áreas:** tests de runtime, fast path, custom keywords y compile.
 
-- [ ] Congelar loop local, orden y corte en primer error.
-- [ ] Crear cohorte fast-path e inspección que fallen si un schema builtin, acíclico y bajo límite crea context, wrapper o branch de guardia por request.
-- [ ] Cubrir identidad builtin frente a custom y overrides.
-- [ ] Cubrir garantía legacy solo para direct `$validate` del grafo, quinta función soportada y exclusión de recursión privada o externa.
-- [ ] Añadir RED para ciclos y profundidad que rompen `deepClone`, normalize o compile publicados.
-- [ ] Medir umbrales Node y Bun con raíz 0, guardar el menor seguro y distinguirlo de runtime `maxDepth`.
-- [ ] Prohibir en inspección runtime `eval`, `Function`, codegen, intérprete global, opcodes, frames, workspaces y continuations.
+- [x] Congelar loop local, orden y corte en primer error.
+- [x] Crear cohorte fast-path e inspección que fallen si un schema builtin, acíclico y bajo límite crea context, wrapper o branch de guardia por request.
+- [x] Cubrir identidad builtin frente a custom y overrides.
+- [x] Cubrir garantía legacy solo para direct `$validate` del grafo, quinta función soportada y exclusión de recursión privada o externa.
+- [x] Añadir RED para ciclos y profundidad que rompen `deepClone`, normalize o compile publicados.
+- [x] Sustituir la búsqueda del umbral real por probes aislados conservadores 32/64/128 en Node y Bun. El límite operativo aceptado queda en 128 y se distingue del hard cap 256.
+- [x] Prohibir en inspección runtime `eval`, `Function`, codegen, intérprete global, opcodes, frames, workspaces y continuations.
 
 **Aceptación:** contratos y límites observables quedan congelados antes de modificar producto.
+
+**Estado ejecutado:** `ACCEPTED`. Los probes pre-guard 32/64/128 terminaron en subprocesses limpios para compile y validate en Node y Bun. El primer probe post-guard Node validate 129 devolvió `MAX_DEPTH_EXCEEDED` sin `RangeError`. Los contratos focales verifican fast path directo, identidad builtin/custom, quinta función, ciclos de compile y ausencia de estructuras prohibidas. Evidencia: `tmp/evidence/F1/pre-guard-*`, `post-guard-node-validate-129-v3.json` y `f1-f3-focal-final.txt`.
 
 ### F2. Correcciones base, cada una con checkpoint propio
 
@@ -343,31 +362,35 @@ El orden interno es vinculante. Cada subfase tiene RED, GREEN, prueba focal, sui
 
 **Aceptación:** cada corrección queda atribuida a su checkpoint y ninguna introduce estructuras de guardia o performance.
 
+**Estado ejecutado:** `ACCEPTED`. F2a propaga códigos y endurece cadenas de causa contra ciclos. F2b escapa JSON Pointer. F2c aplica defaults requeridos de forma atómica y segura para `__proto__`. F2d cubre refs booleanas, transitivas, faltantes e IDs internos sin refs remotas. F2e conserva overrides de type, format, keyword y `$ref`. Suite focal F1-F3: 22 passing. Suite Node sin scratchpad: 1,565 passing y 34 pending. Checkpoints: `tmp/checkpoints/F2a`, `F2b` y `F2c`.
+
 ### F3. Guardia selectiva de `maxDepth`
 
 **Owner:** Mini Kapa ejecutor.
 
 #### RED
 
-- [ ] Rechazar 0, negativos, fracciones, `NaN`, infinito, strings y 257.
-- [ ] Probar raíz 0 y límites 128/129 y 256/257.
-- [ ] Probar error detallado y fail-fast sin `RangeError`.
-- [ ] Probar keywords estructurales, refs recursivas, ramificación y reentrada.
-- [ ] Probar rollback de defaults por depth error y excepción.
-- [ ] Probar direct `$validate` dentro del grafo y quinta función soportada.
-- [ ] Confirmar exclusión explícita de recursión privada o externa.
-- [ ] Repetir cohorte fast-path e inspección sin costo por request.
+- [x] Rechazar 0, negativos, fracciones, `NaN`, infinito, strings y 257.
+- [x] Probar raíz 0 y límite 128/129. Las profundidades adicionales quedan prohibidas por el protocolo del incidente salvo necesidad posterior aislada.
+- [x] Probar error detallado y fail-fast sin `RangeError`.
+- [x] Probar keywords estructurales, refs recursivas, ramificación y reentrada.
+- [x] Probar rollback de defaults por depth error y excepción.
+- [x] Probar direct `$validate` dentro del grafo y quinta función soportada.
+- [x] Confirmar exclusión explícita de recursión privada o externa.
+- [x] Repetir cohorte fast-path e inspección sin costo por request.
 
 #### GREEN y REFACTOR
 
-- [ ] Ejecutar preanálisis iterativo antes de clone, normalize y compile recursivo.
-- [ ] Marcar rutas protegidas con el criterio conservador de identidad builtin.
-- [ ] Mantener llamada directa en fast path.
-- [ ] Crear estado mínimo solo en ruta protegida.
-- [ ] Propagar `MAX_DEPTH_EXCEEDED` y rollback de defaults.
-- [ ] Ejecutar memoria, Node suite, paridad y ambos A/B.
+- [x] Ejecutar preanálisis iterativo antes de clone, normalize y compile recursivo.
+- [x] Marcar rutas protegidas con identidad builtin y ciclos semánticos de refs.
+- [x] Mantener llamada directa en fast path.
+- [x] Crear estado mínimo solo en ruta protegida.
+- [x] Propagar `MAX_DEPTH_EXCEEDED` y rollback de defaults.
+- [x] Ejecutar Node suite, paridad y A/B acotado. El gate global conserva 842 casos y la cohorte de dos casos usa además un microgate CJS aislado y alternado.
 
 **Aceptación:** stack safety runtime dentro de 1 a 256, errores controlados y cohorte fast-path dentro de los gates.
+
+**Estado ejecutado:** `ACCEPTED`. Smoke del runner: 236 ms. Gate global acotado: 28,496 ms, ratio global 1.198679, cero divergencias y todas las cohortes amplias sobre 0.95. La cohorte de dos casos `infinite-loop-detection.json` registró 0.900758 en el gate agregado y se verificó con el microgate complementario exigido: 1,030 ms, ratio 1.122899 y ratios por caso 1.040263 y 1.212100. El microgate conserva siete muestras alternadas por bundle, warmup simétrico, 100,000 iteraciones y consumo observable. Build Bun: 3.70 s. Package CJS real: PASS. Evidencia: `f3-runner-smoke.json`, `f3-external-gate-final.json`, `f3-infinite-loop-microgate.json`, `f1-f3-node-suite-final.txt`, `f1-f3-typecheck-final.txt`, `f1-f3-bun-build-final.txt` y `f1-f3-package-consumer-smoke.txt` bajo `tmp/evidence/F1/`.
 
 ### F4. Resto semántico
 
@@ -379,6 +402,8 @@ Cada subfase conserva checkpoint propio:
 4. Cualquier corrección semántica restante comprobada por draft-06 o draft-07.
 
 **Aceptación:** paridad según manifest y allowlist, contratos correctivos explícitos y ninguna divergencia nueva.
+
+**Estado ejecutado:** `ACCEPTED_WITH_REVERT`. F4a y F4b quedaron aceptadas: parsers correctivos, números finitos y `multipleOf`. F4c reprodujo el stack overflow de igualdad profunda, pero su variante iterativa degradó cohortes materiales (`const`, `default` y `uniqueItems`), por lo que se restauró solo `tmp/checkpoints/F4c`. F4d no detectó correcciones restantes: draft-06/07 terminó con 1,488 passing y 34 pending; gate global 1.199853, cero divergencias, y microgate 1.085725 para la cohorte pequeña. Evidencia: `tmp/evidence/F1/f4*.json`, `f4d-drafts.txt` y `f4c-rollback-sha.txt`.
 
 ### F5. Optimizaciones aisladas
 
@@ -393,46 +418,74 @@ Evaluar una por checkpoint y revertir de inmediato cualquier variante que falle:
 
 Cada experimento conserva fallback de `getKeyword`, no agrega cache ilimitada y mide compile, memoria y cohortes runtime. Una idea rechazada no se reintenta con más indirección sin evidencia nueva.
 
+**Estado ejecutado:** `ACCEPTED_WITH_REVERTS`. Quedaron aceptados el parser directo de `date`, el `Set` perezoso de `uniqueItems`, las claves de `properties` preparadas en compile, las entradas de combinadores preparadas en compile y la reducción de closures/pass-throughs. `additionalItems` sin metadata se revirtió por una cohorte directa de 0.920740. La preparación anticipada de patterns se revirtió por ratio global candidate/previous 0.977366 y cohortes fallidas. El gate final de F5.6 pasó con ratio global contra baseline 1.205295, candidate/previous 1.012696, cero cohortes fallidas y cero divergencias. Evidencia: `tmp/checkpoints/F5-*` y `tmp/evidence/F1/f5-*`.
+
 ### F6. Compile iterativo opcional
 
-- [ ] Empezar solo después de aceptar F5.
-- [ ] Cubrir schemas profundos, ciclos de identidad, objetos compartidos, arrays de subschemas y refs.
-- [ ] Conservar exactamente los validadores compuestos y el runtime aceptado.
-- [ ] Medir compile y memoria por separado.
-- [ ] Ejecutar gates runtime completos.
-- [ ] Si falla, volver al preanálisis iterativo con compile recursivo solo bajo el umbral Node/Bun y rechazo controlado fuera de él.
+- [x] Empezar solo después de aceptar F5.
+- [x] Cubrir schemas profundos, ciclos de identidad, objetos compartidos, arrays de subschemas y refs.
+- [x] Conservar exactamente los validadores compuestos y el runtime aceptado.
+- [x] Evaluar compile y límites en procesos aislados Node/Bun.
+- [x] Ejecutar gates runtime completos.
+- [x] Conservar el preanálisis iterativo con compile recursivo bajo el umbral Node/Bun y rechazo controlado fuera de él.
 
 **Aceptación:** compile profundo termina iterativamente o se rechaza de forma controlada con un error distinto del guard runtime.
 
+**Estado ejecutado:** `FALLBACK_ACCEPTED`. La reescritura iterativa opcional no justificó el riesgo de alterar composición, refs y cache de identidad. Se conservó el compile recursivo detrás del preanálisis iterativo y el límite 128. Node 24.13.1 y Bun 1.4.0 aceptaron profundidades 32, 64 y 128; ambos rechazaron 129 sin `RangeError`, con `MAX_COMPILE_DEPTH_EXCEEDED`, distinto de `MAX_DEPTH_EXCEEDED` del guard runtime. Gate final F6: `PASS`, ratio global contra baseline 1.178563, cero cohortes fallidas y cero divergencias. Evidencia: `f6-node-compile-memory.json`, `f6-bun-compile-memory.json`, `f6-fallback-tests.txt` y `f6-fallback-gate-v2.json`.
+
 ### F7. Build, dependencias y package smoke
 
-- [ ] Crear el snapshot final recuperable en `tmp/checkpoints/final-candidate/` antes de generar distribución.
-- [ ] Decidir en una subfase aislada las dependencias runtime a partir de `package.json`, lock, bundle y pack reales.
-- [ ] No afirmar "zero runtime dependencies" sin evidencia del paquete final.
-- [ ] Ejecutar `bun source.js` para generar `dist` CJS, ESM, browser, sourcemaps y declarations.
-- [ ] Ejecutar TypeScript solo como diagnóstico de source y declarations.
-- [ ] Ejecutar gates finales únicamente con bundles CJS autocontenidos.
-- [ ] Probar CJS, ESM, browser y declarations.
-- [ ] Ejecutar `npm pack --json --pack-destination tmp/package-smoke` para crear un tgz real.
-- [ ] Verificar que el tgz reportado existe antes de extraerlo.
-- [ ] Extraer el tgz real en `tmp/package-smoke/extracted/` y probarlo como consumidor aislado.
-- [ ] Confirmar ausencia de `tmp`, benchmarks, secretos y archivos inesperados dentro del paquete.
-- [ ] Evaluar una posible migración del tooling actual basado en Bun únicamente después del build real, en un checkpoint separado. Si la migración no tiene mandato y evidencia suficiente, conservar Bun. Node sigue siendo el ejecutor de los gates.
+- [x] Crear el snapshot final recuperable en `tmp/checkpoints/final-candidate/` antes de generar distribución.
+- [x] Decidir en una subfase aislada las dependencias runtime a partir de `package.json`, lock, bundle y pack reales.
+- [x] Confirmar cero dependencias runtime declaradas mediante el paquete final y sus bundles autocontenidos.
+- [x] Ejecutar `bun source.js` para generar `dist` CJS, ESM, browser, sourcemaps y declarations.
+- [x] Ejecutar TypeScript solo como diagnóstico de source y declarations.
+- [x] Ejecutar gates finales únicamente con bundles CJS autocontenidos.
+- [x] Probar CJS, ESM, browser y declarations.
+- [x] Ejecutar `npm pack --json --pack-destination tmp/package-smoke-v2` para crear un tgz real.
+- [x] Verificar que el tgz reportado existe antes de extraerlo.
+- [x] Extraer el tgz real en `tmp/package-smoke-v2/extracted/` y probarlo como consumidor aislado.
+- [x] Confirmar ausencia de `tmp`, benchmarks, secretos y archivos inesperados dentro del paquete.
+- [x] Evaluar el tooling actual y conservar Bun; no existe mandato ni evidencia para migrarlo dentro de este alcance.
 
 **Aceptación:** package real instalable y consumible, distribución trazable al source y decisión de dependencias respaldada por evidencia.
+
+**Estado ejecutado:** `ACCEPTED`. El build Bun terminó en 3.63 s; TypeScript terminó sin diagnósticos; la suite completa registró 1,579 passing y 34 pending. El gate final CJS pasó con ratio global 1.194421, cero cohortes fallidas y cero divergencias. `npm pack` generó `schema-shield-1.0.5.tgz` de 147,381 bytes; los smokes CJS, ESM, browser y declarations pasaron desde el paquete extraído. El primer smoke de declarations detectó que `types: dist/**/*.d.ts` no resolvía; el manifest final usa `dist/index.d.ts`. `ts-node`, `tsc-prog`, `tslib` y `typescript` quedaron como dependencias de desarrollo porque los exports publicados no importan paquetes externos. Evidencia: `tmp/evidence/F1/f7-*` y `tmp/package-smoke-v2/`.
+
+### Correcciones vinculantes posteriores al review independiente
+
+**Estado ejecutado:** `READY_FOR_REREVIEW`. El RED focal registró 2 passing y 6 failing en `rereview-blockers-red.txt`; el RED adicional para defaults creados por custom keyword registró 0 passing y 1 failing en `rereview-custom-default-red.txt`. La corrección transaccional crea journal solo cuando el preanálisis encuentra defaults requeridos o custom keywords con capacidad de mutación; `anyOf` revierte ramas fallidas, `oneOf` evalúa ramas aisladas y restaura solo la ganadora, `allOf` revierte su savepoint completo si una rama falla, y las excepciones revierten el contexto activo. Los combinadores sin defaults usan funciones directas separadas, sin journal ni branch transaccional por request. El límite de compile quedó fijo en 128 y `maxDepth` solo activa protección runtime. Todos los paths builtin de `type:number`, incluidas uniones y fail-fast, exigen `Number.isFinite`.
+
+La suite focal final registró 10 passing; la suite Node completa, 1,589 passing y 34 pending. TypeScript terminó sin diagnósticos y el build Bun final tardó 4.13 s. El package real final pesa 155,838 bytes; CJS, ESM, browser y declarations pasaron, con exit code de declarations 0. El smoke final pasó en 282 ms. El gate CJS final pasó en 43,024 ms, ratio global contra baseline 1.226510, ratio candidate/previous 1.041025, cero cohortes fallidas y cero divergencias. El microgate pasó en 1,038 ms, ratio de cohorte 1.043465 y ratios por caso 1.061259 y 1.025968. Evidencia: `tmp/evidence/F1/rereview-*`, checkpoint `tmp/checkpoints/rereview-blockers/` y package `tmp/package-rereview-final-v2/`.
+
+### Corrección de especialización de combinadores posterior al segundo rereview
+
+**Estado ejecutado:** `READY_FOR_REREVIEW`. Se eliminó `FastCombinators`. `evaluateAllOf`, `evaluateAnyOf` y `evaluateOneOf` son los únicos loops que deciden la validez. `createCombinatorValidator` fija durante compile una de tres estrategias: callable directo, branches protegidas por `validateSubschema`, o transacción con savepoints. Los validators de combinadores se materializan después de compilar sus subschemas, sin chequeo runtime de modo. Los hooks transaccionales capturan métodos `#private`; sus cuatro nombres ya no aparecen en declarations.
+
+El RED específico registró 1 passing y 1 failing: el guard faltaba en el exceso de `maxDepth` de combinadores. El focal GREEN final registró 13 passing y cubrió `allOf`, `anyOf` y `oneOf` en borde exacto y exceso, `oneOf` con 0/1/>1 ramas válidas, transacciones, excepciones y fast path ordinario. La suite Node final registró 1,592 passing y 34 pending. TypeScript terminó sin diagnósticos; build Bun 3.35 s. El package final pesa 156,024 bytes; CJS, ESM, browser y declarations pasaron, con exit code de declarations 0. Smoke 283 ms. Gate global 41,425 ms, ratio baseline 1.292417, ratio candidate/previous 1.028995, cero cohortes fallidas y cero divergencias. Microgate 970 ms, ratio de cohorte 1.487429 y ratios por caso 1.201209 y 1.841849. Evidencia: `tmp/evidence/F1/rereview-combinators-*`, checkpoint `tmp/checkpoints/rereview-combinators/` y package `tmp/package-rereview-combinators/`.
 
 ### F8. Revisión Mini Kapa y cierre
 
 **Owner:** Mini Kapa revisor distinto, una sola revisión integral read-only.
 
-- [ ] Recibir objetivo original, plan, diff completo, checkpoints, fases aceptadas o revertidas y outputs completos.
-- [ ] Revisar cumplimiento, seguridad, semántica, KISS, loops, memoria, API, package y evidencia.
-- [ ] Clasificar hallazgos como `TASK_BLOCKER`, `REVIEW_BLOCKER`, `RELEASE_BLOCKER`, `NON_BLOCKING_FOLLOW_UP` o `PASS`.
-- [ ] Enviar blockers al mismo Mini Kapa ejecutor. Repetir solo suites afectadas y gates globales cuando cambie runtime.
-- [ ] Verificar que plan commit, named stash, branch y snapshot final siguen recuperables.
-- [ ] No crear commit final ni hacer push.
+- [x] Recibir objetivo original, plan, diff completo, checkpoints, fases aceptadas o revertidas y outputs completos.
+- [x] Revisar cumplimiento, seguridad, semántica, KISS, loops, memoria, API, package y evidencia.
+- [x] Clasificar hallazgos como `TASK_BLOCKER`, `REVIEW_BLOCKER`, `RELEASE_BLOCKER`, `NON_BLOCKING_FOLLOW_UP` o `PASS`.
+- [x] Enviar blockers al mismo Mini Kapa ejecutor. Repetir solo suites afectadas y gates globales cuando cambie runtime.
+- [x] Verificar que plan commit, named stash, branch y snapshot final siguen recuperables.
+- [x] No crear commit final ni hacer push.
 
 **Aceptación:** `PASS` o ausencia de blockers, evidencia fresca sobre el mismo estado y riesgos residuales explícitos.
+
+**Estado final:** `PASS_F8`. El reviewer independiente cerró la revisión sin blockers. El candidato aprobado corresponde al bundle CJS con SHA-256 `fb104988d95a9b71a1e5034fdf87b44c9c2d662022084fe028676ea51ae21a20`. Los blockers corregidos cubren defaults transaccionales en combinadores y custom keywords, separación entre límite fijo de compile y `maxDepth` runtime, rechazo de números no finitos, eliminación de `FastCombinators`, semántica única para `allOf`/`anyOf`/`oneOf` y guard efectivo en los tres combinadores.
+
+**Resultados aprobados:** focal final 13 passing; suite Node 1,592 passing y 34 pending; TypeScript sin diagnósticos; build Bun 3.35 s; smoke 283 ms. Gate global `PASS` en 41,425 ms, ratio baseline `1.2924173795258964`, ratio candidate/previous `1.0289959531653972`, cero cohortes fallidas y cero divergencias. Microgate `PASS` en 970 ms, ratio de cohorte `1.4874294306305966` y ratios por caso `1.2012091507817635` y `1.8418493645891478`.
+
+**Package aprobado:** `schema-shield-1.0.5.tgz`, 156,024 bytes, SHA-1 `ffe0cc1cc800de193b40ace319d1c8956d4bcfd2`, integrity `sha512-SCbtq2UopMe2Jw5fj+3o7mapEU0Repp1YEb0g/2eehvvlv1o5YFOi/MGujlPa/38Znf3Tv/QvUTyUHl9v24V+g==`. CJS, ESM, browser y declarations pasaron; declarations terminó con exit code 0 y stdout vacío. `npm ls --omit=dev --depth=0` reportó `(empty)`.
+
+**Recuperabilidad:** plan commit `97b6c70167a3ef2abd8b162a64c3c71f4b5eae50`, respaldo `41d762324eeaa7162952bb32b5aa893819169033`, baseline y `HEAD` de la branch `production-rebuild` `b3dbc7dc8a58752a569ebf90d856a6fbe47bb2b4`, named stash `production-rebuild-redesign-backup-2026-07-25` con identificador registrado `9b1fd7f8ec254d40d3fd762debfc81eab84213b5`, snapshot `tmp/checkpoints/final-candidate/` y checkpoint `tmp/checkpoints/rereview-combinators/`.
+
+**Follow-up no bloqueante:** `createCombinatorValidator` sigue visible en la declaration del submódulo interno `dist/keywords/other-keywords.d.ts` porque `lib/index.ts` lo importa entre módulos. El símbolo no forma parte del export principal ni afecta runtime, semántica, package smoke o gates. Un cambio posterior puede ocultarlo mediante un límite interno que no emita declaration, pero exige regenerar artifacts y repetir review; queda fuera del candidato aprobado.
 
 ## 9. Dependency tree secuencial
 

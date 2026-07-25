@@ -1,6 +1,11 @@
 import { isCompiledSchema } from "../utils/main-utils";
-
-import type { KeywordFunction } from "../index";
+import type {
+  KeywordFunction,
+  Result,
+  ValidateFunction,
+  ValidateSubschemaFunction
+} from "../index";
+import type { DefineErrorFunction } from "../utils/main-utils";
 import { hasChanged } from "../utils/has-changed";
 
 type BranchEntry =
@@ -11,48 +16,228 @@ type BranchEntry =
 
 function toBranchEntry(item: any): BranchEntry {
   if (item && typeof item === "object" && !Array.isArray(item)) {
-    if (typeof item.$validate === "function") {
+    if ("$validate" in item && typeof item.$validate === "function") {
       return { kind: "validate", validate: item.$validate };
     }
+
     return { kind: "alwaysValid" };
   }
+
   if (typeof item === "boolean") {
     return { kind: item ? "alwaysValid" : "alwaysInvalid" };
   }
+
   return { kind: "literal", value: item };
 }
 
-export function getCombinatorBranchEntries(
-  schema: any,
-  key: "allOf" | "anyOf" | "oneOf",
-  rebuild = false
-) {
+function getBranchEntries(schema: any, key: "allOf" | "anyOf" | "oneOf") {
   const cacheKey = `_${key}BranchEntries`;
   let entries = schema[cacheKey] as BranchEntry[] | undefined;
-  if (!rebuild && entries) {
+
+  if (entries) {
     return entries;
   }
 
   const source = schema[key] || [];
-  entries = new Array(source.length);
+  entries = [];
+
   for (let i = 0; i < source.length; i++) {
-    entries[i] = toBranchEntry(source[i]);
+    entries.push(toBranchEntry(source[i]));
   }
+
   Object.defineProperty(schema, cacheKey, {
     value: entries,
     enumerable: false,
     configurable: false,
     writable: false
   });
+
   return entries;
 }
 
-export function prepareCombinatorKeywordCaches(schema: any) {
-  const keys: Array<"allOf" | "anyOf" | "oneOf"> = ["allOf", "anyOf", "oneOf"];
-  for (let i = 0; i < keys.length; i++) {
-    if (Array.isArray(schema[keys[i]])) {
-      getCombinatorBranchEntries(schema, keys[i], true);
+type CombinatorKey = "allOf" | "anyOf" | "oneOf";
+type DefaultMutation = { target: Record<string, any>; key: string; value: any };
+type TransactionHooks = {
+  savepoint: () => number;
+  rollback: (savepoint: number) => void;
+  capture: (savepoint: number) => DefaultMutation[];
+  restore: (mutations: DefaultMutation[]) => void;
+};
+
+function evaluateAllOf(
+  branches: BranchEntry[],
+  data: any,
+  defineError: DefineErrorFunction
+): Result {
+  for (let i = 0; i < branches.length; i++) {
+    const branch = branches[i];
+    if (branch.kind === "validate") {
+      const error = branch.validate(data);
+      if (error) {
+        return defineError("Value is not valid", { cause: error, data });
+      }
+      continue;
     }
+    if (branch.kind === "alwaysValid") {
+      continue;
+    }
+    if (branch.kind === "alwaysInvalid" || data !== branch.value) {
+      return defineError("Value is not valid", { data });
+    }
+  }
+}
+
+function evaluateAnyOf(
+  branches: BranchEntry[],
+  data: any,
+  defineError: DefineErrorFunction
+): Result {
+  for (let i = 0; i < branches.length; i++) {
+    const branch = branches[i];
+    if (branch.kind === "validate") {
+      if (!branch.validate(data)) {
+        return;
+      }
+      continue;
+    }
+    if (branch.kind === "alwaysValid") {
+      return;
+    }
+    if (branch.kind === "literal" && data === branch.value) {
+      return;
+    }
+  }
+  return defineError("Value is not valid", { data });
+}
+
+function evaluateOneOf(
+  branches: BranchEntry[],
+  data: any,
+  defineError: DefineErrorFunction
+): { error: Result; winnerIndex: number } {
+  let validCount = 0;
+  let winnerIndex = -1;
+  for (let i = 0; i < branches.length; i++) {
+    const branch = branches[i];
+    let isValid = false;
+    if (branch.kind === "validate") {
+      isValid = !branch.validate(data);
+    } else if (branch.kind === "alwaysValid") {
+      isValid = true;
+    } else if (branch.kind === "literal") {
+      isValid = data === branch.value;
+    }
+    if (isValid) {
+      validCount++;
+      winnerIndex = i;
+      if (validCount > 1) {
+        return {
+          error: defineError("Value is not valid", { data }),
+          winnerIndex: -1
+        };
+      }
+    }
+  }
+  return {
+    error:
+      validCount === 1
+        ? undefined
+        : defineError("Value is not valid", { data }),
+    winnerIndex: validCount === 1 ? winnerIndex : -1
+  };
+}
+
+export function createCombinatorValidator(
+  key: CombinatorKey,
+  schema: any,
+  defineError: DefineErrorFunction,
+  validateSubschema?: ValidateSubschemaFunction,
+  transactions?: TransactionHooks
+): ValidateFunction {
+  const sourceBranches = getBranchEntries(schema, key);
+  const branches = validateSubschema
+    ? sourceBranches.map((branch, index): BranchEntry =>
+        branch.kind === "validate"
+          ? {
+              kind: "validate",
+              validate: (data) => validateSubschema(schema[key][index], data)
+            }
+          : branch
+      )
+    : sourceBranches;
+
+  if (!transactions) {
+    if (key === "allOf") {
+      return (data) => evaluateAllOf(branches, data, defineError);
+    }
+    if (key === "anyOf") {
+      return (data) => evaluateAnyOf(branches, data, defineError);
+    }
+    return (data) => evaluateOneOf(branches, data, defineError).error;
+  }
+
+  if (key === "allOf") {
+    return (data) => {
+      const savepoint = transactions.savepoint();
+      try {
+        const error = evaluateAllOf(branches, data, defineError);
+        if (error) {
+          transactions.rollback(savepoint);
+        }
+        return error;
+      } catch (error) {
+        transactions.rollback(savepoint);
+        throw error;
+      }
+    };
+  }
+
+  if (key === "anyOf") {
+    return (data) => evaluateAnyOf(branches, data, defineError);
+  }
+
+  return (data) => {
+    const savepoint = transactions.savepoint();
+    const defaultsByBranch: DefaultMutation[][] = [];
+    const isolatedBranches = branches.map((branch, index): BranchEntry =>
+      branch.kind === "validate"
+        ? {
+            kind: "validate",
+            validate: (value) => {
+              const branchSavepoint = transactions.savepoint();
+              const error = branch.validate(value);
+              if (!error) {
+                defaultsByBranch[index] = transactions.capture(branchSavepoint);
+              }
+              return error;
+            }
+          }
+        : branch
+    );
+    try {
+      const result = evaluateOneOf(isolatedBranches, data, defineError);
+      if (result.error) {
+        transactions.rollback(savepoint);
+        return result.error;
+      }
+      transactions.restore(defaultsByBranch[result.winnerIndex] || []);
+      return;
+    } catch (error) {
+      transactions.rollback(savepoint);
+      throw error;
+    }
+  };
+}
+
+export function prepareCombinatorEntries(schema: any) {
+  if (Array.isArray(schema.allOf)) {
+    getBranchEntries(schema, "allOf");
+  }
+  if (Array.isArray(schema.anyOf)) {
+    getBranchEntries(schema, "anyOf");
+  }
+  if (Array.isArray(schema.oneOf)) {
+    getBranchEntries(schema, "oneOf");
   }
 }
 
@@ -106,175 +291,15 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
   },
 
   allOf(schema, data, defineError) {
-    const branches = getCombinatorBranchEntries(schema, "allOf");
-
-    if (branches.length === 1) {
-      const onlyBranch = branches[0];
-
-      if (onlyBranch.kind === "validate") {
-        const error = onlyBranch.validate(data);
-        if (error) {
-          return defineError("Value is not valid", { cause: error, data });
-        }
-        return;
-      }
-
-      if (onlyBranch.kind === "alwaysValid") {
-        return;
-      }
-
-      if (onlyBranch.kind === "alwaysInvalid") {
-        return defineError("Value is not valid", { data });
-      }
-
-      if (data !== onlyBranch.value) {
-        return defineError("Value is not valid", { data });
-      }
-
-      return;
-    }
-
-    for (let i = 0; i < branches.length; i++) {
-      const branch = branches[i];
-
-      if (branch.kind === "validate") {
-        const error = branch.validate(data);
-        if (error) {
-          return defineError("Value is not valid", { cause: error, data });
-        }
-        continue;
-      }
-
-      if (branch.kind === "alwaysValid") {
-        continue;
-      }
-
-      if (branch.kind === "alwaysInvalid") {
-        return defineError("Value is not valid", { data });
-      }
-
-      if (data !== branch.value) {
-        return defineError("Value is not valid", { data });
-      }
-    }
-
-    return;
+    return createCombinatorValidator("allOf", schema, defineError)(data);
   },
 
   anyOf(schema, data, defineError) {
-    const branches = getCombinatorBranchEntries(schema, "anyOf");
-
-    if (branches.length === 1) {
-      const onlyBranch = branches[0];
-
-      if (onlyBranch.kind === "validate") {
-        const error = onlyBranch.validate(data);
-        if (!error) {
-          return;
-        }
-        return defineError("Value is not valid", { data });
-      }
-
-      if (onlyBranch.kind === "alwaysValid") {
-        return;
-      }
-
-      if (onlyBranch.kind === "alwaysInvalid") {
-        return defineError("Value is not valid", { data });
-      }
-
-      if (data === onlyBranch.value) {
-        return;
-      }
-
-      return defineError("Value is not valid", { data });
-    }
-
-    for (let i = 0; i < branches.length; i++) {
-      const branch = branches[i];
-
-      if (branch.kind === "validate") {
-        const error = branch.validate(data);
-        if (!error) {
-          return;
-        }
-        continue;
-      }
-
-      if (branch.kind === "alwaysValid") {
-        return;
-      }
-
-      if (branch.kind === "alwaysInvalid") {
-        continue;
-      }
-
-      if (data === branch.value) {
-        return;
-      }
-    }
-
-    return defineError("Value is not valid", { data });
+    return createCombinatorValidator("anyOf", schema, defineError)(data);
   },
 
   oneOf(schema, data, defineError) {
-    const branches = getCombinatorBranchEntries(schema, "oneOf");
-
-    if (branches.length === 1) {
-      const onlyBranch = branches[0];
-
-      if (onlyBranch.kind === "validate") {
-        const error = onlyBranch.validate(data);
-        if (!error) {
-          return;
-        }
-        return defineError("Value is not valid", { data });
-      }
-
-      if (onlyBranch.kind === "alwaysValid") {
-        return;
-      }
-
-      if (onlyBranch.kind === "alwaysInvalid") {
-        return defineError("Value is not valid", { data });
-      }
-
-      if (data === onlyBranch.value) {
-        return;
-      }
-
-      return defineError("Value is not valid", { data });
-    }
-
-    let validCount = 0;
-
-    for (let i = 0; i < branches.length; i++) {
-      const branch = branches[i];
-      let isValid = false;
-
-      if (branch.kind === "validate") {
-        isValid = !branch.validate(data);
-      } else if (branch.kind === "alwaysValid") {
-        isValid = true;
-      } else if (branch.kind === "alwaysInvalid") {
-        isValid = false;
-      } else {
-        isValid = data === branch.value;
-      }
-
-      if (isValid) {
-        validCount++;
-        if (validCount > 1) {
-          return defineError("Value is not valid", { data });
-        }
-      }
-    }
-
-    if (validCount === 1) {
-      return;
-    }
-
-    return defineError("Value is not valid", { data });
+    return createCombinatorValidator("oneOf", schema, defineError)(data);
   },
 
   const(schema, data, defineError) {

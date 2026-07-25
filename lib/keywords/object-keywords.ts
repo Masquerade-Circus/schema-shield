@@ -1,4 +1,6 @@
-import type { KeywordFunction } from "../index";
+import { isCompiledSchema } from "../utils/main-utils";
+
+import { KeywordFunction } from "../index";
 import { deepCloneUnfreeze } from "../utils/deep-freeze";
 import { compilePatternMatcher } from "../utils/pattern-matcher";
 
@@ -9,21 +11,12 @@ type PatternPropertyEntry = {
   match: (key: string) => boolean;
 };
 
-type PropertyValidationEntry = {
-  key: string;
-  schemaProp: any;
-  hasDefault: boolean;
-};
-
-export function getPatternPropertyEntries(
-  schema: Record<string, any>,
-  rebuild = false
-) {
+function getPatternPropertyEntries(schema: Record<string, any>) {
   let entries = (schema as any)._patternPropertyEntries as
     | PatternPropertyEntry[]
     | undefined;
 
-  if (!rebuild && entries) {
+  if (entries) {
     return entries;
   }
 
@@ -60,119 +53,6 @@ export function getPatternPropertyEntries(
   });
 
   return entries;
-}
-
-function getPropertyValidationEntries(
-  schema: Record<string, any>,
-  rebuild = false
-) {
-  let entries = (schema as any)._propertyValidationEntries as
-    | PropertyValidationEntry[]
-    | undefined;
-  if (!rebuild && entries) {
-    return entries;
-  }
-
-  const requiredSet = Array.isArray(schema.required)
-    ? new Set<string>(schema.required)
-    : null;
-  const propKeys = Object.keys(schema.properties || {});
-  entries = [];
-
-  for (let i = 0; i < propKeys.length; i++) {
-    const key = propKeys[i];
-    const schemaProp = schema.properties[key];
-    const hasDefault =
-      requiredSet !== null &&
-      requiredSet.has(key) &&
-      schemaProp &&
-      typeof schemaProp === "object" &&
-      !Array.isArray(schemaProp) &&
-      "default" in schemaProp;
-
-    if (schemaProp === false) {
-      entries.push({ key, schemaProp, hasDefault: false });
-      continue;
-    }
-    if (schemaProp === true) {
-      continue;
-    }
-    if (
-      schemaProp &&
-      typeof schemaProp === "object" &&
-      !Array.isArray(schemaProp) &&
-      (typeof schemaProp.$validate === "function" || hasDefault)
-    ) {
-      entries.push({ key, schemaProp, hasDefault });
-    }
-  }
-
-  Object.defineProperty(schema, "_propertyValidationEntries", {
-    value: entries,
-    enumerable: false,
-    configurable: false,
-    writable: false
-  });
-  Object.defineProperty(schema, "_hasRequiredDefaults", {
-    value: entries.some((entry) => entry.hasDefault),
-    enumerable: false,
-    configurable: false,
-    writable: false
-  });
-  return entries;
-}
-
-function getAdditionalPropertiesValidate(
-  schema: Record<string, any>,
-  rebuild = false
-) {
-  let validate = (schema as any)._apValidate as
-    | ((data: any) => any)
-    | null
-    | undefined;
-  if (rebuild || !("_apValidate" in schema)) {
-    const additionalSchema = schema.additionalProperties;
-    validate =
-      additionalSchema &&
-      typeof additionalSchema === "object" &&
-      !Array.isArray(additionalSchema) &&
-      typeof additionalSchema.$validate === "function"
-        ? additionalSchema.$validate
-        : null;
-    Object.defineProperty(schema, "_apValidate", {
-      value: validate,
-      enumerable: false,
-      configurable: false,
-      writable: false
-    });
-  }
-  return validate;
-}
-
-export function prepareObjectKeywordCaches(schema: Record<string, any>) {
-  if (
-    schema.properties &&
-    typeof schema.properties === "object" &&
-    !Array.isArray(schema.properties)
-  ) {
-    getPropertyValidationEntries(schema, true);
-  }
-  if ("additionalProperties" in schema) {
-    getAdditionalPropertiesValidate(schema, true);
-  }
-  if (
-    schema.patternProperties &&
-    typeof schema.patternProperties === "object" &&
-    !Array.isArray(schema.patternProperties)
-  ) {
-    getPatternPropertyEntries(schema, true);
-    Object.defineProperty(schema, "_patternKeyMatchIndexCache", {
-      value: new Map<string, number[]>(),
-      enumerable: false,
-      configurable: false,
-      writable: false
-    });
-  }
 }
 
 function getPatternKeyMatchIndexes(
@@ -233,87 +113,47 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
     return;
   },
 
-  properties(schema, data, defineError) {
+  properties(schema, data, defineError, instance) {
     if (!data || typeof data !== "object" || Array.isArray(data)) {
       return;
     }
 
-    const validationEntries = getPropertyValidationEntries(schema);
+    const propKeys = (schema as any)._propKeys as string[];
 
-    if ((schema as any)._hasRequiredDefaults !== true) {
-      for (let i = 0; i < validationEntries.length; i++) {
-        const { key, schemaProp } = validationEntries[i];
-        if (!Object.prototype.hasOwnProperty.call(data, key)) {
+    const requiredDefaultKeys = (schema as any)._requiredDefaultKeys as
+      | string[]
+      | undefined;
+    if (requiredDefaultKeys) {
+      const stagedDefaults: Array<{ key: string; value: any }> = [];
+      for (let i = 0; i < requiredDefaultKeys.length; i++) {
+        const key = requiredDefaultKeys[i];
+        if (Object.prototype.hasOwnProperty.call(data, key)) {
           continue;
         }
-        if (typeof schemaProp === "boolean") {
-          if (schemaProp === false) {
-            return defineError("Property is not allowed", {
-              item: key,
-              data: data[key]
-            });
-          }
-          continue;
+        const schemaProp = schema.properties[key];
+        const value = deepCloneUnfreeze(schemaProp.default);
+        const error = (schemaProp as any).$validate(value);
+        if (error) {
+          return defineError("Default property is invalid", {
+            item: key,
+            cause: error,
+            data: schemaProp.default
+          });
         }
-        if (schemaProp && "$validate" in schemaProp) {
-          const error = schemaProp.$validate(data[key]);
-          if (error) {
-            return defineError("Property is invalid", {
-              item: key,
-              cause: error,
-              data: data[key]
-            });
-          }
-        }
+        stagedDefaults.push({ key, value });
       }
-      return;
-    }
 
-    const stagedDefaults: Array<{ key: string; value: any }> = [];
-    for (let i = 0; i < validationEntries.length; i++) {
-      const { key, schemaProp, hasDefault } = validationEntries[i];
-      if (Object.prototype.hasOwnProperty.call(data, key) || !hasDefault) {
-        continue;
-      }
-      const defaultValue = deepCloneUnfreeze(schemaProp.default);
-      const validate = (schemaProp as any).$validate;
-      const error = typeof validate === "function" ? validate(defaultValue) : undefined;
-      if (error) {
-        return defineError("Default property is invalid", {
-          item: key,
-          cause: error,
-          data: defaultValue
-        });
-      }
-      stagedDefaults.push({ key, value: defaultValue });
-    }
-
-    for (let i = 0; i < stagedDefaults.length; i++) {
-      const { key, value } = stagedDefaults[i];
-      if (key === "__proto__") {
-        Object.defineProperty(data, key, {
-          value,
-          enumerable: true,
-          configurable: true,
-          writable: true
-        });
-      } else {
-        data[key] = value;
+      for (let i = 0; i < stagedDefaults.length; i++) {
+        const staged = stagedDefaults[i];
+        instance.setDefault(data, staged.key, staged.value);
       }
     }
 
-    let stagedDefaultIndex = 0;
-    for (let i = 0; i < validationEntries.length; i++) {
-      const { key, schemaProp } = validationEntries[i];
+    for (let i = 0; i < propKeys.length; i++) {
+      const key = propKeys[i];
+      const schemaProp = schema.properties[key];
 
       if (!Object.prototype.hasOwnProperty.call(data, key)) {
-        continue;
-      }
-      if (
-        stagedDefaultIndex < stagedDefaults.length &&
-        stagedDefaults[stagedDefaultIndex].key === key
-      ) {
-        stagedDefaultIndex++;
         continue;
       }
 
@@ -411,7 +251,21 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
       return;
     }
 
-    const apValidate = getAdditionalPropertiesValidate(schema);
+    let apValidate = (schema as any)._apValidate as
+      | ((data: any) => any)
+      | null
+      | undefined;
+    if (apValidate === undefined) {
+      apValidate = isCompiledSchema(schema.additionalProperties)
+        ? schema.additionalProperties.$validate
+        : null;
+      Object.defineProperty(schema, "_apValidate", {
+        value: apValidate,
+        enumerable: false,
+        configurable: false,
+        writable: false
+      });
+    }
 
     const patternEntries = getPatternPropertyEntries(schema);
 
@@ -588,7 +442,6 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
         }
         return defineError("Dependency is not satisfied", { data: dependency });
       }
-
       const error = dependency.$validate(data);
       if (error) {
         return defineError("Dependency is not satisfied", {
