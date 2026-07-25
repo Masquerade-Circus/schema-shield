@@ -383,32 +383,11 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
     return defineError("Value is not valid", { data });
   },
 
-  $ref(schema, data, defineError, instance) {
-    if (schema._resolvedRef) {
-      if (schema.$validate !== schema._resolvedRef) {
-        schema.$validate = schema._resolvedRef;
-      }
-
+  $ref(schema, data, defineError) {
+    if (typeof schema._resolvedRef === "function") {
       return schema._resolvedRef(data);
     }
 
-    const refPath = schema.$ref;
-    let targetSchema = instance.getSchemaRef(refPath);
-
-    if (!targetSchema) {
-      targetSchema = instance.getSchemaById(refPath);
-    }
-
-    if (!targetSchema) {
-      return defineError(`Missing reference: ${refPath}`);
-    }
-
-    if (!targetSchema.$validate) {
-      return;
-    }
-
-    schema._resolvedRef = targetSchema.$validate;
-    schema.$validate = schema._resolvedRef;
-    return schema._resolvedRef(data);
+    return defineError(`Missing reference: ${schema.$ref}`);
   }
 };

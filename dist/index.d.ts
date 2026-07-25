@@ -37,7 +37,6 @@ export declare class SchemaShield {
     private keywords;
     private immutable;
     private rootSchema;
-    private idRegistry;
     private failFast;
     private maxDepth;
     private validationContexts;
@@ -60,7 +59,14 @@ export declare class SchemaShield {
     getSchemaRef(path: string): CompiledSchema | undefined;
     getSchemaById(id: string): CompiledSchema | undefined;
     private depthError;
+    private schemaChildEntries;
     private schemaChildren;
+    private registrySubschemaEntries;
+    private escapePointerToken;
+    private resolveUri;
+    private resourceUri;
+    private buildReferenceRegistry;
+    private resolveReferenceSource;
     private analyzeSchema;
     compile(schema: any): Validator;
     private prepareSchema;
@@ -81,6 +87,7 @@ export declare class SchemaShield {
     private installDepthGuards;
     private compileSchema;
     isSchemaLike(subSchema: any): boolean;
+    private getCompiledReferenceTarget;
     private linkReferences;
 }
 //# sourceMappingURL=index.d.ts.map
