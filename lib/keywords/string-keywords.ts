@@ -4,9 +4,42 @@ import { compilePatternMatcher } from "../utils/pattern-matcher";
 const PATTERN_MATCH_CACHE_LIMIT = 512;
 const FORMAT_RESULT_CACHE_LIMIT = 512;
 
+function hasAtLeastCodePoints(value: string, limit: number): boolean {
+  let count = 0;
+  for (let index = 0; index < value.length; index++) {
+    const unit = value.charCodeAt(index);
+    if (
+      unit >= 0xd800 &&
+      unit <= 0xdbff &&
+      index + 1 < value.length
+    ) {
+      const nextUnit = value.charCodeAt(index + 1);
+      if (nextUnit >= 0xdc00 && nextUnit <= 0xdfff) {
+        index++;
+      }
+    }
+
+    count++;
+    if (count >= limit) {
+      return true;
+    }
+  }
+
+  return count >= limit;
+}
+
 export const StringKeywords: Record<string, KeywordFunction> = {
   minLength(schema, data, defineError) {
-    if (typeof data !== "string" || data.length >= schema.minLength) {
+    if (typeof data !== "string") {
+      return;
+    }
+
+    const units = data.length;
+    const limit = schema.minLength;
+    if (units < limit) {
+      return defineError("Value is shorter than the minimum length", { data });
+    }
+    if (units - limit >= limit || hasAtLeastCodePoints(data, limit)) {
       return;
     }
 
@@ -14,11 +47,20 @@ export const StringKeywords: Record<string, KeywordFunction> = {
   },
 
   maxLength(schema, data, defineError) {
-    if (typeof data !== "string" || data.length <= schema.maxLength) {
+    if (typeof data !== "string") {
       return;
     }
 
-    return defineError("Value is longer than the maximum length", { data });
+    const units = data.length;
+    const limit = schema.maxLength;
+    if (units <= limit) {
+      return;
+    }
+    if (units - limit > limit || hasAtLeastCodePoints(data, limit + 1)) {
+      return defineError("Value is longer than the maximum length", { data });
+    }
+
+    return;
   },
 
   pattern(schema, data, defineError) {

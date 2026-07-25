@@ -86,6 +86,19 @@ interface SchemaAnalysis {
   mutableSchemas: WeakSet<object>;
 }
 
+interface SchemaPosition {
+  source: Record<string, any>;
+  baseUri: string;
+  resourceRoot: Record<string, any>;
+  pointer: string;
+}
+
+interface ReferenceRegistry {
+  aliases: ReadonlyMap<string, Record<string, any>>;
+  positions: ReadonlyArray<SchemaPosition>;
+  positionsByNode: WeakMap<object, SchemaPosition>;
+}
+
 interface DefaultMutation {
   target: Record<string, any>;
   key: string;
@@ -97,6 +110,7 @@ interface DepthGuardState {
 }
 
 const MAX_COMPILE_DEPTH = 128;
+const LOCAL_SCHEMA_BASE = "schema-shield://local/root";
 
 const FAIL_FAST_TYPE_VALIDATORS: Record<string, ValidateFunction> = {
   object: (data) =>
@@ -133,7 +147,6 @@ export class SchemaShield {
   private keywords: Record<string, KeywordFunction | false> = {};
   private immutable = false;
   private rootSchema: CompiledSchema | null = null;
-  private idRegistry: Map<string, CompiledSchema> = new Map();
   private failFast: boolean = true;
   private maxDepth: number;
   private validationContexts: ValidationContext[] = [];
@@ -268,7 +281,29 @@ export class SchemaShield {
   }
 
   getSchemaById(id: string): CompiledSchema | undefined {
-    return this.idRegistry.get(id);
+    if (!this.rootSchema) {
+      return;
+    }
+
+    const stack: CompiledSchema[] = [this.rootSchema];
+    const seen = new WeakSet<object>();
+    while (stack.length > 0) {
+      const node = stack.pop()!;
+      if (seen.has(node)) {
+        continue;
+      }
+      seen.add(node);
+      if (node.$id === id) {
+        return node;
+      }
+
+      const children = this.schemaChildren(node);
+      for (let index = 0; index < children.length; index++) {
+        stack.push(children[index] as CompiledSchema);
+      }
+    }
+
+    return;
   }
 
   private depthError(message = "Maximum schema depth exceeded") {
@@ -281,8 +316,10 @@ export class SchemaShield {
     return error;
   }
 
-  private schemaChildren(schema: Record<string, any>): object[] {
-    const children: object[] = [];
+  private schemaChildEntries(
+    schema: Record<string, any>
+  ): Array<{ value: object; pointer: string }> {
+    const children: Array<{ value: object; pointer: string }> = [];
     const mapKeys = [
       "properties",
       "patternProperties",
@@ -313,7 +350,12 @@ export class SchemaShield {
       for (const childKey of Object.keys(value)) {
         const child = value[childKey];
         if (child && typeof child === "object") {
-          children.push(child);
+          children.push({
+            value: child,
+            pointer: `/${this.escapePointerToken(key)}/${this.escapePointerToken(
+              childKey
+            )}`
+          });
         }
       }
     }
@@ -323,9 +365,13 @@ export class SchemaShield {
       if (!Array.isArray(value)) {
         continue;
       }
-      for (const child of value) {
+      for (let index = 0; index < value.length; index++) {
+        const child = value[index];
         if (child && typeof child === "object") {
-          children.push(child);
+          children.push({
+            value: child,
+            pointer: `/${this.escapePointerToken(key)}/${index}`
+          });
         }
       }
     }
@@ -333,7 +379,10 @@ export class SchemaShield {
     for (const key of singleKeys) {
       const value = schema[key];
       if (value && typeof value === "object" && !Array.isArray(value)) {
-        children.push(value);
+        children.push({
+          value,
+          pointer: `/${this.escapePointerToken(key)}`
+        });
       }
     }
 
@@ -357,14 +406,240 @@ export class SchemaShield {
         value &&
         typeof value === "object"
       ) {
-        children.push(value);
+        children.push({
+          value,
+          pointer: `/${this.escapePointerToken(key)}`
+        });
       }
     }
 
     return children;
   }
 
-  private analyzeSchema(schema: any): SchemaAnalysis {
+  private schemaChildren(schema: Record<string, any>): object[] {
+    return this.schemaChildEntries(schema).map((entry) => entry.value);
+  }
+
+  private registrySubschemaEntries(
+    schema: Record<string, any>
+  ): Array<{ value: object; pointer: string }> {
+    const children: Array<{ value: object; pointer: string }> = [];
+    const mapKeys = ["properties", "patternProperties", "definitions"];
+    const arrayKeys = ["allOf", "anyOf", "oneOf", "items"];
+    const singleKeys = [
+      "items",
+      "additionalItems",
+      "additionalProperties",
+      "contains",
+      "propertyNames",
+      "not",
+      "if",
+      "then",
+      "else"
+    ];
+
+    for (const key of mapKeys) {
+      const value = schema[key];
+      if (!value || typeof value !== "object" || Array.isArray(value)) {
+        continue;
+      }
+      for (const childKey of Object.keys(value)) {
+        const child = value[childKey];
+        if (child && typeof child === "object" && !Array.isArray(child)) {
+          children.push({
+            value: child,
+            pointer: `/${this.escapePointerToken(key)}/${this.escapePointerToken(
+              childKey
+            )}`
+          });
+        }
+      }
+    }
+
+    const dependencies = schema.dependencies;
+    if (
+      dependencies &&
+      typeof dependencies === "object" &&
+      !Array.isArray(dependencies)
+    ) {
+      for (const dependencyKey of Object.keys(dependencies)) {
+        const child = dependencies[dependencyKey];
+        if (child && typeof child === "object" && !Array.isArray(child)) {
+          children.push({
+            value: child,
+            pointer: `/dependencies/${this.escapePointerToken(dependencyKey)}`
+          });
+        }
+      }
+    }
+
+    for (const key of arrayKeys) {
+      const value = schema[key];
+      if (!Array.isArray(value)) {
+        continue;
+      }
+      for (let index = 0; index < value.length; index++) {
+        const child = value[index];
+        if (child && typeof child === "object" && !Array.isArray(child)) {
+          children.push({
+            value: child,
+            pointer: `/${this.escapePointerToken(key)}/${index}`
+          });
+        }
+      }
+    }
+
+    for (const key of singleKeys) {
+      const value = schema[key];
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        children.push({
+          value,
+          pointer: `/${this.escapePointerToken(key)}`
+        });
+      }
+    }
+
+    return children;
+  }
+
+  private escapePointerToken(value: string): string {
+    return value.replace(/~/g, "~0").replace(/\//g, "~1");
+  }
+
+  private resolveUri(reference: string, baseUri: string, keyword: "$id" | "$ref") {
+    try {
+      return new URL(reference, baseUri).href;
+    } catch {
+      const error = new ValidationError(`Invalid ${keyword} URI: ${reference}`);
+      error.code = keyword === "$id" ? "INVALID_SCHEMA_ID" : "REFERENCE_NOT_FOUND";
+      error.keyword = keyword;
+      throw error;
+    }
+  }
+
+  private resourceUri(uri: string): string {
+    const hashIndex = uri.indexOf("#");
+    return hashIndex === -1 ? uri : uri.slice(0, hashIndex);
+  }
+
+  private buildReferenceRegistry(schema: any): ReferenceRegistry {
+    const aliases = new Map<string, Record<string, any>>();
+    const positions: SchemaPosition[] = [];
+    const positionsByNode = new WeakMap<object, SchemaPosition>();
+
+    if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
+      return Object.freeze({
+        aliases: aliases as ReadonlyMap<string, Record<string, any>>,
+        positions: Object.freeze(positions),
+        positionsByNode
+      });
+    }
+
+    const register = (uri: string, node: Record<string, any>) => {
+      const existing = aliases.get(uri);
+      if (existing && existing !== node) {
+        const error = new ValidationError(`Duplicate schema identity: ${uri}`);
+        error.code = "DUPLICATE_SCHEMA_ID";
+        error.keyword = "$id";
+        throw error;
+      }
+      aliases.set(uri, node);
+    };
+    register(LOCAL_SCHEMA_BASE, schema);
+
+    const visited = new WeakSet<object>();
+    const stack: Array<{
+      node: Record<string, any>;
+      inheritedBase: string;
+      resourceRoot: Record<string, any>;
+      pointer: string;
+    }> = [
+      {
+        node: schema,
+        inheritedBase: LOCAL_SCHEMA_BASE,
+        resourceRoot: schema,
+        pointer: "#"
+      }
+    ];
+
+    while (stack.length > 0) {
+      const entry = stack.pop()!;
+      if (visited.has(entry.node)) {
+        continue;
+      }
+      visited.add(entry.node);
+
+      let baseUri = entry.inheritedBase;
+      let resourceRoot = entry.resourceRoot;
+      if (typeof entry.node.$id === "string" && !("$ref" in entry.node)) {
+        baseUri = this.resolveUri(entry.node.$id, entry.inheritedBase, "$id");
+        register(baseUri, entry.node);
+        if (baseUri.indexOf("#") === -1 || baseUri.endsWith("#")) {
+          resourceRoot = entry.node;
+          register(this.resourceUri(baseUri), entry.node);
+        }
+      }
+
+      const position = {
+        source: entry.node,
+        baseUri,
+        resourceRoot,
+        pointer: entry.pointer
+      };
+      positions.push(position);
+      positionsByNode.set(entry.node, position);
+
+      const children = this.registrySubschemaEntries(entry.node);
+      for (let index = children.length - 1; index >= 0; index--) {
+        const child = children[index];
+        if (Array.isArray(child.value)) {
+          continue;
+        }
+        stack.push({
+          node: child.value as Record<string, any>,
+          inheritedBase: baseUri,
+          resourceRoot,
+          pointer: `${entry.pointer}${child.pointer}`
+        });
+      }
+    }
+
+    return Object.freeze({
+      aliases: aliases as ReadonlyMap<string, Record<string, any>>,
+      positions: Object.freeze(positions),
+      positionsByNode
+    });
+  }
+
+  private resolveReferenceSource(
+    ref: string,
+    position: SchemaPosition,
+    registry: ReferenceRegistry
+  ): any {
+    const resolvedUri = this.resolveUri(ref, position.baseUri, "$ref");
+    const exactTarget = registry.aliases.get(resolvedUri);
+    if (exactTarget) {
+      return exactTarget;
+    }
+
+    const resourceRoot = registry.aliases.get(this.resourceUri(resolvedUri));
+    if (!resourceRoot) {
+      return;
+    }
+
+    const hashIndex = resolvedUri.indexOf("#");
+    const fragment = hashIndex === -1 ? "" : resolvedUri.slice(hashIndex + 1);
+    if (fragment.length === 0) {
+      return resourceRoot;
+    }
+    if (fragment.startsWith("/")) {
+      return resolvePath(resourceRoot, `#${fragment}`);
+    }
+
+    return;
+  }
+
+  private analyzeSchema(schema: any, registry: ReferenceRegistry): SchemaAnalysis {
     if (!schema || typeof schema !== "object") {
       return {
         requiresDepthGuard: false,
@@ -382,7 +657,6 @@ export class SchemaShield {
     }> = [{ value: schema, depth: 0, exit: false }];
     let requiresDepthGuard = false;
     let requiresMutationJournal = false;
-    const idTargets = new Map<string, Record<string, any>>();
 
     while (stack.length > 0) {
       const entry = stack.pop()!;
@@ -419,9 +693,6 @@ export class SchemaShield {
 
       for (const key of Object.keys(entry.value)) {
         const keyword = this.getKeyword(key);
-        if (key === "$id" && typeof entry.value[key] === "string") {
-          idTargets.set(entry.value[key], entry.value);
-        }
         if (keyword && keyword !== keywords[key]) {
           requiresDepthGuard = true;
           requiresMutationJournal = true;
@@ -464,9 +735,10 @@ export class SchemaShield {
         typeof entry.value.$ref === "string" &&
         this.getKeyword("$ref") === keywords.$ref
       ) {
-        const target = entry.value.$ref.startsWith("#")
-          ? resolvePath(schema, entry.value.$ref)
-          : idTargets.get(entry.value.$ref);
+        const position = registry.positionsByNode.get(entry.value);
+        const target = position
+          ? this.resolveReferenceSource(entry.value.$ref, position, registry)
+          : undefined;
         if (target && typeof target === "object") {
           children.push(target);
         }
@@ -548,17 +820,14 @@ export class SchemaShield {
   }
 
   private prepareSchema(schema: any) {
-    const analysis = this.analyzeSchema(schema);
-    this.idRegistry.clear();
+    const referenceRegistry = this.buildReferenceRegistry(schema);
+    const analysis = this.analyzeSchema(schema, referenceRegistry);
     this.compileCache = new WeakMap();
     this.compilingRequiresContext =
       analysis.requiresDepthGuard || analysis.requiresMutationJournal;
     this.compilingMutableSchemas = analysis.mutableSchemas;
     const compiledSchema = this.compileSchema(schema);
     this.rootSchema = compiledSchema;
-    if ((compiledSchema as any)._hasRef === true) {
-      this.linkReferences(compiledSchema);
-    }
 
     let depthGuardState: DepthGuardState | null = null;
     if (analysis.requiresDepthGuard) {
@@ -571,6 +840,10 @@ export class SchemaShield {
       });
     } else if (analysis.requiresMutationJournal) {
       depthGuardState = { context: null };
+    }
+
+    if ((compiledSchema as any)._hasRef === true) {
+      this.linkReferences(referenceRegistry);
     }
 
     if (!compiledSchema.$validate) {
@@ -1049,10 +1322,6 @@ export class SchemaShield {
 
     let schemaHasRef = false;
 
-    if (typeof schema.$id === "string") {
-      this.idRegistry.set(schema.$id, compiledSchema);
-    }
-
     if ("$ref" in schema) {
       schemaHasRef = true;
       const refValidator = this.getKeyword("$ref");
@@ -1478,83 +1747,90 @@ export class SchemaShield {
     return false;
   }
 
-  private linkReferences(root: CompiledSchema) {
-    const stack: any[] = [root];
-    const seen = new WeakSet<object>();
+  private getCompiledReferenceTarget(
+    ref: string,
+    position: SchemaPosition,
+    registry: ReferenceRegistry
+  ): CompiledSchema | boolean | undefined {
+    const resolvedUri = this.resolveUri(ref, position.baseUri, "$ref");
+    const exactTarget = registry.aliases.get(resolvedUri);
+    if (exactTarget) {
+      return this.compileCache.get(exactTarget);
+    }
 
-    while (stack.length > 0) {
-      const node = stack.pop();
+    const resourceRoot = registry.aliases.get(this.resourceUri(resolvedUri));
+    if (!resourceRoot) {
+      return;
+    }
+    const compiledResource = this.compileCache.get(resourceRoot);
+    if (!compiledResource) {
+      return;
+    }
 
-      if (!node || typeof node !== "object" || seen.has(node)) {
+    const hashIndex = resolvedUri.indexOf("#");
+    const fragment = hashIndex === -1 ? "" : resolvedUri.slice(hashIndex + 1);
+    if (fragment.length === 0) {
+      return compiledResource;
+    }
+    if (fragment.startsWith("/")) {
+      return resolvePath(compiledResource, `#${fragment}`);
+    }
+
+    return;
+  }
+
+  private linkReferences(registry: ReferenceRegistry) {
+    for (let index = 0; index < registry.positions.length; index++) {
+      const position = registry.positions[index];
+      if (
+        typeof position.source.$ref !== "string" ||
+        this.getKeyword("$ref") !== keywords.$ref
+      ) {
         continue;
       }
-      seen.add(node);
 
-      if (
-        typeof node.$ref === "string" &&
-        typeof node.$validate === "function" &&
-        node.$validate.name === "Validate_Reference"
-      ) {
-        const refPath = node.$ref as string;
-
-        let target: any = this.getSchemaRef(refPath);
-        if (typeof target === "undefined") {
-          target = this.getSchemaById(refPath);
-        }
-
-        if (typeof target === "undefined") {
-          if (/^https?:\/\//i.test(refPath)) {
-            continue;
-          }
-          const error = new ValidationError(`Reference not found: ${refPath}`);
-          error.code = "REFERENCE_NOT_FOUND";
-          error.keyword = "$ref";
-          throw error;
-        }
-
-        if (typeof target === "boolean") {
-          if (target === true) {
-            node.$validate = getNamedFunction("Validate_Ref_True", () => {});
-          } else {
-            const defineError = getDefinedErrorFunctionForKey(
-              "$ref",
-              node as any,
-              this.failFast
-            );
-
-            node.$validate = getNamedFunction(
-              "Validate_Ref_False",
-              (_data: any) => defineError("Value is not valid")
-            );
-          }
-          continue;
-        }
-
-        if (target && typeof target.$validate === "function") {
-          node.$validate = target.$validate;
-        } else {
-          const error = new ValidationError(`Reference not found: ${refPath}`);
-          error.code = "REFERENCE_NOT_FOUND";
-          error.keyword = "$ref";
-          throw error;
-        }
+      const node = this.compileCache.get(position.source);
+      const target = this.getCompiledReferenceTarget(
+        position.source.$ref,
+        position,
+        registry
+      );
+      if (!node || typeof target === "undefined") {
+        const error = new ValidationError(
+          `Reference not found: ${position.source.$ref}`
+        );
+        error.code = "REFERENCE_NOT_FOUND";
+        error.keyword = "$ref";
+        throw error;
       }
 
-      for (const key in node) {
-        const value = node[key];
-        if (!value) continue;
-
-        if (Array.isArray(value)) {
-          for (let i = 0; i < value.length; i++) {
-            const v = value[i];
-            if (v && typeof v === "object") {
-              stack.push(v);
-            }
-          }
-        } else if (typeof value === "object") {
-          stack.push(value);
+      let targetValidate: ValidateFunction;
+      if (target === true) {
+        targetValidate = getNamedFunction("Validate_Ref_True", () => {});
+      } else if (target === false) {
+        const defineError = getDefinedErrorFunctionForKey(
+          "$ref",
+          node,
+          this.failFast
+        );
+        targetValidate = getNamedFunction("Validate_Ref_False", (data: any) =>
+          defineError("Value is not valid", { data })
+        );
+      } else {
+        if (typeof target.$validate !== "function") {
+          target.$validate = getNamedFunction<ValidateFunction>(
+            "Validate_Ref_Any",
+            () => {}
+          );
         }
+        targetValidate = target.$validate;
       }
+      Object.defineProperty(node, "_resolvedRef", {
+        value: targetValidate,
+        enumerable: false,
+        configurable: false,
+        writable: false
+      });
     }
   }
 }

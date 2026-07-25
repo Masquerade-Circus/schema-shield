@@ -22,32 +22,12 @@ const jsonTestFiles = files.reduce((acc, file) => {
 
 const jsonTestsToSkip = {
   "validate definition against metaschema": "Not implemented",
-  "maxLength validation": {
-    "two supplementary Unicode code points is long enough":
-      "No one supports this"
-  },
-  "minLength validation": {
-    "one supplementary Unicode code point is not long enough":
-      "No one supports this"
-  },
-
   // Sub items
   "items and subitems": "Not implemented",
 
   // Id and remote refs
-  "$id inside an unknown keyword is not a real identifier": "Not implemented",
-  "$ref prevents a sibling $id from changing the base uri": "Not implemented",
   "remote ref, containing refs itself":
     "Remote references are not supported in SchemaShield v1",
-  "Location-independent identifier with base URI change in subschema":
-    "ID scope change not supported",
-  "refs with relative uris and defs": "ID scope change not supported",
-  "relative refs with absolute uris and defs": "ID scope change not supported",
-  "$id must be resolved against nearest parent, not just immediate parent":
-    "ID scope resolution not supported",
-  "URN base URI with URN and JSON pointer ref": "URN refs not supported",
-  "URN base URI with URN and anchor ref": "URN refs not supported",
-  "ref with absolute-path-reference": "Absolute path references not supported",
 
   // Needs investigation
   "evaluating the same schema location against the same data location twice is not a sign of an infinite loop":

@@ -21,30 +21,12 @@ const jsonTestFiles = files.reduce((acc, file) => {
 }, {});
 
 const jsonTestsToSkip = {
-  "maxLength validation": {
-    "two supplementary Unicode code points is long enough":
-      "No one supports this"
-  },
-  "minLength validation": {
-    "one supplementary Unicode code point is not long enough":
-      "No one supports this"
-  },
-
   // Sub items
   "items and subitems": "Not implemented",
 
   // Ref
-  "$id inside an unknown keyword is not a real identifier": "Not implemented",
   "validate definition against metaschema": "Not implemented",
   "remote ref, containing refs itself": "Not supported",
-  "Location-independent identifier with base URI change in subschema":
-    "Not supported",
-  "refs with relative uris and defs": "Not supported",
-  "relative refs with absolute uris and defs": "Not supported",
-  "RN base URI with URN and JSON pointer ref": "Not supported",
-  "URN base URI with URN and JSON pointer ref": "Not supported",
-  "URN base URI with URN and anchor ref": "Not supported",
-  "ref with absolute-path-reference": "Not supported",
 
   // Needs investigation
   "evaluating the same schema location against the same data location twice is not a sign of an infinite loop":
