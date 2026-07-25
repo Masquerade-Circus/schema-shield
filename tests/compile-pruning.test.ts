@@ -127,6 +127,53 @@ describe("compile-time pruning", () => {
     expect(validate({ constrained: "not-number", withDefault: 1 }).valid).toBe(false);
   });
 
+  it("rebuilds property metadata supplied by the input schema", () => {
+    const schema = {
+      type: "object",
+      properties: { value: { type: "number" } }
+    };
+    const expected = new SchemaShield().compile(schema);
+    const validate = new SchemaShield().compile({
+      ...schema,
+      _propertyValidationEntries: []
+    });
+
+    expect(expected({ value: "invalid" }).valid).toBe(false);
+    expect(validate({ value: "invalid" }).valid).toBe(false);
+  });
+
+  it("rebuilds additionalProperties metadata supplied by the input schema", () => {
+    const schema = {
+      type: "object",
+      additionalProperties: { type: "number" }
+    };
+    const expected = new SchemaShield().compile(schema);
+    const validate = new SchemaShield().compile({
+      ...schema,
+      _apValidate: null
+    });
+
+    expect(expected({ value: "invalid" }).valid).toBe(false);
+    expect(validate({ value: "invalid" }).valid).toBe(false);
+  });
+
+  it("rebuilds patternProperties metadata supplied by the input schema", () => {
+    const schema = {
+      patternProperties: {
+        "^restricted$": { type: "number" }
+      }
+    };
+    const expected = new SchemaShield().compile(schema);
+    const validate = new SchemaShield().compile({
+      ...schema,
+      _patternPropertyEntries: [],
+      _patternKeyMatchIndexCache: new Map([["restricted", []]])
+    });
+
+    expect(expected({ restricted: "invalid" }).valid).toBe(false);
+    expect(validate({ restricted: "invalid" }).valid).toBe(false);
+  });
+
   it("precomputes combinator branch entries at compile time", () => {
     const validate = new SchemaShield({ failFast: true }).compile({
       allOf: [{ type: "number" }],
@@ -165,6 +212,104 @@ describe("compile-time pruning", () => {
     expect(validate(1).valid).toBe(true);
     expect(validate(4).valid).toBe(true);
     expect(validate(3).valid).toBe(false);
+  });
+
+  it("captures a linked additionalProperties validator after references are linked", () => {
+    const validate = new SchemaShield({ failFast: true }).compile({
+      definitions: {
+        stringValue: { type: "string" }
+      },
+      additionalProperties: { $ref: "#/definitions/stringValue" }
+    });
+    const compiled = validate.compiledSchema as any;
+
+    expect(compiled._apValidate).toBe(
+      compiled.additionalProperties.$validate
+    );
+    expect(validate({ value: "valid" }).valid).toBe(true);
+    expect(validate({ value: 1 }).valid).toBe(false);
+  });
+
+  it("rebuilds combinator metadata supplied by the input schema", () => {
+    const schema = {
+      type: "number",
+      allOf: [{ minimum: 5 }]
+    };
+    const expected = new SchemaShield().compile(schema);
+    const validate = new SchemaShield().compile({
+      ...schema,
+      _allOfBranchEntries: [{ kind: "alwaysValid" }]
+    });
+
+    expect(expected(1).valid).toBe(false);
+    expect(validate(1).valid).toBe(false);
+  });
+
+  it("never prunes trivial values handled by custom overrides", () => {
+    const cases = [
+      { keyword: "required", schema: { required: [] } },
+      { keyword: "uniqueItems", schema: { uniqueItems: false } },
+      { keyword: "properties", schema: { properties: {} } },
+      { keyword: "patternProperties", schema: { patternProperties: {} } },
+      { keyword: "dependencies", schema: { dependencies: {} } },
+      { keyword: "items", schema: { items: true } },
+      { keyword: "propertyNames", schema: { propertyNames: true } },
+      {
+        keyword: "additionalProperties",
+        schema: { additionalProperties: true }
+      },
+      {
+        keyword: "additionalProperties",
+        schema: {
+          additionalProperties: false,
+          patternProperties: { "^x": true }
+        }
+      },
+      { keyword: "additionalItems", schema: { additionalItems: true } },
+      { keyword: "additionalItems", schema: { additionalItems: false } },
+      { keyword: "allOf", schema: { allOf: [] } },
+      { keyword: "allOf", schema: { allOf: [true, {}] } },
+      { keyword: "anyOf", schema: { anyOf: [{}] } },
+      { keyword: "anyOf", schema: { anyOf: [true] } },
+      { keyword: "oneOf", schema: { oneOf: [{}] } },
+      { keyword: "oneOf", schema: { oneOf: [true] } }
+    ];
+
+    for (const testCase of cases) {
+      const shield = new SchemaShield();
+      let calls = 0;
+      shield.addKeyword(
+        testCase.keyword,
+        () => {
+          calls++;
+        },
+        true
+      );
+
+      const validate = shield.compile(testCase.schema);
+      const entry = (validate.compiledSchema as any)
+        ._iterativeValidatorEntries.find(
+          (item: { keyword: string }) => item.keyword === testCase.keyword
+        );
+
+      expect(entry.structuralOpcode).toBe(0);
+      expect("iterativeKeyword" in entry).toBe(false);
+      expect(validate({}).valid).toBe(true);
+      expect(calls).toBe(1);
+    }
+  });
+
+  it("assigns structural opcodes only to builtin keyword implementations", () => {
+    const validate = new SchemaShield().compile({
+      type: "object",
+      properties: { value: { type: "string" } }
+    });
+    const entry = (validate.compiledSchema as any)._iterativeValidatorEntries.find(
+      (item: { keyword: string }) => item.keyword === "properties"
+    );
+
+    expect(entry.structuralOpcode).toBe(1);
+    expect("iterativeKeyword" in entry).toBe(false);
   });
 
   it("precomputes combinator branches after references are linked", () => {

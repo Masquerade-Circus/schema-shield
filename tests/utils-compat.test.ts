@@ -2,7 +2,7 @@ import { describe, it } from "mocha";
 
 import expect from "expect";
 import { deepClone as deepCloneFromRoot } from "../lib";
-import { ValidationError, deepClone } from "../lib/utils";
+import { ValidationError, deepClone, deepFreeze } from "../lib/utils";
 
 describe("utils compatibility exports", () => {
   it("exports deepClone alias", () => {
@@ -33,5 +33,30 @@ describe("utils compatibility exports", () => {
     expect(cloned).toEqual(source);
     expect(cloned).not.toBe(source);
     expect(cloned.one).not.toBe(source.one);
+  });
+
+  it("preserves aliases and cycles while cloning", () => {
+    const shared = { value: 1 };
+    const source: any = { left: shared, right: shared };
+    source.self = source;
+
+    const cloned = deepClone(source);
+
+    expect(cloned).not.toBe(source);
+    expect(cloned.left).toBe(cloned.right);
+    expect(cloned.left).not.toBe(shared);
+    expect(cloned.self).toBe(cloned);
+  });
+
+  it("freezes aliases and cycles without recursion failure", () => {
+    const shared = { value: 1 };
+    const source: any = { left: shared, right: shared };
+    source.self = source;
+
+    expect(deepFreeze(source)).toBe(source);
+    expect(Object.isFrozen(source)).toBe(true);
+    expect(Object.isFrozen(shared)).toBe(true);
+    expect(source.left).toBe(source.right);
+    expect(source.self).toBe(source);
   });
 });

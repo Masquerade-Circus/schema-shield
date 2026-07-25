@@ -12,7 +12,14 @@ import { Formats } from "./formats";
 import { Types } from "./types";
 import { keywords } from "./keywords";
 import { deepCloneUnfreeze } from "./utils/deep-freeze";
-import { compilePatternMatcher } from "./utils/pattern-matcher";
+import {
+  getPatternPropertyEntries,
+  prepareObjectKeywordCaches
+} from "./keywords/object-keywords";
+import {
+  getCombinatorBranchEntries,
+  prepareCombinatorKeywordCaches
+} from "./keywords/other-keywords";
 
 export { ValidationError } from "./utils/main-utils";
 export { deepCloneUnfreeze as deepClone } from "./utils/deep-freeze";
@@ -57,7 +64,7 @@ export interface Validator {
 interface ValidatorItem {
   name: string;
   keyword: string;
-  iterativeKeyword?: string;
+  structuralOpcode: StructuralOpcode;
   validate: ValidateFunction;
 }
 
@@ -66,6 +73,68 @@ interface PropertyValidationEntry {
   schemaProp: any;
   hasDefault: boolean;
 }
+
+const enum StructuralOpcode {
+  DirectValidate = 0,
+  Properties = 1,
+  Items = 2,
+  AllOf = 3,
+  AnyOf = 4,
+  OneOf = 5,
+  AdditionalProperties = 6,
+  PatternProperties = 7,
+  AdditionalItems = 8,
+  Contains = 9,
+  Dependencies = 10,
+  Conditional = 11,
+  Not = 12,
+  PropertyNames = 13,
+  Values = 14,
+  Elements = 15
+}
+
+const enum CompletionOpcode {
+  Root = 0,
+  ChildProperty = 1,
+  ChildItem = 2,
+  AllOfBranch = 3,
+  AnyOfBranch = 4,
+  OneOfBranch = 5,
+  DefaultValue = 6,
+  ContainsItem = 7,
+  ConditionalTest = 8,
+  NotSchema = 9
+}
+
+const enum PostLinkCacheKind {
+  Object = 1,
+  Combinator = 2
+}
+
+interface PostLinkCachePlan {
+  schema: CompiledSchema;
+  kinds: number;
+}
+
+const BUILTIN_STRUCTURAL_OPCODES: Readonly<
+  Record<string, StructuralOpcode>
+> = {
+  properties: StructuralOpcode.Properties,
+  items: StructuralOpcode.Items,
+  allOf: StructuralOpcode.AllOf,
+  anyOf: StructuralOpcode.AnyOf,
+  oneOf: StructuralOpcode.OneOf,
+  additionalProperties: StructuralOpcode.AdditionalProperties,
+  patternProperties: StructuralOpcode.PatternProperties,
+  additionalItems: StructuralOpcode.AdditionalItems,
+  contains: StructuralOpcode.Contains,
+  dependencies: StructuralOpcode.Dependencies,
+  if: StructuralOpcode.Conditional,
+  not: StructuralOpcode.Not,
+  propertyNames: StructuralOpcode.PropertyNames,
+  values: StructuralOpcode.Values,
+  elements: StructuralOpcode.Elements
+};
 
 interface IterativeWorkspace {
   schemas: CompiledSchema[];
@@ -91,18 +160,98 @@ interface IterativeWorkspace {
   pathData: any[];
   defaultMutationTargets: any[];
   defaultMutationKeys: string[];
+  defaultMutationCount: number;
+  frameHighWater: number;
+  pathHighWater: number;
 }
 
-interface PatternPropertyEntry {
-  schemaProp: any;
-  match: (key: string) => boolean;
+function createIterativeWorkspace(): IterativeWorkspace {
+  return {
+    schemas: [],
+    data: [],
+    validatorIndexes: [],
+    structuralKinds: [],
+    structuralIndexes: [],
+    secondaryIndexes: [],
+    structuralFlags: [],
+    restorePathLengths: [],
+    completionKinds: [],
+    combinatorValidCounts: [],
+    pendingDefaults: [],
+    pendingDefaultValues: [],
+    stagedDefaults: [],
+    structuralKeys: [],
+    pathMessages: [],
+    pathKeywords: [],
+    pathSchemas: [],
+    pathItems: [],
+    pathData: [],
+    defaultMutationTargets: [],
+    defaultMutationKeys: [],
+    defaultMutationCount: 0,
+    frameHighWater: 0,
+    pathHighWater: 0
+  };
 }
 
-type CombinatorBranchEntry =
-  | { kind: "validate"; validate: ValidateFunction }
-  | { kind: "alwaysValid" }
-  | { kind: "alwaysInvalid" }
-  | { kind: "literal"; value: any };
+function clearIterativeWorkspace(workspace: IterativeWorkspace) {
+  const frameHighWater = workspace.frameHighWater;
+  const pathHighWater = workspace.pathHighWater;
+  const mutationHighWater = workspace.defaultMutationCount;
+
+  workspace.schemas.fill(undefined as any, 0, frameHighWater);
+  workspace.data.fill(undefined, 0, frameHighWater);
+  workspace.pendingDefaults.fill(undefined, 0, frameHighWater);
+  workspace.pendingDefaultValues.fill(undefined, 0, frameHighWater);
+  workspace.stagedDefaults.fill(undefined, 0, frameHighWater);
+  workspace.structuralKeys.fill(undefined, 0, frameHighWater);
+  workspace.pathMessages.fill(undefined as any, 0, pathHighWater);
+  workspace.pathKeywords.fill(undefined as any, 0, pathHighWater);
+  workspace.pathSchemas.fill(undefined as any, 0, pathHighWater);
+  workspace.pathItems.fill(undefined, 0, pathHighWater);
+  workspace.pathData.fill(undefined, 0, pathHighWater);
+  workspace.defaultMutationTargets.fill(undefined, 0, mutationHighWater);
+  workspace.defaultMutationKeys.fill(undefined as any, 0, mutationHighWater);
+  workspace.defaultMutationCount = 0;
+  workspace.frameHighWater = 0;
+  workspace.pathHighWater = 0;
+}
+
+type CompileTask =
+  | {
+      kind: "compile";
+      schema: any;
+      parent: CompiledSchema | CompiledSchema[] | { root?: CompiledSchema };
+      key: string | number;
+      schemaLocation: boolean;
+    }
+  | { kind: "finalize"; schema: CompiledSchema };
+
+const LITERAL_SCHEMA_KEYWORDS = new Set([
+  "enum",
+  "const",
+  "default",
+  "examples"
+]);
+const SCHEMA_MAP_KEYWORDS = new Set([
+  "definitions",
+  "patternProperties",
+  "properties"
+]);
+const SCHEMA_ARRAY_KEYWORDS = new Set(["allOf", "anyOf", "oneOf"]);
+const SCHEMA_VALUE_KEYWORDS = new Set([
+  "additionalItems",
+  "additionalProperties",
+  "contains",
+  "elements",
+  "else",
+  "if",
+  "items",
+  "not",
+  "propertyNames",
+  "then",
+  "values"
+]);
 
 export class SchemaShield {
   private types: Record<string, TypeFunction | false> = {};
@@ -207,35 +356,11 @@ export class SchemaShield {
 
   compile(schema: any): Validator {
     this.idRegistry.clear();
-    const compiledSchema = this.compileSchema(schema);
+    const compilation = this.compileSchema(schema);
+    const compiledSchema = compilation.root;
     this.rootSchema = compiledSchema;
-    if ((compiledSchema as any)._hasRef === true) {
-      this.linkReferences(compiledSchema);
-    }
-
-    const cachePending: any[] = [compiledSchema];
-    const cacheSeen = new WeakSet<object>();
-    while (cachePending.length > 0) {
-      const current = cachePending.pop();
-      if (!current || typeof current !== "object" || cacheSeen.has(current)) {
-        continue;
-      }
-      cacheSeen.add(current);
-      this.prepareObjectKeywordCaches(current);
-      this.prepareCombinatorKeywordCaches(current);
-
-      for (const key of Object.keys(current)) {
-        const value = current[key];
-        if (Array.isArray(value)) {
-          for (let i = 0; i < value.length; i++) {
-            if (value[i] && typeof value[i] === "object") {
-              cachePending.push(value[i]);
-            }
-          }
-        } else if (value && typeof value === "object") {
-          cachePending.push(value);
-        }
-      }
+    if (compilation.references.length > 0) {
+      this.linkReferences(compilation.references);
     }
 
     if (!compiledSchema.$validate) {
@@ -265,27 +390,62 @@ export class SchemaShield {
       }
     }
 
-    const requiresIterativeValidation = this.requiresIterativeValidation(
-      compiledSchema
-    );
-    if (requiresIterativeValidation) {
-      this.guardCompiledValidators(compiledSchema);
+    for (let i = 0; i < compilation.postLinkCachePlans.length; i++) {
+      const plan = compilation.postLinkCachePlans[i];
+      if ((plan.kinds & PostLinkCacheKind.Object) !== 0) {
+        prepareObjectKeywordCaches(plan.schema);
+      }
+      if ((plan.kinds & PostLinkCacheKind.Combinator) !== 0) {
+        prepareCombinatorKeywordCaches(plan.schema);
+      }
     }
 
-    const validate: Validator = (data: any) => {
-      this.rootSchema = compiledSchema;
+    const iterativePlan = this.requiresIterativeValidation(
+      compiledSchema
+    );
+    const requiresIterativeValidation = iterativePlan.required;
+    if (requiresIterativeValidation) {
+      this.guardCompiledValidators(iterativePlan.schemas);
+    }
 
-      const clonedData = this.immutable ? deepCloneUnfreeze(data) : data;
-      const res = requiresIterativeValidation
-        ? this.validateIterative(compiledSchema, clonedData)
-        : compiledSchema.$validate!(clonedData);
-
-      if (res) {
-        return { data: clonedData, error: res, valid: false };
+    let validate: Validator;
+    if (this.immutable) {
+      if (requiresIterativeValidation) {
+        validate = ((data: any) => {
+          this.rootSchema = compiledSchema;
+          const clonedData = deepCloneUnfreeze(data);
+          const res = this.validateIterative(compiledSchema, clonedData);
+          return res
+            ? { data: clonedData, error: res, valid: false }
+            : { data: clonedData, error: null, valid: true };
+        }) as Validator;
+      } else {
+        validate = ((data: any) => {
+          this.rootSchema = compiledSchema;
+          const clonedData = deepCloneUnfreeze(data);
+          const res = compiledSchema.$validate!(clonedData);
+          return res
+            ? { data: clonedData, error: res, valid: false }
+            : { data: clonedData, error: null, valid: true };
+        }) as Validator;
       }
-
-      return { data: clonedData, error: null, valid: true };
-    };
+    } else if (requiresIterativeValidation) {
+      validate = ((data: any) => {
+        this.rootSchema = compiledSchema;
+        const res = this.validateIterative(compiledSchema, data);
+        return res
+          ? { data, error: res, valid: false }
+          : { data, error: null, valid: true };
+      }) as Validator;
+    } else {
+      validate = ((data: any) => {
+        this.rootSchema = compiledSchema;
+        const res = compiledSchema.$validate!(data);
+        return res
+          ? { data, error: res, valid: false }
+          : { data, error: null, valid: true };
+      }) as Validator;
+    }
 
     validate.compiledSchema = compiledSchema;
     return validate;
@@ -307,18 +467,11 @@ export class SchemaShield {
     return error;
   }
 
-  private guardCompiledValidators(root: CompiledSchema) {
-    const stack: any[] = [root];
-    const seen = new WeakSet<object>();
+  private guardCompiledValidators(schemas: CompiledSchema[]) {
     const guardedByValidator = new Map<ValidateFunction, ValidateFunction>();
 
-    while (stack.length > 0) {
-      const schema = stack.pop();
-      if (!schema || typeof schema !== "object" || seen.has(schema)) {
-        continue;
-      }
-      seen.add(schema);
-
+    for (let schemaIndex = 0; schemaIndex < schemas.length; schemaIndex++) {
+      const schema = schemas[schemaIndex];
       if (
         typeof schema.$validate === "function" &&
         (schema as any)._depthGuarded !== true
@@ -353,33 +506,17 @@ export class SchemaShield {
         schema.$validate = guardedValidate;
         this.defineHiddenValue(schema, "_depthGuarded", true);
       }
-
-      const resolved = (schema as any)._resolvedSchema;
-      if (resolved && typeof resolved === "object") {
-        stack.push(resolved);
-      }
-
-      for (const key of Object.keys(schema)) {
-        if (key === "enum" || key === "const" || key === "default" || key === "examples") {
-          continue;
-        }
-        const value = schema[key];
-        if (Array.isArray(value)) {
-          for (let i = 0; i < value.length; i++) {
-            if (value[i] && typeof value[i] === "object") {
-              stack.push(value[i]);
-            }
-          }
-        } else if (value && typeof value === "object") {
-          stack.push(value);
-        }
-      }
     }
   }
 
-  private requiresIterativeValidation(root: CompiledSchema): boolean {
+  private requiresIterativeValidation(root: CompiledSchema): {
+    required: boolean;
+    schemas: CompiledSchema[];
+  } {
     const active = new WeakSet<object>();
     const complete = new WeakSet<object>();
+    const schemas: CompiledSchema[] = [];
+    let required = false;
     const stack: Array<{
       schema: CompiledSchema;
       depth: number;
@@ -397,16 +534,18 @@ export class SchemaShield {
       }
 
       if (active.has(schema)) {
-        return true;
+        required = true;
+        continue;
       }
       if (complete.has(schema)) {
         continue;
       }
       if (frame.depth >= Math.min(256, this.maxDepth)) {
-        return true;
+        required = true;
       }
 
       active.add(schema);
+      schemas.push(schema);
       stack.push({ schema, depth: frame.depth, exiting: true });
 
       const children: any[] = [];
@@ -470,7 +609,7 @@ export class SchemaShield {
       }
     }
 
-    return false;
+    return { required, schemas };
   }
 
   private wrapIterativeError(
@@ -522,29 +661,7 @@ export class SchemaShield {
     const workspaceIndex = this.activeIterativeWorkspaces++;
     let workspace = this.iterativeWorkspaces[workspaceIndex];
     if (!workspace) {
-      workspace = {
-        schemas: [],
-        data: [],
-        validatorIndexes: [],
-        structuralKinds: [],
-        structuralIndexes: [],
-        secondaryIndexes: [],
-        structuralFlags: [],
-        restorePathLengths: [],
-        completionKinds: [],
-        combinatorValidCounts: [],
-        pendingDefaults: [],
-        pendingDefaultValues: [],
-        stagedDefaults: [],
-        structuralKeys: [],
-        pathMessages: [],
-        pathKeywords: [],
-        pathSchemas: [],
-        pathItems: [],
-        pathData: [],
-        defaultMutationTargets: [],
-        defaultMutationKeys: []
-      };
+      workspace = createIterativeWorkspace();
       this.iterativeWorkspaces[workspaceIndex] = workspace;
     }
 
@@ -553,7 +670,7 @@ export class SchemaShield {
       const result = this.runIterativeValidation(root, rootData, workspace);
       if (this.depthErrorCount !== depthErrorCount) {
         for (
-          let i = workspace.defaultMutationTargets.length - 1;
+          let i = workspace.defaultMutationCount - 1;
           i >= 0;
           i--
         ) {
@@ -564,14 +681,7 @@ export class SchemaShield {
       }
       return result;
     } finally {
-      workspace.data.fill(undefined);
-      workspace.pendingDefaultValues.fill(undefined);
-      workspace.stagedDefaults.fill(undefined);
-      workspace.structuralKeys.fill(undefined);
-      workspace.pathData.fill(undefined);
-      workspace.defaultMutationTargets.fill(undefined);
-      workspace.defaultMutationTargets.length = 0;
-      workspace.defaultMutationKeys.length = 0;
+      clearIterativeWorkspace(workspace);
       this.activeIterativeWorkspaces--;
     }
   }
@@ -604,17 +714,18 @@ export class SchemaShield {
       defaultMutationTargets,
       defaultMutationKeys
     } = workspace;
-    defaultMutationTargets.length = 0;
-    defaultMutationKeys.length = 0;
+    workspace.defaultMutationCount = 0;
+    workspace.frameHighWater = 1;
+    workspace.pathHighWater = 0;
     schemas[0] = root;
     data[0] = rootData;
     validatorIndexes[0] = 0;
-    structuralKinds[0] = 0;
+    structuralKinds[0] = StructuralOpcode.DirectValidate;
     structuralIndexes[0] = 0;
     secondaryIndexes[0] = 0;
     structuralFlags[0] = 0;
     restorePathLengths[0] = 0;
-    completionKinds[0] = 0;
+    completionKinds[0] = CompletionOpcode.Root;
     combinatorValidCounts[0] = 0;
     pendingDefaults[0] = undefined;
     pendingDefaultValues[0] = undefined;
@@ -622,21 +733,6 @@ export class SchemaShield {
     structuralKeys[0] = undefined;
     let frameCount = 1;
     let pathLength = 0;
-
-    const wrapPath = (error: Result): Result => {
-      if (error === true || !error) {
-        return error;
-      }
-      return this.wrapIterativeError(
-        error,
-        pathMessages,
-        pathKeywords,
-        pathSchemas,
-        pathItems,
-        pathData,
-        pathLength
-      );
-    };
 
     const descend = (
       childSchema: CompiledSchema,
@@ -660,11 +756,14 @@ export class SchemaShield {
         pathItems[pathLength] = pathItem;
         pathData[pathLength] = childData;
         pathLength++;
+        if (pathLength > workspace.pathHighWater) {
+          workspace.pathHighWater = pathLength;
+        }
       }
       schemas[frameCount] = childSchema;
       data[frameCount] = childData;
       validatorIndexes[frameCount] = 0;
-      structuralKinds[frameCount] = 0;
+      structuralKinds[frameCount] = StructuralOpcode.DirectValidate;
       structuralIndexes[frameCount] = 0;
       secondaryIndexes[frameCount] = 0;
       structuralFlags[frameCount] = 0;
@@ -676,6 +775,9 @@ export class SchemaShield {
       stagedDefaults[frameCount] = undefined;
       structuralKeys[frameCount] = undefined;
       frameCount++;
+      if (frameCount > workspace.frameHighWater) {
+        workspace.frameHighWater = frameCount;
+      }
     };
 
     let completedResult: Result;
@@ -692,116 +794,114 @@ export class SchemaShield {
         structuralKeys[depth] = undefined;
         frameCount--;
 
-        if (completionKind === 0) {
-          completedResult = wrapPath(error);
-          return true;
-        }
-
         const parentDepth = frameCount - 1;
-        if (completionKind === 1 || completionKind === 2) {
-          if (error) {
-            continue;
-          }
-          for (let i = restoreLength; i < pathLength; i++) {
-            pathData[i] = undefined;
-          }
-          pathLength = restoreLength;
-          return false;
-        }
-
-        if (completionKind === 3) {
-          if (error) {
-            error = getDefinedErrorFunctionForKey(
-              "allOf",
-              schemas[parentDepth].allOf,
-              this.failFast
-            )("Value is not valid", { cause: error, data: data[parentDepth] });
-            continue;
-          }
-          return false;
-        }
-
-        if (completionKind === 4) {
-          pathLength = restoreLength;
-          if (error) {
-            return false;
-          }
-          structuralKinds[parentDepth] = 0;
-          return false;
-        }
-
-        if (completionKind === 5) {
-          pathLength = restoreLength;
-          if (!error) {
-            combinatorValidCounts[parentDepth]++;
-            if (combinatorValidCounts[parentDepth] > 1) {
-              error = getDefinedErrorFunctionForKey(
-                "oneOf",
-                schemas[parentDepth].oneOf,
-                this.failFast
-              )("Value is not valid", { data: data[parentDepth] });
+        switch (completionKind) {
+          case CompletionOpcode.Root:
+            break;
+          case CompletionOpcode.ChildProperty:
+          case CompletionOpcode.ChildItem:
+            if (error) {
               continue;
             }
+            for (let i = restoreLength; i < pathLength; i++) {
+              pathData[i] = undefined;
+            }
+            pathLength = restoreLength;
+            return false;
+          case CompletionOpcode.AllOfBranch:
+            if (error) {
+              error = getDefinedErrorFunctionForKey(
+                "allOf",
+                schemas[parentDepth].allOf,
+                this.failFast
+              )("Value is not valid", {
+                cause: error,
+                data: data[parentDepth]
+              });
+              continue;
+            }
+            return false;
+          case CompletionOpcode.AnyOfBranch:
+            pathLength = restoreLength;
+            if (error) {
+              return false;
+            }
+            structuralKinds[parentDepth] = StructuralOpcode.DirectValidate;
+            return false;
+          case CompletionOpcode.OneOfBranch:
+            pathLength = restoreLength;
+            if (!error) {
+              combinatorValidCounts[parentDepth]++;
+              if (combinatorValidCounts[parentDepth] > 1) {
+                error = getDefinedErrorFunctionForKey(
+                  "oneOf",
+                  schemas[parentDepth].oneOf,
+                  this.failFast
+                )("Value is not valid", { data: data[parentDepth] });
+                continue;
+              }
+            }
+            return false;
+          case CompletionOpcode.DefaultValue: {
+            const entry = pendingDefaults[parentDepth]!;
+            const defaultValue = pendingDefaultValues[parentDepth];
+            pendingDefaults[parentDepth] = undefined;
+            pendingDefaultValues[parentDepth] = undefined;
+            if (error) {
+              pathMessages[pathLength] = "Default property is invalid";
+              pathKeywords[pathLength] = "properties";
+              pathSchemas[pathLength] = schemas[parentDepth].properties;
+              pathItems[pathLength] = entry.key;
+              pathData[pathLength] = defaultValue;
+              pathLength++;
+              if (pathLength > workspace.pathHighWater) {
+                workspace.pathHighWater = pathLength;
+              }
+              continue;
+            }
+            stagedDefaults[parentDepth]!.push({ entry, value: defaultValue });
+            return false;
           }
-          return false;
-        }
-
-        if (completionKind === 6) {
-          const entry = pendingDefaults[parentDepth]!;
-          const defaultValue = pendingDefaultValues[parentDepth];
-          pendingDefaults[parentDepth] = undefined;
-          pendingDefaultValues[parentDepth] = undefined;
-
-          if (error) {
-            pathMessages[pathLength] = "Default property is invalid";
-            pathKeywords[pathLength] = "properties";
-            pathSchemas[pathLength] = schemas[parentDepth].properties;
-            pathItems[pathLength] = entry.key;
-            pathData[pathLength] = defaultValue;
-            pathLength++;
+          case CompletionOpcode.ContainsItem:
+            pathLength = restoreLength;
+            if (error) {
+              return false;
+            }
+            structuralKinds[parentDepth] = StructuralOpcode.DirectValidate;
+            return false;
+          case CompletionOpcode.ConditionalTest:
+            pathLength = restoreLength;
+            secondaryIndexes[parentDepth] = error ? 2 : 1;
+            return false;
+          case CompletionOpcode.NotSchema:
+            pathLength = restoreLength;
+            if (error) {
+              structuralKinds[parentDepth] = StructuralOpcode.DirectValidate;
+              return false;
+            }
+            error = getDefinedErrorFunctionForKey(
+              "not",
+              schemas[parentDepth].not,
+              this.failFast
+            )("Value is not valid", { data: data[parentDepth] });
             continue;
-          }
-
-          stagedDefaults[parentDepth]!.push({ entry, value: defaultValue });
-          return false;
-        }
-
-        if (completionKind === 7) {
-          pathLength = restoreLength;
-          if (error) {
-            return false;
-          }
-          structuralKinds[parentDepth] = 0;
-          return false;
-        }
-
-        if (completionKind === 8) {
-          pathLength = restoreLength;
-          secondaryIndexes[parentDepth] = error ? 2 : 1;
-          return false;
-        }
-
-        if (completionKind === 9) {
-          pathLength = restoreLength;
-          if (error) {
-            structuralKinds[parentDepth] = 0;
-            return false;
-          }
-          error = getDefinedErrorFunctionForKey(
-            "not",
-            schemas[parentDepth].not,
-            this.failFast
-          )("Value is not valid", { data: data[parentDepth] });
-          continue;
         }
       }
 
-      completedResult = wrapPath(error);
+      if (error === true || !error) {
+        completedResult = error;
+      } else {
+        completedResult = this.wrapIterativeError(
+          error,
+          pathMessages,
+          pathKeywords,
+          pathSchemas,
+          pathItems,
+          pathData,
+          pathLength
+        );
+      }
       return true;
-    };
-
-    const failCurrentFrame = (error: Result): Result | null => {
-      return completeFrame(error) ? completedResult : null;
     };
 
     while (frameCount > 0) {
@@ -815,14 +915,95 @@ export class SchemaShield {
       if (resolved && resolved !== schema) {
         schemas[depth] = resolved;
         validatorIndexes[depth] = 0;
-        structuralKinds[depth] = 0;
+        structuralKinds[depth] = StructuralOpcode.DirectValidate;
         structuralIndexes[depth] = 0;
         secondaryIndexes[depth] = 0;
         structuralFlags[depth] = 0;
         continue;
       }
 
-      if (structuralKinds[depth] === 1) {
+      if (structuralKinds[depth] === StructuralOpcode.DirectValidate) {
+        const entries = (schema as any)._iterativeValidatorEntries as
+          | ValidatorItem[]
+          | undefined;
+        if (!entries) {
+          const error =
+            typeof schema.$validate === "function"
+              ? schema.$validate(value)
+              : undefined;
+          if (error) {
+            if (completeFrame(error)) {
+              return completedResult;
+            }
+            continue;
+          }
+          validatorIndexes[depth] = Number.MAX_SAFE_INTEGER;
+        } else if (validatorIndexes[depth] < entries.length) {
+          const entry = entries[validatorIndexes[depth]++];
+          const structuralOpcode = entry.structuralOpcode;
+          if (structuralOpcode !== StructuralOpcode.DirectValidate) {
+            structuralKinds[depth] = structuralOpcode;
+            structuralIndexes[depth] = 0;
+
+            switch (structuralOpcode) {
+              case StructuralOpcode.Properties:
+                if ((schema as any)._hasRequiredDefaults === true) {
+                  secondaryIndexes[depth] = 0;
+                  stagedDefaults[depth] = [];
+                } else {
+                  secondaryIndexes[depth] = 1;
+                }
+                break;
+              case StructuralOpcode.AdditionalProperties:
+              case StructuralOpcode.PropertyNames:
+              case StructuralOpcode.Values:
+                structuralKeys[depth] =
+                  value && typeof value === "object" && !Array.isArray(value)
+                    ? Object.keys(value)
+                    : [];
+                break;
+              case StructuralOpcode.PatternProperties:
+                secondaryIndexes[depth] = 0;
+                structuralFlags[depth] = 0;
+                structuralKeys[depth] =
+                  value && typeof value === "object" && !Array.isArray(value)
+                    ? Object.keys(value)
+                    : [];
+                break;
+              case StructuralOpcode.OneOf:
+                combinatorValidCounts[depth] = 0;
+                break;
+              case StructuralOpcode.AdditionalItems:
+                structuralIndexes[depth] = Array.isArray(schema.items)
+                  ? schema.items.length
+                  : 0;
+                break;
+              case StructuralOpcode.Dependencies:
+                structuralKeys[depth] = Object.keys(schema.dependencies || {});
+                break;
+              case StructuralOpcode.Conditional:
+                secondaryIndexes[depth] = 0;
+                break;
+            }
+            continue;
+          }
+
+          const error = entry.validate(value);
+          if (error) {
+            if (completeFrame(error)) {
+              return completedResult;
+            }
+          }
+          continue;
+        }
+
+        if (completeFrame(undefined)) {
+          return completedResult;
+        }
+        continue;
+      }
+
+      if (structuralKinds[depth] === StructuralOpcode.Properties) {
         const entries = (schema as any)._propertyValidationEntries as
           | PropertyValidationEntry[]
           | undefined;
@@ -832,7 +1013,7 @@ export class SchemaShield {
           typeof value !== "object" ||
           Array.isArray(value)
         ) {
-          structuralKinds[depth] = 0;
+          structuralKinds[depth] = StructuralOpcode.DirectValidate;
           continue;
         }
 
@@ -851,11 +1032,13 @@ export class SchemaShield {
               } else {
                 value[entry.key] = defaultValue;
               }
-              defaultMutationTargets.push(value);
-              defaultMutationKeys.push(entry.key);
+              const mutationIndex = workspace.defaultMutationCount++;
+              defaultMutationTargets[mutationIndex] = value;
+              defaultMutationKeys[mutationIndex] = entry.key;
             }
             secondaryIndexes[depth] = 1;
             structuralIndexes[depth] = 0;
+            structuralFlags[depth] = 0;
             continue;
           }
 
@@ -867,13 +1050,17 @@ export class SchemaShield {
             const defaultValue = deepCloneUnfreeze(entry.schemaProp.default);
             pendingDefaults[depth] = entry;
             pendingDefaultValues[depth] = defaultValue;
-            descend(entry.schemaProp, defaultValue, 6);
+            descend(
+              entry.schemaProp,
+              defaultValue,
+              CompletionOpcode.DefaultValue
+            );
           }
           continue;
         }
 
         if (structuralIndexes[depth] >= entries.length) {
-          structuralKinds[depth] = 0;
+          structuralKinds[depth] = StructuralOpcode.DirectValidate;
           continue;
         }
 
@@ -881,11 +1068,10 @@ export class SchemaShield {
         if (!Object.prototype.hasOwnProperty.call(value, entry.key)) {
           continue;
         }
-        if (
-          stagedDefaults[depth]!.some(
-            (item) => item.entry.key === entry.key
-          )
-        ) {
+        const stagedDefault =
+          stagedDefaults[depth]?.[structuralFlags[depth]];
+        if (stagedDefault?.entry.key === entry.key) {
+          structuralFlags[depth]++;
           continue;
         }
 
@@ -899,9 +1085,8 @@ export class SchemaShield {
               item: entry.key,
               data: value[entry.key]
             });
-            const result = failCurrentFrame(error);
-            if (result !== null) {
-              return result;
+            if (completeFrame(error)) {
+              return completedResult;
             }
           }
           continue;
@@ -911,7 +1096,7 @@ export class SchemaShield {
           descend(
             entry.schemaProp,
             value[entry.key],
-            1,
+            CompletionOpcode.ChildProperty,
             "Property is invalid",
             "properties",
             schema.properties,
@@ -921,10 +1106,10 @@ export class SchemaShield {
         continue;
       }
 
-      if (structuralKinds[depth] === 2) {
+      if (structuralKinds[depth] === StructuralOpcode.Items) {
         const schemaItems = schema.items;
         if (!Array.isArray(value)) {
-          structuralKinds[depth] = 0;
+          structuralKinds[depth] = StructuralOpcode.DirectValidate;
           continue;
         }
 
@@ -933,7 +1118,7 @@ export class SchemaShield {
           ? Math.min(schemaItems.length, value.length)
           : value.length;
         if (itemIndex >= itemLimit) {
-          structuralKinds[depth] = 0;
+          structuralKinds[depth] = StructuralOpcode.DirectValidate;
           continue;
         }
 
@@ -950,9 +1135,8 @@ export class SchemaShield {
               item: itemIndex,
               data: value[itemIndex]
             });
-            const result = failCurrentFrame(error);
-            if (result !== null) {
-              return result;
+            if (completeFrame(error)) {
+              return completedResult;
             }
           }
           continue;
@@ -962,7 +1146,7 @@ export class SchemaShield {
           descend(
             itemSchema,
             value[itemIndex],
-            2,
+            CompletionOpcode.ChildItem,
             "Array item is invalid",
             "items",
             schemaItems,
@@ -972,16 +1156,16 @@ export class SchemaShield {
         continue;
       }
 
-      if (structuralKinds[depth] === 6) {
+      if (structuralKinds[depth] === StructuralOpcode.AdditionalProperties) {
         if (!value || typeof value !== "object" || Array.isArray(value)) {
-          structuralKinds[depth] = 0;
+          structuralKinds[depth] = StructuralOpcode.DirectValidate;
           continue;
         }
 
         const keys = structuralKeys[depth]!;
         const keyIndex = structuralIndexes[depth]++;
         if (keyIndex >= keys.length) {
-          structuralKinds[depth] = 0;
+          structuralKinds[depth] = StructuralOpcode.DirectValidate;
           continue;
         }
 
@@ -993,9 +1177,7 @@ export class SchemaShield {
           continue;
         }
 
-        const patternEntries = (schema as any)._patternPropertyEntries as
-          | PatternPropertyEntry[]
-          | undefined;
+        const patternEntries = getPatternPropertyEntries(schema);
         let patternMatched = false;
         if (patternEntries) {
           for (let i = 0; i < patternEntries.length; i++) {
@@ -1019,9 +1201,8 @@ export class SchemaShield {
             item: key,
             data: value[key]
           });
-          const result = failCurrentFrame(error);
-          if (result !== null) {
-            return result;
+          if (completeFrame(error)) {
+            return completedResult;
           }
         } else if (
           additionalSchema &&
@@ -1031,7 +1212,7 @@ export class SchemaShield {
           descend(
             additionalSchema,
             value[key],
-            1,
+            CompletionOpcode.ChildProperty,
             "Additional properties are invalid",
             "additionalProperties",
             additionalSchema,
@@ -1041,18 +1222,16 @@ export class SchemaShield {
         continue;
       }
 
-      if (structuralKinds[depth] === 7) {
+      if (structuralKinds[depth] === StructuralOpcode.PatternProperties) {
         if (!value || typeof value !== "object" || Array.isArray(value)) {
-          structuralKinds[depth] = 0;
+          structuralKinds[depth] = StructuralOpcode.DirectValidate;
           continue;
         }
 
         const keys = structuralKeys[depth]!;
-        const entries = (schema as any)._patternPropertyEntries as
-          | PatternPropertyEntry[]
-          | undefined;
+        const entries = getPatternPropertyEntries(schema);
         if (!entries || entries.length === 0) {
-          structuralKinds[depth] = 0;
+          structuralKinds[depth] = StructuralOpcode.DirectValidate;
           continue;
         }
 
@@ -1073,9 +1252,8 @@ export class SchemaShield {
                 schema.patternProperties,
                 this.failFast
               )("Property is not allowed", { item: key, data: value[key] });
-              const result = failCurrentFrame(error);
-              if (result !== null) {
-                return result;
+              if (completeFrame(error)) {
+                return completedResult;
               }
               descended = true;
               break;
@@ -1089,7 +1267,7 @@ export class SchemaShield {
               descend(
                 entry.schemaProp,
                 value[key],
-                1,
+                CompletionOpcode.ChildProperty,
                 "Property is invalid",
                 "patternProperties",
                 schema.patternProperties,
@@ -1116,9 +1294,8 @@ export class SchemaShield {
                 item: key,
                 data: value[key]
               });
-              const result = failCurrentFrame(error);
-              if (result !== null) {
-                return result;
+              if (completeFrame(error)) {
+                return completedResult;
               }
               descended = true;
               break;
@@ -1130,7 +1307,7 @@ export class SchemaShield {
         }
 
         if (!descended) {
-          structuralKinds[depth] = 0;
+          structuralKinds[depth] = StructuralOpcode.DirectValidate;
         } else if (frameCount - 1 === depth) {
           structuralIndexes[depth] = keyIndex + 1;
           secondaryIndexes[depth] = 0;
@@ -1138,15 +1315,15 @@ export class SchemaShield {
         continue;
       }
 
-      if (structuralKinds[depth] === 8) {
+      if (structuralKinds[depth] === StructuralOpcode.AdditionalItems) {
         if (!Array.isArray(value) || !Array.isArray(schema.items)) {
-          structuralKinds[depth] = 0;
+          structuralKinds[depth] = StructuralOpcode.DirectValidate;
           continue;
         }
 
         const itemIndex = structuralIndexes[depth]++;
         if (itemIndex >= value.length) {
-          structuralKinds[depth] = 0;
+          structuralKinds[depth] = StructuralOpcode.DirectValidate;
           continue;
         }
         const additionalSchema = schema.additionalItems;
@@ -1156,9 +1333,8 @@ export class SchemaShield {
             additionalSchema,
             this.failFast
           )("Array is too long", { data: value });
-          const result = failCurrentFrame(error);
-          if (result !== null) {
-            return result;
+          if (completeFrame(error)) {
+            return completedResult;
           }
         } else if (
           additionalSchema &&
@@ -1168,7 +1344,7 @@ export class SchemaShield {
           descend(
             additionalSchema,
             value[itemIndex],
-            2,
+            CompletionOpcode.ChildItem,
             "Array item is invalid",
             "additionalItems",
             additionalSchema,
@@ -1178,9 +1354,9 @@ export class SchemaShield {
         continue;
       }
 
-      if (structuralKinds[depth] === 9) {
+      if (structuralKinds[depth] === StructuralOpcode.Contains) {
         if (!Array.isArray(value)) {
-          structuralKinds[depth] = 0;
+          structuralKinds[depth] = StructuralOpcode.DirectValidate;
           continue;
         }
 
@@ -1191,30 +1367,33 @@ export class SchemaShield {
             schema.contains,
             this.failFast
           )("Array must contain at least one item", { data: value });
-          const result = failCurrentFrame(error);
-          if (result !== null) {
-            return result;
+          if (completeFrame(error)) {
+            return completedResult;
           }
           continue;
         }
         if (schema.contains === true) {
-          structuralKinds[depth] = 0;
+          structuralKinds[depth] = StructuralOpcode.DirectValidate;
         } else if (schema.contains !== false) {
-          descend(schema.contains, value[itemIndex], 7);
+          descend(
+            schema.contains,
+            value[itemIndex],
+            CompletionOpcode.ContainsItem
+          );
         }
         continue;
       }
 
-      if (structuralKinds[depth] === 10) {
+      if (structuralKinds[depth] === StructuralOpcode.Dependencies) {
         if (!value || typeof value !== "object" || Array.isArray(value)) {
-          structuralKinds[depth] = 0;
+          structuralKinds[depth] = StructuralOpcode.DirectValidate;
           continue;
         }
 
         const keys = structuralKeys[depth]!;
         const dependencyIndex = structuralIndexes[depth]++;
         if (dependencyIndex >= keys.length) {
-          structuralKinds[depth] = 0;
+          structuralKinds[depth] = StructuralOpcode.DirectValidate;
           continue;
         }
         const key = keys[dependencyIndex];
@@ -1233,11 +1412,21 @@ export class SchemaShield {
                 item: i,
                 data: dependency[i]
               });
-              const result = failCurrentFrame(error);
-              if (result !== null) {
-                return result;
+              if (completeFrame(error)) {
+                return completedResult;
               }
               break;
+            }
+          }
+        } else if (typeof dependency === "string") {
+          if (!(dependency in value)) {
+            const error = getDefinedErrorFunctionForKey(
+              "dependencies",
+              schema.dependencies,
+              this.failFast
+            )("Dependency is not satisfied", { data: dependency });
+            if (completeFrame(error)) {
+              return completedResult;
             }
           }
         } else if (dependency === false) {
@@ -1246,9 +1435,8 @@ export class SchemaShield {
             schema.dependencies,
             this.failFast
           )("Dependency is not satisfied", { data: dependency });
-          const result = failCurrentFrame(error);
-          if (result !== null) {
-            return result;
+          if (completeFrame(error)) {
+            return completedResult;
           }
         } else if (
           dependency &&
@@ -1258,7 +1446,7 @@ export class SchemaShield {
           descend(
             dependency,
             value,
-            1,
+            CompletionOpcode.ChildProperty,
             "Dependency is not satisfied",
             "dependencies",
             schema.dependencies,
@@ -1268,7 +1456,7 @@ export class SchemaShield {
         continue;
       }
 
-      if (structuralKinds[depth] === 11) {
+      if (structuralKinds[depth] === StructuralOpcode.Conditional) {
         const state = secondaryIndexes[depth];
         if (state === 0) {
           if (schema.if === true) {
@@ -1276,50 +1464,49 @@ export class SchemaShield {
           } else if (schema.if === false) {
             secondaryIndexes[depth] = 2;
           } else {
-            descend(schema.if, value, 8);
+            descend(schema.if, value, CompletionOpcode.ConditionalTest);
             continue;
           }
         }
 
         const branch = secondaryIndexes[depth] === 1 ? schema.then : schema.else;
-        structuralKinds[depth] = 0;
+        structuralKinds[depth] = StructuralOpcode.DirectValidate;
         if (
           branch &&
           typeof branch === "object" &&
           typeof branch.$validate === "function"
         ) {
-          descend(branch, value, 1);
+          descend(branch, value, CompletionOpcode.ChildProperty);
         }
         continue;
       }
 
-      if (structuralKinds[depth] === 12) {
-        structuralKinds[depth] = 0;
+      if (structuralKinds[depth] === StructuralOpcode.Not) {
+        structuralKinds[depth] = StructuralOpcode.DirectValidate;
         if (schema.not === true) {
           const error = getDefinedErrorFunctionForKey(
             "not",
             schema.not,
             this.failFast
           )("Value is not valid", { data: value });
-          const result = failCurrentFrame(error);
-          if (result !== null) {
-            return result;
+          if (completeFrame(error)) {
+            return completedResult;
           }
         } else if (schema.not !== false) {
-          descend(schema.not, value, 9);
+          descend(schema.not, value, CompletionOpcode.NotSchema);
         }
         continue;
       }
 
-      if (structuralKinds[depth] === 13) {
+      if (structuralKinds[depth] === StructuralOpcode.PropertyNames) {
         if (!value || typeof value !== "object" || Array.isArray(value)) {
-          structuralKinds[depth] = 0;
+          structuralKinds[depth] = StructuralOpcode.DirectValidate;
           continue;
         }
         const keys = structuralKeys[depth]!;
         const keyIndex = structuralIndexes[depth]++;
         if (keyIndex >= keys.length) {
-          structuralKinds[depth] = 0;
+          structuralKinds[depth] = StructuralOpcode.DirectValidate;
           continue;
         }
         const key = keys[keyIndex];
@@ -1329,9 +1516,8 @@ export class SchemaShield {
             schema.propertyNames,
             this.failFast
           )("Properties are not allowed", { item: key, data: value[key] });
-          const result = failCurrentFrame(error);
-          if (result !== null) {
-            return result;
+          if (completeFrame(error)) {
+            return completedResult;
           }
         } else if (
           schema.propertyNames &&
@@ -1340,7 +1526,7 @@ export class SchemaShield {
           descend(
             schema.propertyNames,
             key,
-            1,
+            CompletionOpcode.ChildProperty,
             "Property name is invalid",
             "propertyNames",
             schema.propertyNames,
@@ -1350,15 +1536,15 @@ export class SchemaShield {
         continue;
       }
 
-      if (structuralKinds[depth] === 14) {
+      if (structuralKinds[depth] === StructuralOpcode.Values) {
         if (!value || typeof value !== "object" || Array.isArray(value)) {
-          structuralKinds[depth] = 0;
+          structuralKinds[depth] = StructuralOpcode.DirectValidate;
           continue;
         }
         const keys = structuralKeys[depth]!;
         const keyIndex = structuralIndexes[depth]++;
         if (keyIndex >= keys.length) {
-          structuralKinds[depth] = 0;
+          structuralKinds[depth] = StructuralOpcode.DirectValidate;
           continue;
         }
         const key = keys[keyIndex];
@@ -1366,7 +1552,7 @@ export class SchemaShield {
           descend(
             schema.values,
             value[key],
-            1,
+            CompletionOpcode.ChildProperty,
             "Property is invalid",
             "values",
             schema.values,
@@ -1376,21 +1562,21 @@ export class SchemaShield {
         continue;
       }
 
-      if (structuralKinds[depth] === 15) {
+      if (structuralKinds[depth] === StructuralOpcode.Elements) {
         if (!Array.isArray(value)) {
-          structuralKinds[depth] = 0;
+          structuralKinds[depth] = StructuralOpcode.DirectValidate;
           continue;
         }
         const itemIndex = structuralIndexes[depth]++;
         if (itemIndex >= value.length) {
-          structuralKinds[depth] = 0;
+          structuralKinds[depth] = StructuralOpcode.DirectValidate;
           continue;
         }
         if (schema.elements && typeof schema.elements.$validate === "function") {
           descend(
             schema.elements,
             value[itemIndex],
-            2,
+            CompletionOpcode.ChildItem,
             "Array item is invalid",
             "elements",
             schema.elements,
@@ -1401,20 +1587,27 @@ export class SchemaShield {
       }
 
       if (
-        structuralKinds[depth] === 3 ||
-        structuralKinds[depth] === 4 ||
-        structuralKinds[depth] === 5
+        structuralKinds[depth] === StructuralOpcode.AllOf ||
+        structuralKinds[depth] === StructuralOpcode.AnyOf ||
+        structuralKinds[depth] === StructuralOpcode.OneOf
       ) {
         const kind = structuralKinds[depth];
-        const keyword = kind === 3 ? "allOf" : kind === 4 ? "anyOf" : "oneOf";
-        const branches = (schema as any)[`_${keyword}BranchEntries`] as
-          | CombinatorBranchEntry[]
-          | undefined;
+        const keyword =
+          kind === StructuralOpcode.AllOf
+            ? "allOf"
+            : kind === StructuralOpcode.AnyOf
+              ? "anyOf"
+              : "oneOf";
+        const branches = getCombinatorBranchEntries(schema, keyword);
         const branchIndex = structuralIndexes[depth]++;
 
         if (!branches || branchIndex >= branches.length) {
-          if (kind === 3 || (kind === 5 && combinatorValidCounts[depth] === 1)) {
-            structuralKinds[depth] = 0;
+          if (
+            kind === StructuralOpcode.AllOf ||
+            (kind === StructuralOpcode.OneOf &&
+              combinatorValidCounts[depth] === 1)
+          ) {
+            structuralKinds[depth] = StructuralOpcode.DirectValidate;
             continue;
           }
 
@@ -1423,9 +1616,8 @@ export class SchemaShield {
             schema[keyword],
             this.failFast
           )("Value is not valid", { data: value });
-          const result = failCurrentFrame(error);
-          if (result !== null) {
-            return result;
+          if (completeFrame(error)) {
+            return completedResult;
           }
           continue;
         }
@@ -1433,7 +1625,13 @@ export class SchemaShield {
         const branch = branches[branchIndex];
         if (branch.kind === "validate") {
           const branchSchema = schema[keyword][branchIndex];
-          descend(branchSchema, value, kind);
+          const completionKind =
+            kind === StructuralOpcode.AllOf
+              ? CompletionOpcode.AllOfBranch
+              : kind === StructuralOpcode.AnyOf
+                ? CompletionOpcode.AnyOfBranch
+                : CompletionOpcode.OneOfBranch;
+          descend(branchSchema, value, completionKind);
           continue;
         }
 
@@ -1441,19 +1639,18 @@ export class SchemaShield {
           branch.kind === "alwaysValid" ||
           (branch.kind === "literal" && branch.value === value);
 
-        if (kind === 3 && !branchValid) {
+        if (kind === StructuralOpcode.AllOf && !branchValid) {
           const error = getDefinedErrorFunctionForKey(
             "allOf",
             schema.allOf,
             this.failFast
           )("Value is not valid", { data: value });
-          const result = failCurrentFrame(error);
-          if (result !== null) {
-            return result;
+          if (completeFrame(error)) {
+            return completedResult;
           }
-        } else if (kind === 4 && branchValid) {
-          structuralKinds[depth] = 0;
-        } else if (kind === 5 && branchValid) {
+        } else if (kind === StructuralOpcode.AnyOf && branchValid) {
+          structuralKinds[depth] = StructuralOpcode.DirectValidate;
+        } else if (kind === StructuralOpcode.OneOf && branchValid) {
           combinatorValidCounts[depth]++;
           if (combinatorValidCounts[depth] > 1) {
             const error = getDefinedErrorFunctionForKey(
@@ -1461,206 +1658,19 @@ export class SchemaShield {
               schema.oneOf,
               this.failFast
             )("Value is not valid", { data: value });
-            const result = failCurrentFrame(error);
-            if (result !== null) {
-              return result;
+            if (completeFrame(error)) {
+              return completedResult;
             }
           }
         }
         continue;
       }
 
-      const entries = (schema as any)._iterativeValidatorEntries as
-        | ValidatorItem[]
-        | undefined;
-      if (!entries) {
-        const validate = (schema as any)._recursiveValidate || schema.$validate;
-        const error = typeof validate === "function" ? validate(value) : undefined;
-        if (error) {
-          const result = failCurrentFrame(error);
-          if (result !== null) {
-            return result;
-          }
-          continue;
-        }
-        validatorIndexes[depth] = Number.MAX_SAFE_INTEGER;
-      } else if (validatorIndexes[depth] < entries.length) {
-        const entry = entries[validatorIndexes[depth]++];
-        if (entry.iterativeKeyword === "properties") {
-          structuralKinds[depth] = 1;
-          structuralIndexes[depth] = 0;
-          secondaryIndexes[depth] = 0;
-          stagedDefaults[depth] = [];
-          continue;
-        }
-        if (entry.iterativeKeyword === "items") {
-          structuralKinds[depth] = 2;
-          structuralIndexes[depth] = 0;
-          continue;
-        }
-        if (entry.iterativeKeyword === "allOf") {
-          structuralKinds[depth] = 3;
-          structuralIndexes[depth] = 0;
-          continue;
-        }
-        if (entry.iterativeKeyword === "anyOf") {
-          structuralKinds[depth] = 4;
-          structuralIndexes[depth] = 0;
-          continue;
-        }
-        if (entry.iterativeKeyword === "oneOf") {
-          structuralKinds[depth] = 5;
-          structuralIndexes[depth] = 0;
-          combinatorValidCounts[depth] = 0;
-          continue;
-        }
-        if (entry.iterativeKeyword === "additionalProperties") {
-          structuralKinds[depth] = 6;
-          structuralIndexes[depth] = 0;
-          structuralKeys[depth] =
-            value && typeof value === "object" && !Array.isArray(value)
-              ? Object.keys(value)
-              : [];
-          continue;
-        }
-        if (entry.iterativeKeyword === "patternProperties") {
-          structuralKinds[depth] = 7;
-          structuralIndexes[depth] = 0;
-          secondaryIndexes[depth] = 0;
-          structuralFlags[depth] = 0;
-          structuralKeys[depth] =
-            value && typeof value === "object" && !Array.isArray(value)
-              ? Object.keys(value)
-              : [];
-          continue;
-        }
-        if (entry.iterativeKeyword === "additionalItems") {
-          structuralKinds[depth] = 8;
-          structuralIndexes[depth] = Array.isArray(schema.items)
-            ? schema.items.length
-            : 0;
-          continue;
-        }
-        if (entry.iterativeKeyword === "contains") {
-          structuralKinds[depth] = 9;
-          structuralIndexes[depth] = 0;
-          continue;
-        }
-        if (entry.iterativeKeyword === "dependencies") {
-          structuralKinds[depth] = 10;
-          structuralIndexes[depth] = 0;
-          structuralKeys[depth] = Object.keys(schema.dependencies || {});
-          continue;
-        }
-        if (entry.iterativeKeyword === "if") {
-          structuralKinds[depth] = 11;
-          secondaryIndexes[depth] = 0;
-          continue;
-        }
-        if (entry.iterativeKeyword === "not") {
-          structuralKinds[depth] = 12;
-          continue;
-        }
-        if (entry.iterativeKeyword === "propertyNames") {
-          structuralKinds[depth] = 13;
-          structuralIndexes[depth] = 0;
-          structuralKeys[depth] =
-            value && typeof value === "object" && !Array.isArray(value)
-              ? Object.keys(value)
-              : [];
-          continue;
-        }
-        if (entry.iterativeKeyword === "values") {
-          structuralKinds[depth] = 14;
-          structuralIndexes[depth] = 0;
-          structuralKeys[depth] =
-            value && typeof value === "object" && !Array.isArray(value)
-              ? Object.keys(value)
-              : [];
-          continue;
-        }
-        if (entry.iterativeKeyword === "elements") {
-          structuralKinds[depth] = 15;
-          structuralIndexes[depth] = 0;
-          continue;
-        }
-
-        const error = entry.validate(value);
-        if (error) {
-          const result = failCurrentFrame(error);
-          if (result !== null) {
-            return result;
-          }
-        }
-        continue;
-      }
-
-      if (completeFrame(undefined)) {
-        return completedResult;
-      }
     }
   }
 
   private isPlainObject(value: any): value is Record<string, any> {
     return !!value && typeof value === "object" && !Array.isArray(value);
-  }
-
-  private collectSchemaLocations(root: any): WeakSet<object> {
-    const locations = new WeakSet<object>();
-    const stack = [root];
-    const schemaMaps = new Set([
-      "definitions",
-      "dependencies",
-      "patternProperties",
-      "properties"
-    ]);
-    const schemaArrays = new Set(["allOf", "anyOf", "oneOf"]);
-    const schemaValues = new Set([
-      "additionalItems",
-      "additionalProperties",
-      "contains",
-      "elements",
-      "else",
-      "if",
-      "items",
-      "not",
-      "propertyNames",
-      "then",
-      "values"
-    ]);
-
-    while (stack.length > 0) {
-      const schema = stack.pop();
-      if (!this.isPlainObject(schema) || locations.has(schema)) {
-        continue;
-      }
-
-      locations.add(schema);
-      for (const key of Object.keys(schema)) {
-        const value = schema[key];
-        if (schemaMaps.has(key) && this.isPlainObject(value)) {
-          for (const subSchema of Object.values(value)) {
-            if (!Array.isArray(subSchema)) {
-              stack.push(subSchema);
-            }
-          }
-        } else if (schemaArrays.has(key) && Array.isArray(value)) {
-          for (const subSchema of value) {
-            stack.push(subSchema);
-          }
-        } else if (schemaValues.has(key)) {
-          if (key === "items" && Array.isArray(value)) {
-            for (const subSchema of value) {
-              stack.push(subSchema);
-            }
-          } else {
-            stack.push(value);
-          }
-        }
-      }
-    }
-
-    return locations;
   }
 
   private isTrivialAlwaysValidSubschema(value: any): boolean {
@@ -1752,7 +1762,10 @@ export class SchemaShield {
       delete normalized[key];
     };
 
-    if (Array.isArray(schema.allOf)) {
+    if (
+      Array.isArray(schema.allOf) &&
+      this.getKeyword("allOf") === keywords.allOf
+    ) {
       let flattenedAllOf = this.flattenAssociativeBranches(
         "allOf",
         schema.allOf
@@ -1791,7 +1804,10 @@ export class SchemaShield {
       }
     }
 
-    if (Array.isArray(schema.anyOf)) {
+    if (
+      Array.isArray(schema.anyOf) &&
+      this.getKeyword("anyOf") === keywords.anyOf
+    ) {
       let flattenedAnyOf = this.flattenAssociativeBranches(
         "anyOf",
         schema.anyOf
@@ -1832,7 +1848,10 @@ export class SchemaShield {
       }
     }
 
-    if (Array.isArray(schema.oneOf)) {
+    if (
+      Array.isArray(schema.oneOf) &&
+      this.getKeyword("oneOf") === keywords.oneOf
+    ) {
       const flattenedOneOf = this.flattenSingleWrapperOneOf(schema.oneOf);
       let removedOneOf = false;
 
@@ -1874,137 +1893,14 @@ export class SchemaShield {
     });
   }
 
-  private prepareObjectKeywordCaches(schema: CompiledSchema) {
-    if (this.isPlainObject(schema.properties)) {
-      const propKeys = Object.keys(schema.properties);
-      this.defineHiddenValue(schema, "_propKeys", propKeys);
-
-      const requiredSet = Array.isArray(schema.required)
-        ? new Set<string>(schema.required)
-        : null;
-      this.defineHiddenValue(schema, "_requiredSet", requiredSet);
-
-      const propertyValidationEntries: Array<{
-        key: string;
-        schemaProp: any;
-        hasDefault: boolean;
-      }> = [];
-
-      for (let i = 0; i < propKeys.length; i++) {
-        const key = propKeys[i];
-        const schemaProp = schema.properties[key];
-        const hasDefault =
-          !!requiredSet &&
-          requiredSet.has(key) &&
-          this.isPlainObject(schemaProp) &&
-          "default" in schemaProp;
-
-        if (schemaProp === false) {
-          propertyValidationEntries.push({ key, schemaProp, hasDefault: false });
-          continue;
-        }
-
-        if (schemaProp === true) {
-          continue;
-        }
-
-        if (this.isPlainObject(schemaProp)) {
-          const hasValidate = typeof schemaProp.$validate === "function";
-          if (hasValidate || hasDefault) {
-            propertyValidationEntries.push({ key, schemaProp, hasDefault });
-          }
-        }
-      }
-
-      this.defineHiddenValue(
-        schema,
-        "_propertyValidationEntries",
-        propertyValidationEntries
-      );
-      this.defineHiddenValue(
-        schema,
-        "_hasRequiredDefaults",
-        propertyValidationEntries.some((entry) => entry.hasDefault)
-      );
-    }
-
-    if ("additionalProperties" in schema) {
-      this.defineHiddenValue(
-        schema,
-        "_apValidate",
-        this.isPlainObject(schema.additionalProperties) &&
-          typeof schema.additionalProperties.$validate === "function"
-          ? schema.additionalProperties.$validate
-          : null
-      );
-    }
-
-    if (this.isPlainObject(schema.patternProperties)) {
-      const entries: PatternPropertyEntry[] = [];
-      for (const key of Object.keys(schema.patternProperties)) {
-        const compiledMatcher = compilePatternMatcher(key);
-        entries.push({
-          schemaProp: schema.patternProperties[key],
-          match:
-            compiledMatcher instanceof RegExp
-              ? (value: string) => compiledMatcher.test(value)
-              : compiledMatcher
-        });
-      }
-      this.defineHiddenValue(schema, "_patternPropertyEntries", entries);
-    }
-  }
-
-  private toCombinatorBranchEntry(item: any): CombinatorBranchEntry {
-    if (item && typeof item === "object" && !Array.isArray(item)) {
-      if (typeof item.$validate === "function") {
-        return { kind: "validate", validate: item.$validate };
-      }
-
-      return { kind: "alwaysValid" };
-    }
-
-    if (typeof item === "boolean") {
-      return { kind: item ? "alwaysValid" : "alwaysInvalid" };
-    }
-
-    return { kind: "literal", value: item };
-  }
-
-  private prepareCombinatorKeywordCaches(schema: CompiledSchema) {
-    const keys: Array<"allOf" | "anyOf" | "oneOf"> = ["allOf", "anyOf", "oneOf"];
-
-    for (let i = 0; i < keys.length; i++) {
-      const key = keys[i];
-      const branches = schema[key];
-
-      if (!Array.isArray(branches)) {
-        continue;
-      }
-
-      const entries: CombinatorBranchEntry[] = [];
-      for (let j = 0; j < branches.length; j++) {
-        entries.push(this.toCombinatorBranchEntry(branches[j]));
-      }
-
-      this.defineHiddenValue(schema, `_${key}BranchEntries`, entries);
-    }
-  }
-
-  private markSchemaHasRef(schema: CompiledSchema) {
-    if ((schema as any)._hasRef === true) {
-      return;
-    }
-
-    Object.defineProperty(schema, "_hasRef", {
-      value: true,
-      enumerable: false,
-      configurable: false,
-      writable: false
-    });
-  }
-
   private shouldSkipKeyword(schema: Record<string, any>, key: string): boolean {
+    const builtinKeyword = (
+      keywords as Record<string, KeywordFunction | false>
+    )[key];
+    if (this.getKeyword(key) !== builtinKeyword) {
+      return false;
+    }
+
     const value = schema[key];
 
     switch (key) {
@@ -2087,40 +1983,113 @@ export class SchemaShield {
     return false;
   }
 
-  private isDefaultTypeValidator(type: string, validator: TypeFunction): boolean {
-    return (Types as Record<string, TypeFunction | false>)[type] === validator;
-  }
-
-  private compileSchema(schema: Partial<CompiledSchema> | any): CompiledSchema {
+  private compileSchema(
+    schema: Partial<CompiledSchema> | any
+  ): {
+    root: CompiledSchema;
+    references: CompiledSchema[];
+    postLinkCachePlans: PostLinkCachePlan[];
+  } {
     const clonedRoot = deepCloneUnfreeze(schema);
-    this.schemaLocations = this.collectSchemaLocations(clonedRoot);
-    let compiledRoot: CompiledSchema | null = null;
-    let schemaHasRef = false;
+    this.schemaLocations = new WeakSet<object>();
+    const rootHolder: { root?: CompiledSchema } = {};
+    const references: CompiledSchema[] = [];
+    const postLinkCachePlans: PostLinkCachePlan[] = [];
     const seen = new WeakSet<object>();
     const compiledBySource = new WeakMap<object, CompiledSchema>();
-    const pending: Array<{
-      schema: any;
-      assign: (compiled: CompiledSchema) => void;
-    }> = [
+    const pending: CompileTask[] = [
       {
+        kind: "compile",
         schema: clonedRoot,
-        assign: (compiled) => {
-          compiledRoot = compiled;
-        }
+        parent: rootHolder,
+        key: "root",
+        schemaLocation: true
       }
     ];
 
     while (pending.length > 0) {
       const item = pending.pop()!;
+      if (item.kind === "finalize") {
+        const compiled = item.schema;
+        let postLinkCacheKinds = 0;
+        if (
+          "properties" in compiled ||
+          "additionalProperties" in compiled ||
+          "patternProperties" in compiled
+        ) {
+          const additionalSchema = compiled.additionalProperties;
+          if (
+            additionalSchema &&
+            typeof additionalSchema === "object" &&
+            !Array.isArray(additionalSchema) &&
+            "$ref" in additionalSchema
+          ) {
+            postLinkCacheKinds |= PostLinkCacheKind.Object;
+          } else {
+            prepareObjectKeywordCaches(compiled);
+          }
+        }
+
+        let hasCombinators = false;
+        let combinatorCacheNeedsLink = false;
+        for (const key of SCHEMA_ARRAY_KEYWORDS) {
+          const branches = compiled[key];
+          if (!Array.isArray(branches)) {
+            continue;
+          }
+          hasCombinators = true;
+          for (let i = 0; i < branches.length; i++) {
+            const branch = branches[i];
+            if (
+              branch &&
+              typeof branch === "object" &&
+              !Array.isArray(branch) &&
+              "$ref" in branch
+            ) {
+              combinatorCacheNeedsLink = true;
+              break;
+            }
+          }
+          if (combinatorCacheNeedsLink) {
+            break;
+          }
+        }
+        if (hasCombinators) {
+          if (combinatorCacheNeedsLink) {
+            postLinkCacheKinds |= PostLinkCacheKind.Combinator;
+          } else {
+            prepareCombinatorKeywordCaches(compiled);
+          }
+        }
+
+        if (postLinkCacheKinds !== 0) {
+          postLinkCachePlans.push({
+            schema: compiled,
+            kinds: postLinkCacheKinds
+          });
+        }
+        continue;
+      }
+
+      if (item.schemaLocation && item.schema && typeof item.schema === "object") {
+        this.schemaLocations.add(item.schema);
+      }
+
       if (item.schema && typeof item.schema === "object") {
         const existing = compiledBySource.get(item.schema);
         if (existing) {
-          item.assign(existing);
+          (item.parent as any)[item.key] = existing;
+          if (
+            item.schemaLocation &&
+            typeof item.schema.$id === "string"
+          ) {
+            this.idRegistry.set(item.schema.$id, existing);
+          }
           continue;
         }
       }
       const compiled = this.compileSchemaNode(item.schema);
-      item.assign(compiled);
+      (item.parent as any)[item.key] = compiled;
 
       if (item.schema && typeof item.schema === "object") {
         compiledBySource.set(item.schema, compiled);
@@ -2134,32 +2103,55 @@ export class SchemaShield {
       }
 
       if ("$ref" in compiled) {
-        schemaHasRef = true;
+        references.push(compiled);
       }
 
-      const literalKeywords = new Set(["enum", "const", "default", "examples"]);
+      pending.push({
+        kind: "finalize",
+        schema: compiled
+      });
+
       for (const key of Object.keys(compiled)) {
-        if (literalKeywords.has(key)) {
+        if (LITERAL_SCHEMA_KEYWORDS.has(key)) {
           continue;
         }
 
         const value = compiled[key];
         if (value && typeof value === "object" && !Array.isArray(value)) {
-          if (key === "properties") {
+          if (key === "dependencies") {
             for (const subKey of Object.keys(value)) {
+              const dependency = value[subKey];
+              if (!this.isPlainObject(dependency)) {
+                continue;
+              }
               pending.push({
+                kind: "compile",
+                schema: dependency,
+                parent: value,
+                key: subKey,
+                schemaLocation: true
+              });
+            }
+          } else if (SCHEMA_MAP_KEYWORDS.has(key)) {
+            for (const subKey of Object.keys(value)) {
+              if (Array.isArray(value[subKey])) {
+                continue;
+              }
+              pending.push({
+                kind: "compile",
                 schema: value[subKey],
-                assign: (child) => {
-                  value[subKey] = child;
-                }
+                parent: value,
+                key: subKey,
+                schemaLocation: true
               });
             }
           } else {
             pending.push({
+              kind: "compile",
               schema: value,
-              assign: (child) => {
-                compiled[key] = child;
-              }
+              parent: compiled,
+              key,
+              schemaLocation: SCHEMA_VALUE_KEYWORDS.has(key)
             });
           }
           continue;
@@ -2169,10 +2161,11 @@ export class SchemaShield {
           for (let i = 0; i < value.length; i++) {
             if (this.isSchemaLike(value[i])) {
               pending.push({
+                kind: "compile",
                 schema: value[i],
-                assign: (child) => {
-                  value[i] = child;
-                }
+                parent: value,
+                key: i,
+                schemaLocation: SCHEMA_ARRAY_KEYWORDS.has(key)
               });
             }
           }
@@ -2180,15 +2173,15 @@ export class SchemaShield {
       }
     }
 
-    if (!compiledRoot) {
+    if (!rootHolder.root) {
       throw new ValidationError("Invalid schema");
     }
 
-    if (schemaHasRef) {
-      this.markSchemaHasRef(compiledRoot);
-    }
-
-    return compiledRoot;
+    return {
+      root: rootHolder.root,
+      references,
+      postLinkCachePlans
+    };
   }
 
   private compileSchemaNode(schema: Partial<CompiledSchema> | any): CompiledSchema {
@@ -2235,7 +2228,6 @@ export class SchemaShield {
         );
       }
 
-      this.markSchemaHasRef(compiledSchema);
       return compiledSchema;
     }
 
@@ -2262,7 +2254,9 @@ export class SchemaShield {
         if (validator) {
           typeFunctions.push(validator);
           typeNames.push(validator.name);
-          if (this.isDefaultTypeValidator(type, validator)) {
+          if (
+            (Types as Record<string, TypeFunction | false>)[type] === validator
+          ) {
             defaultTypeNames.push(type);
           } else {
             allTypesDefault = false;
@@ -2431,6 +2425,7 @@ export class SchemaShield {
       const typeValidator = {
         name: typeMethodName,
         keyword: "type",
+        structuralOpcode: StructuralOpcode.DirectValidate,
         validate: getNamedFunction(typeMethodName, combinedTypeValidator)
       };
       validators.push(typeValidator);
@@ -2475,10 +2470,10 @@ export class SchemaShield {
       const keywordValidator = {
         name: fnName,
         keyword: key,
-        iterativeKeyword:
+        structuralOpcode:
           (keywords as Record<string, KeywordFunction | false>)[key] === keywordFn
-            ? key
-            : undefined,
+            ? BUILTIN_STRUCTURAL_OPCODES[key] ?? StructuralOpcode.DirectValidate
+            : StructuralOpcode.DirectValidate,
         validate: getNamedFunction<ValidateFunction>(fnName, (data) =>
           (keywordFn as KeywordFunction)(compiledSchema, data, defineError, this)
         )
@@ -2543,79 +2538,107 @@ export class SchemaShield {
     return false;
   }
 
-  private linkReferences(root: CompiledSchema) {
-    const stack: any[] = [root];
-    const seen = new WeakSet<object>();
+  private linkReferences(references: CompiledSchema[]) {
+    type ReferenceResolution =
+      | { kind: "target"; target: CompiledSchema }
+      | { kind: "alwaysValid" }
+      | { kind: "alwaysInvalid" }
+      | { kind: "missing"; ref: string }
+      | { kind: "cycle" };
 
-    while (stack.length > 0) {
-      const node = stack.pop();
+    const resolved = new WeakMap<CompiledSchema, ReferenceResolution>();
 
-      if (!node || typeof node !== "object" || seen.has(node)) {
+    for (
+      let referenceIndex = 0;
+      referenceIndex < references.length;
+      referenceIndex++
+    ) {
+      const node = references[referenceIndex];
+      if (typeof node.$ref !== "string") {
         continue;
       }
-      seen.add(node);
 
-      if (
-        typeof node.$ref === "string" &&
-        typeof node.$validate === "function" &&
-        node.$validate.name === "Validate_Reference"
-      ) {
-        const refPath = node.$ref as string;
+      if (!resolved.has(node)) {
+        const chain: CompiledSchema[] = [];
+        const chainIndexes = new Map<CompiledSchema, number>();
+        let current: any = node;
+        let resolution: ReferenceResolution;
 
-        let target: any = this.getSchemaRef(refPath);
-        if (typeof target === "undefined") {
-          target = this.getSchemaById(refPath);
-        }
-
-        if (typeof target === "boolean") {
-          if (target === true) {
-            node.$validate = getNamedFunction("Validate_Ref_True", () => {});
-          } else {
-            const defineError = getDefinedErrorFunctionForKey(
-              "$ref",
-              node as any,
-              this.failFast
-            );
-
-            node.$validate = getNamedFunction(
-              "Validate_Ref_False",
-              (_data: any) => defineError("Value is not valid")
-            );
+        while (true) {
+          const known = resolved.get(current);
+          if (known) {
+            resolution = known;
+            break;
           }
-          continue;
+
+          if (!current || typeof current !== "object") {
+            resolution = current === true
+              ? { kind: "alwaysValid" }
+              : current === false
+                ? { kind: "alwaysInvalid" }
+                : {
+                    kind: "missing",
+                    ref: chain[chain.length - 1].$ref
+                  };
+            break;
+          }
+
+          if (typeof current.$ref !== "string") {
+            resolution = typeof current.$validate === "function"
+              ? { kind: "target", target: current }
+              : { kind: "alwaysValid" };
+            break;
+          }
+
+          if (chainIndexes.has(current)) {
+            resolution = { kind: "cycle" };
+            break;
+          }
+
+          chainIndexes.set(current, chain.length);
+          chain.push(current);
+          current = this.getSchemaRef(current.$ref);
+          if (typeof current === "undefined") {
+            const refOwner = chain[chain.length - 1];
+            current = this.getSchemaById(refOwner.$ref);
+          }
         }
 
-        if (target && typeof target.$validate === "function") {
-          this.defineHiddenValue(node, "_resolvedSchema", target);
-          node.$validate = target.$validate;
-        } else if (typeof target === "undefined") {
-          const defineError = getDefinedErrorFunctionForKey(
-            "$ref",
-            node as any,
-            this.failFast
-          );
-          node.$validate = getNamedFunction(
-            "Validate_Ref_Missing",
-            (_data: any) => defineError(`Missing reference: ${refPath}`)
-          );
+        for (let i = 0; i < chain.length; i++) {
+          resolved.set(chain[i], resolution);
         }
       }
 
-      for (const key in node) {
-        const value = node[key];
-        if (!value) continue;
-
-        if (Array.isArray(value)) {
-          for (let i = 0; i < value.length; i++) {
-            const v = value[i];
-            if (v && typeof v === "object") {
-              stack.push(v);
-            }
-          }
-        } else if (typeof value === "object") {
-          stack.push(value);
-        }
+      const resolution = resolved.get(node)!;
+      if (resolution.kind === "target") {
+        this.defineHiddenValue(node, "_resolvedSchema", resolution.target);
+        node.$validate = resolution.target.$validate;
+        continue;
       }
+
+      if (resolution.kind === "alwaysValid") {
+        node.$validate = getNamedFunction("Validate_Ref_True", () => {});
+        continue;
+      }
+
+      const defineError = getDefinedErrorFunctionForKey(
+        "$ref",
+        node as any,
+        this.failFast
+      );
+      const message = resolution.kind === "missing"
+        ? `Missing reference: ${resolution.ref}`
+        : resolution.kind === "cycle"
+          ? `Cyclic reference: ${node.$ref}`
+          : "Value is not valid";
+      const name = resolution.kind === "missing"
+        ? "Validate_Ref_Missing"
+        : resolution.kind === "cycle"
+          ? "Validate_Ref_Cycle"
+          : "Validate_Ref_False";
+      node.$validate = getNamedFunction(name, (_data: any) =>
+        defineError(message)
+      );
     }
   }
 }

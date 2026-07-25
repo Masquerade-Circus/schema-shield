@@ -124,3 +124,55 @@ for (let file in jsonTestFiles) {
     });
   }
 }
+
+describe("dependencies optimization regressions", () => {
+  function validateAtBothDepths(dependencies: Record<string, any>, data: any) {
+    const results = [];
+    for (const depth of [0, 300]) {
+      let schema: any = { type: "object", dependencies };
+      let nestedData = data;
+      for (let i = 0; i < depth; i++) {
+        schema = {
+          type: "object",
+          properties: { next: schema },
+          required: ["next"]
+        };
+        nestedData = { next: nestedData };
+      }
+      results.push(
+        new SchemaShield({ maxDepth: 1_000 }).compile(schema)(nestedData).valid
+      );
+    }
+    return results;
+  }
+
+  it("rejects a missing string dependency", () => {
+    expect(validateAtBothDepths({ enabled: "config" }, { enabled: true })).toEqual([
+      false,
+      false
+    ]);
+  });
+
+  it("accepts a present string dependency", () => {
+    expect(
+      validateAtBothDepths(
+        { enabled: "config" },
+        { enabled: true, config: true }
+      )
+    ).toEqual([true, true]);
+  });
+
+  it("preserves a true boolean dependency", () => {
+    expect(validateAtBothDepths({ enabled: true }, { enabled: true })).toEqual([
+      true,
+      true
+    ]);
+  });
+
+  it("preserves a false boolean dependency", () => {
+    expect(validateAtBothDepths({ enabled: false }, { enabled: true })).toEqual([
+      false,
+      false
+    ]);
+  });
+});

@@ -207,16 +207,7 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
       return;
     }
 
-    let tupleLength = (schema as any)._tupleItemsLength as number | undefined;
-    if (tupleLength === undefined) {
-      tupleLength = schema.items.length;
-      Object.defineProperty(schema, "_tupleItemsLength", {
-        value: tupleLength,
-        enumerable: false,
-        configurable: false,
-        writable: false
-      });
-    }
+    const tupleLength = schema.items.length;
 
     if (data.length <= tupleLength) {
       return;
@@ -296,7 +287,7 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
       return;
     }
 
-    const primitiveSeen = new Set<any>();
+    let primitiveSeen: Set<any> | null = null;
     let primitiveArraySignatures: Set<string> | undefined;
     let arrayBuckets: Map<string, any[]> | undefined;
     let objectBuckets: Map<string, any[]> | undefined;
@@ -305,6 +296,10 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
       const item = data[i];
 
       if (isUniquePrimitive(item)) {
+        if (primitiveSeen === null) {
+          primitiveSeen = new Set<any>();
+        }
+
         if (primitiveSeen.has(item)) {
           return defineError("Array items are not unique", { data: item });
         }

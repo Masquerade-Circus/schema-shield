@@ -168,14 +168,45 @@ describe("review blocker regressions", () => {
       },
       true
     );
-    const result = shield.compile(
+    const validate = shield.compile(
       nestedObjectSchema(depth, { type: "number" })
-    )(nestedObjectData(depth, "invalid"));
+    );
+    const entry = (validate.compiledSchema as any)._iterativeValidatorEntries.find(
+      (item: { keyword: string }) => item.keyword === "properties"
+    );
+    const result = validate(nestedObjectData(depth, "invalid"));
 
+    expect(entry.structuralOpcode).toBe(0);
     expect(result.valid).toBe(false);
     expect(calls).toBe(65);
     expect((result.error as ValidationError).code).toBe("MAX_DEPTH_EXCEEDED");
     expect((result.error as ValidationError).getPath().instancePath).toContain("/next");
+  });
+
+  it("preselects all four immutable and iterative root routes", () => {
+    for (const immutable of [false, true]) {
+      for (const iterative of [false, true]) {
+        const schema = iterative
+          ? nestedObjectSchema(300, { type: "string" })
+          : { type: "string" };
+        const input = iterative ? nestedObjectData(300, "leaf") : "leaf";
+        const validate = new SchemaShield({ immutable, maxDepth: 1_000 }).compile(
+          schema
+        );
+        const source = validate.toString();
+        const result = validate(input);
+
+        expect(source.includes("deepCloneUnfreeze")).toBe(immutable);
+        expect(source.includes("validateIterative")).toBe(iterative);
+        expect(source).not.toContain("requiresIterativeValidation");
+        expect(result.valid).toBe(true);
+        if (iterative && immutable) {
+          expect(result.data).not.toBe(input);
+        } else {
+          expect(result.data).toBe(input);
+        }
+      }
+    }
   });
 
   it("applies required defaults before object observers regardless of key order", () => {

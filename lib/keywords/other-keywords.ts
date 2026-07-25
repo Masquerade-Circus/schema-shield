@@ -1,6 +1,6 @@
 import { isCompiledSchema } from "../utils/main-utils";
 
-import { KeywordFunction } from "../index";
+import type { KeywordFunction } from "../index";
 import { hasChanged } from "../utils/has-changed";
 
 type BranchEntry =
@@ -11,43 +11,49 @@ type BranchEntry =
 
 function toBranchEntry(item: any): BranchEntry {
   if (item && typeof item === "object" && !Array.isArray(item)) {
-    if ("$validate" in item && typeof item.$validate === "function") {
+    if (typeof item.$validate === "function") {
       return { kind: "validate", validate: item.$validate };
     }
-
     return { kind: "alwaysValid" };
   }
-
   if (typeof item === "boolean") {
     return { kind: item ? "alwaysValid" : "alwaysInvalid" };
   }
-
   return { kind: "literal", value: item };
 }
 
-function getBranchEntries(schema: any, key: "allOf" | "anyOf" | "oneOf") {
+export function getCombinatorBranchEntries(
+  schema: any,
+  key: "allOf" | "anyOf" | "oneOf",
+  rebuild = false
+) {
   const cacheKey = `_${key}BranchEntries`;
   let entries = schema[cacheKey] as BranchEntry[] | undefined;
-
-  if (entries) {
+  if (!rebuild && entries) {
     return entries;
   }
 
   const source = schema[key] || [];
-  entries = [];
-
+  entries = new Array(source.length);
   for (let i = 0; i < source.length; i++) {
-    entries.push(toBranchEntry(source[i]));
+    entries[i] = toBranchEntry(source[i]);
   }
-
   Object.defineProperty(schema, cacheKey, {
     value: entries,
     enumerable: false,
     configurable: false,
     writable: false
   });
-
   return entries;
+}
+
+export function prepareCombinatorKeywordCaches(schema: any) {
+  const keys: Array<"allOf" | "anyOf" | "oneOf"> = ["allOf", "anyOf", "oneOf"];
+  for (let i = 0; i < keys.length; i++) {
+    if (Array.isArray(schema[keys[i]])) {
+      getCombinatorBranchEntries(schema, keys[i], true);
+    }
+  }
 }
 
 export const OtherKeywords: Record<string, KeywordFunction> = {
@@ -100,7 +106,7 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
   },
 
   allOf(schema, data, defineError) {
-    const branches = getBranchEntries(schema, "allOf");
+    const branches = getCombinatorBranchEntries(schema, "allOf");
 
     if (branches.length === 1) {
       const onlyBranch = branches[0];
@@ -156,7 +162,7 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
   },
 
   anyOf(schema, data, defineError) {
-    const branches = getBranchEntries(schema, "anyOf");
+    const branches = getCombinatorBranchEntries(schema, "anyOf");
 
     if (branches.length === 1) {
       const onlyBranch = branches[0];
@@ -212,7 +218,7 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
   },
 
   oneOf(schema, data, defineError) {
-    const branches = getBranchEntries(schema, "oneOf");
+    const branches = getCombinatorBranchEntries(schema, "oneOf");
 
     if (branches.length === 1) {
       const onlyBranch = branches[0];

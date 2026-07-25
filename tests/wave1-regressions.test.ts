@@ -83,6 +83,22 @@ describe("wave 1 regressions", () => {
     expect(validateMissing(1).valid).toBe(false);
   });
 
+  it("reports the terminal missing reference through a ref chain", () => {
+    const validate = new SchemaShield({ failFast: false }).compile({
+      definitions: {
+        alias: { $ref: "#/definitions/terminal" }
+      },
+      $ref: "#/definitions/alias"
+    });
+
+    const result = validate("value");
+
+    expect(result.valid).toBe(false);
+    expect((result.error as ValidationError).message).toBe(
+      "Missing reference: #/definitions/terminal"
+    );
+  });
+
   it("ignores $id values nested inside unknown keywords", () => {
     const id = "https://localhost:1234/unknownKeyword/my_identifier.json";
     const validate = new SchemaShield().compile({
