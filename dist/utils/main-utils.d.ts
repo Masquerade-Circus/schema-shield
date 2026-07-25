@@ -9,6 +9,7 @@ interface ErrorTree {
     cause?: ErrorTree;
 }
 export declare class ValidationError extends Error {
+    code?: string;
     message: string;
     item?: string | number;
     keyword: string;
@@ -18,9 +19,7 @@ export declare class ValidationError extends Error {
     data?: any;
     schema?: CompiledSchema;
     constructor(message: string);
-    private _getCause;
     getCause(): ValidationError;
-    private _getTree;
     getTree(): ErrorTree;
     getPath(): {
         schemaPath: string;
@@ -28,6 +27,7 @@ export declare class ValidationError extends Error {
     };
 }
 export interface DefineErrorOptions {
+    code?: string;
     item?: any;
     cause?: ValidationError | true;
     data?: any;
@@ -36,6 +36,7 @@ export interface DefineErrorFunction {
     (message: string, options?: DefineErrorOptions): ValidationError | void | true;
 }
 export declare function getDefinedErrorFunctionForKey(key: string, schema: CompiledSchema, failFast: boolean): DefineErrorFunction;
+export declare function escapeJsonPointerToken(value: string | number): string;
 export declare function getUTF16Length(str: any): number;
 export declare function isCompiledSchema(subSchema: any): subSchema is CompiledSchema;
 export declare function getNamedFunction<T>(name: string, fn: T): T;

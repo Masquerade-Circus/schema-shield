@@ -11,7 +11,6 @@ const EMAIL_REGEX =
   /^(?!\.)(?!.*\.$)[a-z0-9!#$%&'*+/=?^_`{|}~-]{1,20}(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]{1,21}){0,2}@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,60}[a-z0-9])?){0,3}$/i;
 const HOSTNAME_REGEX =
   /^[a-z0-9][a-z0-9-]{0,62}(?:\.[a-z0-9][a-z0-9-]{0,62})*[a-z0-9]$/i;
-const DATE_REGEX = /^(\d{4})-(\d{2})-(\d{2})$/;
 const TIME_REGEX =
   /^([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(\.\d+)?(Z|([+-])([01]\d|2[0-3]):([0-5]\d))$/;
 const URI_REFERENCE_REGEX =
@@ -110,6 +109,27 @@ function isHexCharCode(code: number) {
     (code >= 65 && code <= 70) ||
     (code >= 97 && code <= 102)
   );
+}
+
+function hasValidPercentEncoding(data: string) {
+  for (let index = 0; index < data.length; index++) {
+    const code = data.charCodeAt(index);
+    if (code === 92) {
+      return false;
+    }
+    if (code !== 37) {
+      continue;
+    }
+    if (
+      index + 2 >= data.length ||
+      !isHexCharCode(data.charCodeAt(index + 1)) ||
+      !isHexCharCode(data.charCodeAt(index + 2))
+    ) {
+      return false;
+    }
+    index += 2;
+  }
+  return true;
 }
 
 function isValidIpv6(data: string) {
@@ -249,7 +269,7 @@ function isValidJsonPointer(data: string) {
 
 function isValidRelativeJsonPointer(data: string) {
   if (data.length === 0) {
-    return true;
+    return false;
   }
 
   let i = 0;
@@ -262,6 +282,10 @@ function isValidRelativeJsonPointer(data: string) {
   }
 
   if (i === 0) {
+    return false;
+  }
+
+  if (i > 1 && data.charCodeAt(0) === 48) {
     return false;
   }
 
@@ -451,7 +475,7 @@ export const Formats: Record<string, FormatFunction | false> = {
     return true;
   },
   uri(data) {
-    return URI_REGEX.test(data);
+    return URI_REGEX.test(data) && hasValidPercentEncoding(data);
   },
   email(data) {
     return EMAIL_REGEX.test(data);
@@ -468,17 +492,19 @@ export const Formats: Record<string, FormatFunction | false> = {
     return HOSTNAME_REGEX.test(data);
   },
   date(data) {
-    const match = DATE_REGEX.exec(data);
-    if (!match) {
+    if (
+      data.length !== 10 ||
+      data.charCodeAt(4) !== 45 ||
+      data.charCodeAt(7) !== 45
+    ) {
       return false;
     }
 
-    const [, yearStr, monthStr, dayStr] = match;
-    const year = Number(yearStr);
-    const month = Number(monthStr);
-    const day = Number(dayStr);
+    const year = parseFourDigits(data, 0);
+    const month = parseTwoDigits(data, 5);
+    const day = parseTwoDigits(data, 8);
 
-    if (month < 1 || month > 12) {
+    if (year < 0 || month < 1 || month > 12) {
       return false;
     }
     if (day < 1) {

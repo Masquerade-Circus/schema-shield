@@ -13,7 +13,7 @@
   "module": "dist/index.mjs",
   "unpkg": "dist/index.min.js",
   "browser": "dist/index.min.js",
-  "types": "dist/**/*.d.ts",
+  "types": "dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -78,12 +78,6 @@
     "release": "release-it --verbose",
     "release-test": "release-it --dry-run --verbose"
   },
-  "dependencies": {
-    "ts-node": "^10.9.1",
-    "tsc-prog": "^2.2.1",
-    "tslib": "^2.5.0",
-    "typescript": "^5.0.2"
-  },
   "devDependencies": {
     "@exodus/schemasafe": "^1.0.0",
     "@release-it/conventional-changelog": "^5.1.1",
@@ -101,7 +95,11 @@
     "nodemon": "^2.0.22",
     "nyc": "^15.1.0",
     "release-it": "^15.9.3",
-    "terser": "^5.16.6"
+    "terser": "^5.16.6",
+    "ts-node": "^10.9.1",
+    "tsc-prog": "^2.2.1",
+    "tslib": "^2.5.0",
+    "typescript": "^5.0.2"
   },
   "nyc": {
     "exclude": [

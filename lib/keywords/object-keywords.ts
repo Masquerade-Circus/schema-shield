@@ -113,36 +113,40 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
     return;
   },
 
-  properties(schema, data, defineError) {
+  properties(schema, data, defineError, instance) {
     if (!data || typeof data !== "object" || Array.isArray(data)) {
       return;
     }
 
-    let propKeys = (schema as any)._propKeys as string[] | undefined;
-    if (!propKeys) {
-      propKeys = Object.keys(schema.properties || {});
-      Object.defineProperty(schema, "_propKeys", {
-        value: propKeys,
-        enumerable: false,
-        configurable: false,
-        writable: false
-      });
-    }
+    const propKeys = (schema as any)._propKeys as string[];
 
-    let requiredSet = (schema as any)._requiredSet as
-      | Set<string>
-      | null
+    const requiredDefaultKeys = (schema as any)._requiredDefaultKeys as
+      | string[]
       | undefined;
-    if (requiredSet === undefined) {
-      requiredSet = Array.isArray(schema.required)
-        ? new Set<string>(schema.required)
-        : null;
-      Object.defineProperty(schema, "_requiredSet", {
-        value: requiredSet,
-        enumerable: false,
-        configurable: false,
-        writable: false
-      });
+    if (requiredDefaultKeys) {
+      const stagedDefaults: Array<{ key: string; value: any }> = [];
+      for (let i = 0; i < requiredDefaultKeys.length; i++) {
+        const key = requiredDefaultKeys[i];
+        if (Object.prototype.hasOwnProperty.call(data, key)) {
+          continue;
+        }
+        const schemaProp = schema.properties[key];
+        const value = deepCloneUnfreeze(schemaProp.default);
+        const error = (schemaProp as any).$validate(value);
+        if (error) {
+          return defineError("Default property is invalid", {
+            item: key,
+            cause: error,
+            data: schemaProp.default
+          });
+        }
+        stagedDefaults.push({ key, value });
+      }
+
+      for (let i = 0; i < stagedDefaults.length; i++) {
+        const staged = stagedDefaults[i];
+        instance.setDefault(data, staged.key, staged.value);
+      }
     }
 
     for (let i = 0; i < propKeys.length; i++) {
@@ -150,24 +154,6 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
       const schemaProp = schema.properties[key];
 
       if (!Object.prototype.hasOwnProperty.call(data, key)) {
-        if (
-          requiredSet &&
-          requiredSet.has(key) &&
-          schemaProp &&
-          typeof schemaProp === "object" &&
-          !Array.isArray(schemaProp) &&
-          "default" in schemaProp
-        ) {
-          const error = (schemaProp as any).$validate(schemaProp.default);
-          if (error) {
-            return defineError("Default property is invalid", {
-              item: key,
-              cause: error,
-              data: schemaProp.default
-            });
-          }
-          data[key] = deepCloneUnfreeze(schemaProp.default);
-        }
         continue;
       }
 

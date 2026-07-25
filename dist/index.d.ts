@@ -3,8 +3,11 @@ import { DefineErrorFunction, ValidationError } from "./utils/main-utils";
 export { ValidationError } from "./utils/main-utils";
 export { deepCloneUnfreeze as deepClone } from "./utils/deep-freeze";
 export type Result = void | ValidationError | true;
+export interface ValidateSubschemaFunction {
+    (schema: CompiledSchema, data: any): Result;
+}
 export interface KeywordFunction {
-    (schema: CompiledSchema, data: any, defineError: DefineErrorFunction, instance: SchemaShield): Result;
+    (schema: CompiledSchema, data: any, defineError: DefineErrorFunction, instance: SchemaShield, validateSubschema?: ValidateSubschemaFunction): Result;
 }
 export interface TypeFunction {
     (data: any): boolean;
@@ -28,6 +31,7 @@ export interface Validator {
     compiledSchema: CompiledSchema;
 }
 export declare class SchemaShield {
+    #private;
     private types;
     private formats;
     private keywords;
@@ -35,10 +39,17 @@ export declare class SchemaShield {
     private rootSchema;
     private idRegistry;
     private failFast;
-    constructor({ immutable, failFast }?: {
+    private maxDepth;
+    private validationContexts;
+    private compileCache;
+    private compilingRequiresContext;
+    private compilingMutableSchemas;
+    constructor({ immutable, failFast, maxDepth }?: {
         immutable?: boolean;
         failFast?: boolean;
+        maxDepth?: number;
     });
+    setDefault(target: Record<string, any>, key: string, value: any): void;
     addType(name: string, validator: TypeFunction, overwrite?: boolean): void;
     getType(type: string): TypeFunction | false;
     addFormat(name: string, validator: FormatFunction, overwrite?: boolean): void;
@@ -48,7 +59,12 @@ export declare class SchemaShield {
     getKeyword(keyword: string): KeywordFunction | false;
     getSchemaRef(path: string): CompiledSchema | undefined;
     getSchemaById(id: string): CompiledSchema | undefined;
+    private depthError;
+    private schemaChildren;
+    private analyzeSchema;
     compile(schema: any): Validator;
+    private prepareSchema;
+    private createGuardedValidator;
     private isPlainObject;
     private isTrivialAlwaysValidSubschema;
     private shallowArrayEquals;
@@ -59,6 +75,10 @@ export declare class SchemaShield {
     private shouldSkipKeyword;
     private hasRequiredDefaults;
     private isDefaultTypeValidator;
+    private rollbackDefaults;
+    private isDepthError;
+    private validateSubschema;
+    private installDepthGuards;
     private compileSchema;
     isSchemaLike(subSchema: any): boolean;
     private linkReferences;

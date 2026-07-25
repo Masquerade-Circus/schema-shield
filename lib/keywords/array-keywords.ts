@@ -296,7 +296,9 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
       return;
     }
 
-    const primitiveSeen = new Set<any>();
+    let hasFirstPrimitive = false;
+    let firstPrimitive: any;
+    let primitiveSeen: Set<any> | undefined;
     let primitiveArraySignatures: Set<string> | undefined;
     let arrayBuckets: Map<string, any[]> | undefined;
     let objectBuckets: Map<string, any[]> | undefined;
@@ -305,6 +307,16 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
       const item = data[i];
 
       if (isUniquePrimitive(item)) {
+        if (!hasFirstPrimitive) {
+          hasFirstPrimitive = true;
+          firstPrimitive = item;
+          continue;
+        }
+
+        if (!primitiveSeen) {
+          primitiveSeen = new Set<any>([firstPrimitive]);
+        }
+
         if (primitiveSeen.has(item)) {
           return defineError("Array items are not unique", { data: item });
         }

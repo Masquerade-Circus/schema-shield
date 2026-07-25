@@ -4,15 +4,10 @@
   "workspaces": {
     "": {
       "name": "schema-shield",
-      "dependencies": {
-        "ts-node": "^10.9.1",
-        "tsc-prog": "^2.2.1",
-        "tslib": "^2.5.0",
-        "typescript": "^5.0.2",
-      },
       "devDependencies": {
         "@exodus/schemasafe": "^1.0.0",
         "@release-it/conventional-changelog": "^5.1.1",
+        "@types/mocha": "^10.0.10",
         "@typescript-eslint/eslint-plugin": "^5.56.0",
         "@typescript-eslint/parser": "^5.56.0",
         "ajv": "^8.12.0",
@@ -27,6 +22,10 @@
         "nyc": "^15.1.0",
         "release-it": "^15.9.3",
         "terser": "^5.16.6",
+        "ts-node": "^10.9.1",
+        "tsc-prog": "^2.2.1",
+        "tslib": "^2.5.0",
+        "typescript": "^5.0.2",
       },
     },
   },
@@ -238,6 +237,8 @@
     "@types/json-schema": ["@types/json-schema@7.0.11", "", {}, "sha512-wOuvG1SN4Us4rez+tylwwwCV1psiNVOkJeM3AUWUNWg/jDQY2+HE/444y5gc+jBmRqASOm2Oeh5c1axHobwRKQ=="],
 
     "@types/minimist": ["@types/minimist@1.2.2", "", {}, "sha512-jhuKLIRrhvCPLqwPcx6INqmKeiA5EWrsCOPhrlFSrbrmU4ZMPjj5Ul/oLCMDO98XRUIwVm78xICz4EPCektzeQ=="],
+
+    "@types/mocha": ["@types/mocha@10.0.10", "", {}, "sha512-xPyYSz1cMPnJQhl0CLMH68j3gprKZaTjG3s5Vi+fDgx+uhG9NOXwbVt52eFS8ECyXhyKcjDLCBEqBExKuiZb7Q=="],
 
     "@types/node": ["@types/node@18.15.5", "", {}, "sha512-Ark2WDjjZO7GmvsyFFf81MXuGTA/d6oP38anyxWOL6EREyBKAxKoFHwBhaZxCfLRLpO8JgVXwqOwSwa7jRcjew=="],
 

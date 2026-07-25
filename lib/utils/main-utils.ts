@@ -11,6 +11,7 @@ interface ErrorTree {
 }
 
 export class ValidationError extends Error {
+  code?: string;
   message: string;
   item?: string | number;
   keyword: string;
@@ -25,56 +26,71 @@ export class ValidationError extends Error {
     this.message = message;
   }
 
-  private _getCause(pointer = "#", instancePointer = "#"): ValidationError {
-    let schemaPath = `${pointer}/${this.keyword}`;
-    let instancePath = `${instancePointer}`;
-    if (typeof this.item !== "undefined") {
-      if (
-        typeof this.item === "string" &&
-        this.schema &&
-        typeof this.schema === "object" &&
-        this.item in this.schema
-      ) {
-        schemaPath += `/${this.item}`;
-      }
-      instancePath += `/${this.item}`;
-    }
-
-    this.instancePath = instancePath;
-    this.schemaPath = schemaPath;
-
-    // If there is no cause or the cause is not a ValidationError, return this
-    if (!this.cause || !(this.cause instanceof ValidationError)) {
-      return this;
-    }
-
-    return this.cause._getCause(schemaPath, instancePath);
-  }
-
   getCause(): ValidationError {
-    return this._getCause();
-  }
+    let current: ValidationError = this;
+    let schemaPointer = "#";
+    let instancePointer = "#";
+    const seen = new Set<ValidationError>();
 
-  private _getTree(): ErrorTree {
-    const tree: ErrorTree = {
-      message: this.message,
-      keyword: this.keyword,
-      item: this.item,
-      schemaPath: this.schemaPath,
-      instancePath: this.instancePath,
-      data: this.data
-    };
+    while (!seen.has(current)) {
+      seen.add(current);
+      let schemaPath = `${schemaPointer}/${current.keyword}`;
+      let instancePath = instancePointer;
+      if (typeof current.item !== "undefined") {
+        if (
+          typeof current.item === "string" &&
+          current.schema &&
+          typeof current.schema === "object" &&
+          current.item in current.schema
+        ) {
+          schemaPath += `/${escapeJsonPointerToken(current.item)}`;
+        }
+        instancePath += `/${escapeJsonPointerToken(current.item)}`;
+      }
+      current.schemaPath = schemaPath;
+      current.instancePath = instancePath;
 
-    if (this.cause) {
-      tree.cause = this.cause._getTree();
+      if (
+        !(current.cause instanceof ValidationError) ||
+        seen.has(current.cause)
+      ) {
+        return current;
+      }
+      schemaPointer = schemaPath;
+      instancePointer = instancePath;
+      current = current.cause;
     }
-
-    return tree;
+    return current;
   }
 
   getTree(): ErrorTree {
     this.getCause();
-    return this._getTree();
+    let current: ValidationError | undefined = this;
+    let root: ErrorTree | undefined;
+    let target: ErrorTree | undefined;
+    const seen = new Set<ValidationError>();
+
+    while (current && !seen.has(current)) {
+      seen.add(current);
+      const node: ErrorTree = {
+        message: current.message,
+        keyword: current.keyword,
+        item: current.item,
+        schemaPath: current.schemaPath,
+        instancePath: current.instancePath,
+        data: current.data
+      };
+      if (!root) {
+        root = node;
+      } else if (target) {
+        target.cause = node;
+      }
+      target = node;
+      current =
+        current.cause instanceof ValidationError ? current.cause : undefined;
+    }
+
+    return root!;
   }
 
   getPath() {
@@ -87,6 +103,7 @@ export class ValidationError extends Error {
 }
 
 export interface DefineErrorOptions {
+  code?: string;
   item?: any; // Final item in the schemaPath
   cause?: ValidationError | true; // Cause of the error
   data?: any; // Data that caused the error
@@ -116,9 +133,12 @@ export function getDefinedErrorFunctionForKey(
 
   const defineError: DefineErrorFunction = (message, options = {}) => {
     KeywordError.message = message;
+    KeywordError.code = options.code;
     KeywordError.item = options.item;
-    KeywordError.cause =
-      options.cause && options.cause !== true ? options.cause : undefined;
+    if (options.cause !== KeywordError) {
+      KeywordError.cause =
+        options.cause && options.cause !== true ? options.cause : undefined;
+    }
     KeywordError.data = options.data;
     return KeywordError;
   };
@@ -127,6 +147,10 @@ export function getDefinedErrorFunctionForKey(
     `defineError_${key}`,
     defineError
   );
+}
+
+export function escapeJsonPointerToken(value: string | number): string {
+  return String(value).replace(/~/g, "~0").replace(/\//g, "~1");
 }
 
 export function getUTF16Length(str) {
