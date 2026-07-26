@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, it } from "mocha";
 import expect from "expect";
 import { SchemaShield } from "../lib";
+import { hasOwn } from "./test-utils";
 
 function ownShape(root: any) {
   const entries: string[] = [];
@@ -80,22 +81,12 @@ describe("production architecture contracts", () => {
 
   it("classifies builtin identity separately from custom keyword overrides", () => {
     const builtin = new SchemaShield().compile({ type: "string" });
-    expect(
-      Object.prototype.hasOwnProperty.call(
-        builtin.compiledSchema,
-        "_requiresDepthGuard"
-      )
-    ).toBe(false);
+    expect(hasOwn(builtin.compiledSchema, "_requiresDepthGuard")).toBe(false);
 
     const customShield = new SchemaShield();
     customShield.addKeyword("customDescent", () => {});
     const custom = customShield.compile({ customDescent: true });
-    expect(
-      Object.prototype.hasOwnProperty.call(
-        custom.compiledSchema,
-        "_requiresDepthGuard"
-      )
-    ).toBe(true);
+    expect(hasOwn(custom.compiledSchema, "_requiresDepthGuard")).toBe(true);
   });
 
   it("supports legacy graph $validate calls and the fifth guarded helper", () => {

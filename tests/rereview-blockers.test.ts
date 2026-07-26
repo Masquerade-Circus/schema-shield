@@ -1,6 +1,7 @@
 import { describe, it } from "mocha";
 import expect from "expect";
 import { SchemaShield, ValidationError } from "../lib";
+import { hasOwn } from "./test-utils";
 
 function defaultingBranch(extra: Record<string, any> = {}) {
   return {
@@ -34,42 +35,45 @@ function nestedData(depth: number) {
 describe("transactional defaults", () => {
   it("rolls back defaults from a failed anyOf branch", () => {
     const data: Record<string, any> = {};
-    const validate = new SchemaShield({ failFast: false }).compile({
+    const validate = new SchemaShield({
+      failFast: false,
+      useDefaults: true
+    }).compile({
       anyOf: [defaultingBranch({ allOf: [false] }), { type: "object" }]
     });
 
     expect(validate(data).valid).toBe(true);
-    expect(Object.prototype.hasOwnProperty.call(data, "branchDefault")).toBe(
-      false
-    );
+    expect(hasOwn(data, "branchDefault")).toBe(false);
   });
 
   it("rolls back all defaults when oneOf has multiple valid branches", () => {
     const data: Record<string, any> = {};
-    const validate = new SchemaShield({ failFast: false }).compile({
+    const validate = new SchemaShield({
+      failFast: false,
+      useDefaults: true
+    }).compile({
       oneOf: [defaultingBranch(), { type: "object" }]
     });
 
     expect(validate(data).valid).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(data, "branchDefault")).toBe(
-      false
-    );
+    expect(hasOwn(data, "branchDefault")).toBe(false);
   });
 
   it("rolls back earlier defaults when a later allOf branch fails", () => {
     const data: Record<string, any> = {};
-    const validate = new SchemaShield({ failFast: false }).compile({
+    const validate = new SchemaShield({
+      failFast: false,
+      useDefaults: true
+    }).compile({
       allOf: [defaultingBranch(), false]
     });
 
     expect(validate(data).valid).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(data, "branchDefault")).toBe(
-      false
-    );
+    expect(hasOwn(data, "branchDefault")).toBe(false);
   });
 
   it("rolls back defaults when a custom keyword throws", () => {
-    const shield = new SchemaShield({ failFast: false });
+    const shield = new SchemaShield({ failFast: false, useDefaults: true });
     shield.addKeyword("explode", () => {
       throw new Error("controlled custom failure");
     });
@@ -77,9 +81,7 @@ describe("transactional defaults", () => {
     const data: Record<string, any> = {};
 
     expect(() => validate(data)).toThrow("controlled custom failure");
-    expect(Object.prototype.hasOwnProperty.call(data, "branchDefault")).toBe(
-      false
-    );
+    expect(hasOwn(data, "branchDefault")).toBe(false);
   });
 
   it("rolls back defaults created by a failed custom keyword branch", () => {
@@ -94,9 +96,7 @@ describe("transactional defaults", () => {
     const data: Record<string, any> = {};
 
     expect(validate(data).valid).toBe(true);
-    expect(Object.prototype.hasOwnProperty.call(data, "customDefault")).toBe(
-      false
-    );
+    expect(hasOwn(data, "customDefault")).toBe(false);
   });
 
   it("keeps defaults from combinator branches that produce a valid result", () => {
@@ -106,7 +106,7 @@ describe("transactional defaults", () => {
       { allOf: [defaultingBranch(), { type: "object" }] }
     ]) {
       const data: Record<string, any> = {};
-      const result = new SchemaShield({ failFast: false })
+      const result = new SchemaShield({ failFast: false, useDefaults: true })
         .compile(schema)(data);
 
       expect(result.valid).toBe(true);
@@ -117,12 +117,7 @@ describe("transactional defaults", () => {
   it("keeps the ordinary immutable-free fast path free of context machinery", () => {
     const validate = new SchemaShield().compile({ type: "string" });
 
-    expect(
-      Object.prototype.hasOwnProperty.call(
-        validate.compiledSchema,
-        "_requiresDepthGuard"
-      )
-    ).toBe(false);
+    expect(hasOwn(validate.compiledSchema, "_requiresDepthGuard")).toBe(false);
     expect(String(validate)).not.toMatch(/context|journal|savepoint|branch/i);
   });
 
@@ -131,12 +126,7 @@ describe("transactional defaults", () => {
       allOf: [{ type: "string" }, true]
     });
 
-    expect(
-      Object.prototype.hasOwnProperty.call(
-        validate.compiledSchema,
-        "_requiresDepthGuard"
-      )
-    ).toBe(false);
+    expect(hasOwn(validate.compiledSchema, "_requiresDepthGuard")).toBe(false);
     expect(String(validate.compiledSchema.$validate)).not.toMatch(
       /context|journal|savepoint|rollback|transactions|validateSubschema/i
     );

@@ -1,34 +1,36 @@
+import { definePropertyOrThrow } from "./main-utils";
+
 export function deepFreeze(
   obj: any,
   freezeClassInstances: boolean = false,
-  seen?: WeakSet<object>
+  seen = new WeakSet()
 ): any {
-  if (obj === null || typeof obj !== "object") {
+  if (
+    obj === null ||
+    typeof obj !== "object" ||
+    seen.has(obj) ||
+    Object.isFrozen(obj)
+  ) {
     return obj;
   }
 
-  const visited = seen ?? new WeakSet<object>();
-  if (visited.has(obj) || Object.isFrozen(obj)) {
-    return obj;
-  }
-
-  visited.add(obj);
+  seen.add(obj);
 
   if (Array.isArray(obj)) {
     for (let i = 0, l = obj.length; i < l; i++) {
-      deepFreeze(obj[i], freezeClassInstances, visited);
+      deepFreeze(obj[i], freezeClassInstances, seen);
     }
   } else {
     const props = Reflect.ownKeys(obj);
     for (let i = 0, l = props.length; i < l; i++) {
-      deepFreeze(obj[props[i]], freezeClassInstances, visited);
+      deepFreeze(obj[props[i]], freezeClassInstances, seen);
     }
 
     // If the object is an instance of a class (not a plain object or array) we need to freeze the prototype
     if (freezeClassInstances) {
-      const proto = Object.getPrototypeOf(obj);
+      const proto = Reflect.getPrototypeOf(obj);
       if (proto && proto !== Object.prototype) {
-        deepFreeze(proto, freezeClassInstances, visited);
+        deepFreeze(proto, freezeClassInstances, seen);
       }
     }
   }
@@ -43,13 +45,17 @@ function isPlainObject(value: any): boolean {
     return false;
   }
 
-  const proto = Object.getPrototypeOf(value);
+  const proto = Reflect.getPrototypeOf(value);
   return proto === Object.prototype || proto === null;
 }
 
 export { isPlainObject };
 
 function canUseStructuredClone(value: any): boolean {
+  if (typeof structuredClone !== "function") {
+    return false;
+  }
+
   if (typeof Buffer !== "undefined" && value instanceof Buffer) {
     return false;
   }
@@ -66,155 +72,87 @@ function canUseStructuredClone(value: any): boolean {
   );
 }
 
-function clonePlainObjectOrArrayIteratively<T>(
-  value: T,
-  cloneClassInstances: boolean,
-  seen: WeakMap<object, any>
-): T {
-  const sourceRoot = value as any;
-  const cloneRoot: any = Array.isArray(sourceRoot)
-    ? []
-    : Object.create(Object.getPrototypeOf(sourceRoot));
-  seen.set(sourceRoot, cloneRoot);
-  const pending: Array<{ source: any; clone: any }> = [
-    { source: sourceRoot, clone: cloneRoot }
-  ];
-
-  while (pending.length > 0) {
-    const current = pending.pop()!;
-    const keys = Reflect.ownKeys(current.source);
-
-    for (let i = 0; i < keys.length; i++) {
-      const key = keys[i];
-      const descriptor = Object.getOwnPropertyDescriptor(current.source, key)!;
-
-      if (!("value" in descriptor)) {
-        Object.defineProperty(current.clone, key, descriptor);
-        continue;
-      }
-
-      const item = descriptor.value;
-      if (item === null || typeof item !== "object") {
-        Object.defineProperty(current.clone, key, descriptor);
-        continue;
-      }
-
-      if (!Array.isArray(item) && !isPlainObject(item)) {
-        descriptor.value = deepCloneUnfreeze(
-          item,
-          cloneClassInstances,
-          seen
-        );
-        Object.defineProperty(current.clone, key, descriptor);
-        continue;
-      }
-
-      let clonedItem = seen.get(item);
-      if (!clonedItem) {
-        clonedItem = Array.isArray(item)
-          ? []
-          : Object.create(Object.getPrototypeOf(item));
-        seen.set(item, clonedItem);
-        pending.push({ source: item, clone: clonedItem });
-      }
-
-      descriptor.value = clonedItem;
-      Object.defineProperty(current.clone, key, descriptor);
-    }
-  }
-
-  return cloneRoot;
-}
-
 export function deepCloneUnfreeze<T>(
   obj: T,
   cloneClassInstances = false,
-  seen?: WeakMap<object, any>
+  seen = new WeakMap()
 ): T {
   if (typeof obj === "undefined" || obj === null || typeof obj !== "object") {
     return obj;
   }
 
   const source = obj as any;
-  const clones = seen ?? new WeakMap<object, any>();
 
-  if (clones.has(source)) {
-    return clones.get(source);
+  if (seen.has(source)) {
+    return seen.get(source);
   }
 
   if (canUseStructuredClone(source)) {
-    try {
-      const cloned = structuredClone(source);
-      clones.set(source, cloned);
-      return cloned;
-    } catch (error) {
-      if (
-        !(error instanceof RangeError) ||
-        (!Array.isArray(source) && !isPlainObject(source))
-      ) {
-        throw error;
-      }
-
-      return clonePlainObjectOrArrayIteratively(
-        source,
-        cloneClassInstances,
-        clones
-      );
-    }
+    const cloned = structuredClone(source);
+    seen.set(source, cloned);
+    return cloned;
   }
 
   let clone: any;
 
   switch (true) {
+    case Array.isArray(source): {
+      clone = [];
+      seen.set(source, clone);
+      for (let i = 0, l = source.length; i < l; i++) {
+        clone[i] = deepCloneUnfreeze(source[i], cloneClassInstances, seen);
+      }
+      return clone;
+    }
     case source instanceof Date: {
       clone = new Date(source.getTime());
-      clones.set(source, clone);
+      seen.set(source, clone);
       return clone;
     }
     case source instanceof RegExp: {
       clone = new RegExp(source.source, source.flags);
-      clones.set(source, clone);
+      seen.set(source, clone);
       return clone;
     }
     case source instanceof Map: {
       clone = new Map();
-      clones.set(source, clone);
+      seen.set(source, clone);
       for (const [key, value] of source.entries()) {
         clone.set(
-          deepCloneUnfreeze(key, cloneClassInstances, clones),
-          deepCloneUnfreeze(value, cloneClassInstances, clones)
+          deepCloneUnfreeze(key, cloneClassInstances, seen),
+          deepCloneUnfreeze(value, cloneClassInstances, seen)
         );
       }
       return clone;
     }
     case source instanceof Set: {
       clone = new Set();
-      clones.set(source, clone);
+      seen.set(source, clone);
       for (const value of source.values()) {
-        clone.add(deepCloneUnfreeze(value, cloneClassInstances, clones));
+        clone.add(deepCloneUnfreeze(value, cloneClassInstances, seen));
       }
       return clone;
     }
     case source instanceof ArrayBuffer: {
       clone = source.slice(0);
-      clones.set(source, clone);
+      seen.set(source, clone);
       return clone;
     }
     // TypedArrays and DataView
     case ArrayBuffer.isView(source): {
       clone = new source.constructor(source.buffer.slice(0));
-      clones.set(source, clone);
+      seen.set(source, clone);
       return clone;
     }
     // Node.js Buffer
     case typeof Buffer !== "undefined" && source instanceof Buffer: {
       clone = Buffer.from(source);
-      clones.set(source, clone);
+      seen.set(source, clone);
       return clone;
     }
     case source instanceof Error: {
       clone = new source.constructor(source.message);
-      clones.set(source, clone);
+      seen.set(source, clone);
       break;
     }
     // Non clonable objects
@@ -222,25 +160,25 @@ export function deepCloneUnfreeze<T>(
       source instanceof WeakMap ||
       source instanceof WeakSet: {
       clone = source;
-      clones.set(source, clone);
+      seen.set(source, clone);
       return clone;
     }
     // Instance of a class
     case source.constructor && source.constructor !== Object: {
       if (!cloneClassInstances) {
         clone = source;
-        clones.set(source, clone);
+        seen.set(source, clone);
         return clone;
       }
-      clone = Object.create(Object.getPrototypeOf(source));
-      clones.set(source, clone);
+      clone = Object.create(Reflect.getPrototypeOf(source));
+      seen.set(source, clone);
       break;
     }
 
     // Plain objects
     default: {
       clone = {};
-      clones.set(source, clone);
+      seen.set(source, clone);
 
       const keys = Reflect.ownKeys(source);
       for (let i = 0, l = keys.length; i < l; i++) {
@@ -248,7 +186,7 @@ export function deepCloneUnfreeze<T>(
         clone[key as string] = deepCloneUnfreeze(
           source[key as string],
           cloneClassInstances,
-          clones
+          seen
         );
       }
       return clone;
@@ -262,10 +200,10 @@ export function deepCloneUnfreeze<T>(
       descriptor.value = deepCloneUnfreeze(
         descriptor.value,
         cloneClassInstances,
-        clones
+        seen
       );
     }
-    Object.defineProperty(clone, key, descriptor);
+    definePropertyOrThrow(clone, key, descriptor);
   }
 
   return clone;

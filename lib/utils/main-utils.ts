@@ -1,4 +1,24 @@
-import { CompiledSchema } from "../index";
+import type { CompiledSchema } from "../index";
+
+const hasOwnPropertyIntrinsic = Object.prototype.hasOwnProperty;
+const hasOwnPropertyCall = Function.prototype.call.bind(
+  hasOwnPropertyIntrinsic
+) as (target: any, key: PropertyKey) => boolean;
+
+export function definePropertyOrThrow<T extends object>(
+  target: T,
+  key: PropertyKey,
+  descriptor: PropertyDescriptor
+): T {
+  if (!Reflect.defineProperty(target, key, descriptor)) {
+    throw new TypeError(`Cannot define property "${String(key)}"`);
+  }
+  return target;
+}
+
+export function hasOwn(target: any, key: PropertyKey): boolean {
+  return hasOwnPropertyCall(target, key);
+}
 
 interface ErrorTree {
   message: string;
@@ -174,8 +194,8 @@ export function isCompiledSchema(subSchema: any): subSchema is CompiledSchema {
   );
 }
 
-export function getNamedFunction<T>(name: string, fn: T): T {
-  return Object.defineProperty(fn, "name", { value: name });
+export function getNamedFunction<T extends object>(name: string, fn: T): T {
+  return definePropertyOrThrow(fn, "name", { value: name });
 }
 
 export function resolvePath(root: any, path: string): any {

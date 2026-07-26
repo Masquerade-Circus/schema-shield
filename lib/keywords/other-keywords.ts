@@ -1,4 +1,7 @@
-import { isCompiledSchema } from "../utils/main-utils";
+import {
+  definePropertyOrThrow,
+  isCompiledSchema
+} from "../utils/main-utils";
 import type {
   KeywordFunction,
   Result,
@@ -45,7 +48,7 @@ function getBranchEntries(schema: any, key: "allOf" | "anyOf" | "oneOf") {
     entries.push(toBranchEntry(source[i]));
   }
 
-  Object.defineProperty(schema, cacheKey, {
+  definePropertyOrThrow(schema, cacheKey, {
     value: entries,
     enumerable: false,
     configurable: false,
@@ -262,7 +265,7 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
       }
 
       enumCache = { primitiveSet, objectValues };
-      Object.defineProperty(schema, "_enumCache", {
+      definePropertyOrThrow(schema, "_enumCache", {
         value: enumCache,
         enumerable: false,
         configurable: false,

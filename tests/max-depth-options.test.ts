@@ -1,6 +1,7 @@
 import { describe, it } from "mocha";
 import expect from "expect";
 import { SchemaShield, ValidationError } from "../lib";
+import { hasOwn } from "./test-utils";
 
 describe("maxDepth options", () => {
   it("rejects invalid values", () => {
@@ -17,12 +18,7 @@ describe("maxDepth options", () => {
       properties: { value: { type: "string" } }
     });
 
-    expect(
-      Object.prototype.hasOwnProperty.call(
-        validate.compiledSchema,
-        "_requiresDepthGuard"
-      )
-    ).toBe(false);
+    expect(hasOwn(validate.compiledSchema, "_requiresDepthGuard")).toBe(false);
     expect(String(validate.compiledSchema.$validate)).not.toMatch(
       /context|guard|depth|journal/i
     );

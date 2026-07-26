@@ -2,8 +2,10 @@
 import {
   DefineErrorFunction,
   ValidationError,
+  definePropertyOrThrow,
   getDefinedErrorFunctionForKey,
   getNamedFunction,
+  hasOwn,
   resolvePath
 } from "./utils/main-utils";
 
@@ -15,6 +17,10 @@ import {
   createCombinatorValidator,
   prepareCombinatorEntries
 } from "./keywords/other-keywords";
+import {
+  applyPropertyDefaults,
+  applyEmptyPropertyDefaults
+} from "./keywords/object-keywords";
 
 export { ValidationError } from "./utils/main-utils";
 export { deepCloneUnfreeze as deepClone } from "./utils/deep-freeze";
@@ -77,7 +83,7 @@ interface ValidationContext {
   depth: number;
   depthExceeded: boolean;
   depthError?: ValidationError | true;
-  defaults: Array<{ target: Record<string, any>; key: string }>;
+  defaults: DefaultJournalEntry[];
 }
 
 interface SchemaAnalysis {
@@ -103,6 +109,12 @@ interface DefaultMutation {
   target: Record<string, any>;
   key: string;
   value: any;
+}
+
+interface DefaultJournalEntry {
+  target: Record<string, any>;
+  key: string;
+  descriptor?: PropertyDescriptor;
 }
 
 interface DepthGuardState {
@@ -146,6 +158,7 @@ export class SchemaShield {
   private formats: Record<string, FormatFunction | false> = {};
   private keywords: Record<string, KeywordFunction | false> = {};
   private immutable = false;
+  private useDefaults: boolean | "empty" = false;
   private rootSchema: CompiledSchema | null = null;
   private failFast: boolean = true;
   private maxDepth: number;
@@ -157,11 +170,13 @@ export class SchemaShield {
   constructor({
     immutable = false,
     failFast = true,
-    maxDepth = 128
+    maxDepth = 128,
+    useDefaults = false
   }: {
     immutable?: boolean;
     failFast?: boolean;
     maxDepth?: number;
+    useDefaults?: boolean | "empty";
   } = {}) {
     if (!Number.isInteger(maxDepth) || maxDepth < 1 || maxDepth > 256) {
       const error = new ValidationError("maxDepth must be an integer from 1 to 256");
@@ -169,9 +184,22 @@ export class SchemaShield {
       error.keyword = "maxDepth";
       throw error;
     }
+    if (
+      useDefaults !== false &&
+      useDefaults !== true &&
+      useDefaults !== "empty"
+    ) {
+      const error = new ValidationError(
+        'useDefaults must be false, true, or "empty"'
+      );
+      error.code = "INVALID_USE_DEFAULTS";
+      error.keyword = "useDefaults";
+      throw error;
+    }
     this.immutable = immutable;
     this.failFast = failFast;
     this.maxDepth = maxDepth;
+    this.useDefaults = useDefaults;
 
     for (const [type, validator] of Object.entries(Types)) {
       if (validator) {
@@ -193,9 +221,13 @@ export class SchemaShield {
   setDefault(target: Record<string, any>, key: string, value: any) {
     const context = this.validationContexts[this.validationContexts.length - 1];
     if (context) {
-      context.defaults.push({ target, key });
+      context.defaults.push({
+        target,
+        key,
+        descriptor: Reflect.getOwnPropertyDescriptor(target, key)
+      });
     }
-    Object.defineProperty(target, key, {
+    definePropertyOrThrow(target, key, {
       value,
       enumerable: true,
       configurable: true,
@@ -687,7 +719,7 @@ export class SchemaShield {
       visiting.add(entry.value);
       stack.push({ ...entry, exit: true });
 
-      if (this.hasRequiredDefaults(entry.value)) {
+      if (this.useDefaults !== false && this.hasPropertyDefaults(entry.value)) {
         requiresMutationJournal = true;
       }
 
@@ -767,7 +799,8 @@ export class SchemaShield {
             return !!keyword && keyword !== keywords[key];
           });
           if (
-            this.hasRequiredDefaults(entry.value) ||
+            (this.useDefaults !== false &&
+              this.hasPropertyDefaults(entry.value)) ||
             hasCustomKeyword ||
             typeof entry.value.$ref === "string" ||
             children.some((child) => mutableSchemas.has(child))
@@ -832,7 +865,7 @@ export class SchemaShield {
     let depthGuardState: DepthGuardState | null = null;
     if (analysis.requiresDepthGuard) {
       depthGuardState = this.installDepthGuards(compiledSchema);
-      Object.defineProperty(compiledSchema, "_requiresDepthGuard", {
+      definePropertyOrThrow(compiledSchema, "_requiresDepthGuard", {
         value: true,
         enumerable: false,
         configurable: false,
@@ -1086,7 +1119,7 @@ export class SchemaShield {
       return;
     }
 
-    Object.defineProperty(schema, "_hasRef", {
+    definePropertyOrThrow(schema, "_hasRef", {
       value: true,
       enumerable: false,
       configurable: false,
@@ -1161,15 +1194,19 @@ export class SchemaShield {
     }
   }
 
-  private hasRequiredDefaults(schema: Record<string, any>): boolean {
+  private hasPropertyDefaults(schema: Record<string, any>): boolean {
     const properties = schema.properties;
-    if (!this.isPlainObject(properties) || !Array.isArray(schema.required)) {
+    if (!this.isPlainObject(properties)) {
       return false;
     }
 
-    for (let i = 0; i < schema.required.length; i++) {
-      const subSchema = properties[schema.required[i]];
-      if (this.isPlainObject(subSchema) && "default" in subSchema) {
+    const propertyKeys = Object.keys(properties);
+    for (let i = 0; i < propertyKeys.length; i++) {
+      const subSchema = properties[propertyKeys[i]];
+      if (
+        this.isPlainObject(subSchema) &&
+        hasOwn(subSchema, "default")
+      ) {
         return true;
       }
     }
@@ -1184,7 +1221,11 @@ export class SchemaShield {
   private rollbackDefaults(context: ValidationContext, start: number) {
     for (let index = context.defaults.length - 1; index >= start; index--) {
       const entry = context.defaults[index];
-      delete entry.target[entry.key];
+      if (entry.descriptor) {
+        definePropertyOrThrow(entry.target, entry.key, entry.descriptor);
+      } else {
+        delete entry.target[entry.key];
+      }
     }
     context.defaults.length = start;
   }
@@ -1308,7 +1349,7 @@ export class SchemaShield {
       this.compileCache.set(sourceSchema, compiledSchema);
     }
     if (schemaCanApplyDefaults) {
-      Object.defineProperty(compiledSchema, "_canApplyDefaults", {
+      definePropertyOrThrow(compiledSchema, "_canApplyDefaults", {
         value: true,
         enumerable: false,
         configurable: false,
@@ -1371,6 +1412,25 @@ export class SchemaShield {
     const validators: ValidatorItem[] = [];
     const activeNames: string[] = [];
     const pendingCombinators: PendingCombinator[] = [];
+
+    if (
+      this.useDefaults !== false &&
+      this.getKeyword("properties") === keywords.properties &&
+      this.hasPropertyDefaults(schema)
+    ) {
+      const applyDefaults =
+        this.useDefaults === "empty"
+          ? applyEmptyPropertyDefaults
+          : applyPropertyDefaults;
+      validators.push({
+        name: applyDefaults.name,
+        validate: getNamedFunction<ValidateFunction>(
+          applyDefaults.name,
+          (data) => applyDefaults(compiledSchema, data, this)
+        )
+      });
+      activeNames.push(applyDefaults.name);
+    }
 
     if ("type" in schema) {
       const defineTypeError = getDefinedErrorFunctionForKey(
@@ -1518,18 +1578,8 @@ export class SchemaShield {
 
     const { type, $id, $ref, $validate, required, ...otherKeys } = schema; // Exclude handled keys
 
-    // In here we create an array of keys putting the require keyword last
-    // This is to ensure required properties are checked after defaults are applied
     const otherKeyNames = Object.keys(otherKeys);
-    const keyOrder = required
-      ? this.hasRequiredDefaults(schema)
-        ? [
-            ...(otherKeyNames.includes("properties") ? ["properties"] : []),
-            ...otherKeyNames.filter((key) => key !== "properties"),
-            "required"
-          ]
-        : ["required", ...otherKeyNames]
-      : otherKeyNames;
+    const keyOrder = required ? ["required", ...otherKeyNames] : otherKeyNames;
 
     for (const key of keyOrder) {
       const keywordFn = this.getKeyword(key);
@@ -1638,7 +1688,7 @@ export class SchemaShield {
     }
 
     if (this.isPlainObject(schema.properties)) {
-      Object.defineProperty(compiledSchema, "_propKeys", {
+      definePropertyOrThrow(compiledSchema, "_propKeys", {
         value: Object.keys(schema.properties),
         enumerable: false,
         configurable: false,
@@ -1646,19 +1696,25 @@ export class SchemaShield {
       });
     }
 
-    if (this.isPlainObject(schema.properties) && Array.isArray(schema.required)) {
-      const requiredDefaultKeys = schema.required.filter((key: string) => {
-        const property = schema.properties[key];
-        return (
-          property &&
-          typeof property === "object" &&
-          !Array.isArray(property) &&
-          Object.prototype.hasOwnProperty.call(property, "default")
-        );
-      });
-      if (requiredDefaultKeys.length > 0) {
-        Object.defineProperty(compiledSchema, "_requiredDefaultKeys", {
-          value: requiredDefaultKeys,
+    if (
+      this.useDefaults !== false &&
+      this.isPlainObject(schema.properties) &&
+      this.hasPropertyDefaults(schema)
+    ) {
+      const defaultKeys = Object.keys(schema.properties).filter(
+        (key: string) => {
+          const property = schema.properties[key];
+          return (
+            property &&
+            typeof property === "object" &&
+            !Array.isArray(property) &&
+            hasOwn(property, "default")
+          );
+        }
+      );
+      if (defaultKeys.length > 0) {
+        definePropertyOrThrow(compiledSchema, "_defaultKeys", {
+          value: defaultKeys,
           enumerable: false,
           configurable: false,
           writable: false
@@ -1825,7 +1881,7 @@ export class SchemaShield {
         }
         targetValidate = target.$validate;
       }
-      Object.defineProperty(node, "_resolvedRef", {
+      definePropertyOrThrow(node, "_resolvedRef", {
         value: targetValidate,
         enumerable: false,
         configurable: false,

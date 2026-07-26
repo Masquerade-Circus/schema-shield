@@ -1,11 +1,9 @@
 import { FormatFunction, KeywordFunction } from "../index";
 import { compilePatternMatcher } from "../utils/pattern-matcher";
+import { definePropertyOrThrow } from "../utils/main-utils";
 
-type LastStringResultCache = {
-  data: string;
-  result: boolean;
-  hasValue: boolean;
-};
+const PATTERN_MATCH_CACHE_LIMIT = 512;
+const FORMAT_RESULT_CACHE_LIMIT = 512;
 
 function hasAtLeastCodePoints(value: string, limit: number): boolean {
   let count = 0;
@@ -76,7 +74,7 @@ export const StringKeywords: Record<string, KeywordFunction> = {
       | undefined;
 
     let patternMatchCache = (schema as any)._patternMatchCache as
-      | LastStringResultCache
+      | Map<string, boolean>
       | undefined;
 
     if (!patternMatch) {
@@ -87,7 +85,7 @@ export const StringKeywords: Record<string, KeywordFunction> = {
             ? (value: string) => compiled.test(value)
             : compiled;
 
-        Object.defineProperty(schema, "_patternMatch", {
+        definePropertyOrThrow(schema, "_patternMatch", {
           value: patternMatch,
           enumerable: false,
           configurable: false,
@@ -102,19 +100,15 @@ export const StringKeywords: Record<string, KeywordFunction> = {
     }
 
     if (!patternMatchCache) {
-      patternMatchCache = {
-        data: "",
-        result: false,
-        hasValue: false
-      };
-      Object.defineProperty(schema, "_patternMatchCache", {
+      patternMatchCache = new Map<string, boolean>();
+      definePropertyOrThrow(schema, "_patternMatchCache", {
         value: patternMatchCache,
         enumerable: false,
         configurable: false,
         writable: false
       });
-    } else if (patternMatchCache.hasValue && patternMatchCache.data === data) {
-      if (patternMatchCache.result) {
+    } else if (patternMatchCache.has(data)) {
+      if (patternMatchCache.get(data)) {
         return;
       }
 
@@ -122,9 +116,9 @@ export const StringKeywords: Record<string, KeywordFunction> = {
     }
 
     const isMatch = patternMatch(data);
-    patternMatchCache.data = data;
-    patternMatchCache.result = isMatch;
-    patternMatchCache.hasValue = true;
+    if (patternMatchCache.size < PATTERN_MATCH_CACHE_LIMIT) {
+      patternMatchCache.set(data, isMatch);
+    }
 
     if (isMatch) {
       return;
@@ -148,12 +142,12 @@ export const StringKeywords: Record<string, KeywordFunction> = {
       | boolean
       | undefined;
     let formatResultCache = (schema as any)._formatResultCache as
-      | LastStringResultCache
+      | Map<string, boolean>
       | undefined;
 
     if (formatValidate === undefined) {
       formatValidate = instance.getFormat(schema.format);
-      Object.defineProperty(schema, "_formatValidate", {
+      definePropertyOrThrow(schema, "_formatValidate", {
         value: formatValidate,
         enumerable: false,
         configurable: false,
@@ -171,7 +165,7 @@ export const StringKeywords: Record<string, KeywordFunction> = {
         formatValidate
       );
 
-      Object.defineProperty(schema, "_formatResultCacheEnabled", {
+      definePropertyOrThrow(schema, "_formatResultCacheEnabled", {
         value: formatResultCacheEnabled,
         enumerable: false,
         configurable: false,
@@ -188,19 +182,15 @@ export const StringKeywords: Record<string, KeywordFunction> = {
     }
 
     if (!formatResultCache) {
-      formatResultCache = {
-        data: "",
-        result: false,
-        hasValue: false
-      };
-      Object.defineProperty(schema, "_formatResultCache", {
+      formatResultCache = new Map<string, boolean>();
+      definePropertyOrThrow(schema, "_formatResultCache", {
         value: formatResultCache,
         enumerable: false,
         configurable: false,
         writable: false
       });
-    } else if (formatResultCache.hasValue && formatResultCache.data === data) {
-      if (formatResultCache.result) {
+    } else if (formatResultCache.has(data)) {
+      if (formatResultCache.get(data)) {
         return;
       }
 
@@ -208,9 +198,9 @@ export const StringKeywords: Record<string, KeywordFunction> = {
     }
 
     const isValid = formatValidate(data);
-    formatResultCache.data = data;
-    formatResultCache.result = isValid;
-    formatResultCache.hasValue = true;
+    if (formatResultCache.size < FORMAT_RESULT_CACHE_LIMIT) {
+      formatResultCache.set(data, isValid);
+    }
 
     if (isValid) {
       return;
