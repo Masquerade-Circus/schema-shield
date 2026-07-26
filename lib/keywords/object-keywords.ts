@@ -1,6 +1,10 @@
-import { isCompiledSchema } from "../utils/main-utils";
+import {
+  definePropertyOrThrow,
+  hasOwn,
+  isCompiledSchema
+} from "../utils/main-utils";
 
-import { KeywordFunction } from "../index";
+import type { KeywordFunction, SchemaShield } from "../index";
 import { deepCloneUnfreeze } from "../utils/deep-freeze";
 import { compilePatternMatcher } from "../utils/pattern-matcher";
 
@@ -10,6 +14,43 @@ type PatternPropertyEntry = {
   schemaProp: any;
   match: (key: string) => boolean;
 };
+
+interface ApplyPropertyDefaultsFunction {
+  (schema: Record<string, any>, data: any, instance: SchemaShield): void;
+}
+
+function createApplyPropertyDefaults(
+  replaceEmpty: boolean
+): ApplyPropertyDefaultsFunction {
+  return function applyPropertyDefaults(schema, data, instance) {
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      return;
+    }
+
+    const defaultKeys = (schema as any)._defaultKeys as string[];
+    for (let i = 0; i < defaultKeys.length; i++) {
+      const key = defaultKeys[i];
+      const hasOwnValue = hasOwn(data, key);
+      const value = hasOwnValue ? data[key] : undefined;
+      if (
+        hasOwnValue &&
+        value !== undefined &&
+        (!replaceEmpty || (value !== null && value !== ""))
+      ) {
+        continue;
+      }
+
+      instance.setDefault(
+        data,
+        key,
+        deepCloneUnfreeze(schema.properties[key].default)
+      );
+    }
+  };
+}
+
+export const applyPropertyDefaults = createApplyPropertyDefaults(false);
+export const applyEmptyPropertyDefaults = createApplyPropertyDefaults(true);
 
 function getPatternPropertyEntries(schema: Record<string, any>) {
   let entries = (schema as any)._patternPropertyEntries as
@@ -45,7 +86,7 @@ function getPatternPropertyEntries(schema: Record<string, any>) {
     };
   }
 
-  Object.defineProperty(schema, "_patternPropertyEntries", {
+  definePropertyOrThrow(schema, "_patternPropertyEntries", {
     value: entries,
     enumerable: false,
     configurable: false,
@@ -71,7 +112,7 @@ function getPatternKeyMatchIndexes(
     }
   } else {
     cache = new Map<string, number[]>();
-    Object.defineProperty(schema, "_patternKeyMatchIndexCache", {
+    definePropertyOrThrow(schema, "_patternKeyMatchIndexCache", {
       value: cache,
       enumerable: false,
       configurable: false,
@@ -102,7 +143,7 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
 
     for (let i = 0; i < schema.required.length; i++) {
       const key = schema.required[i];
-      if (!Object.prototype.hasOwnProperty.call(data, key)) {
+      if (!hasOwn(data, key)) {
         return defineError("Required property is missing", {
           item: key,
           data: data[key]
@@ -120,40 +161,11 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
 
     const propKeys = (schema as any)._propKeys as string[];
 
-    const requiredDefaultKeys = (schema as any)._requiredDefaultKeys as
-      | string[]
-      | undefined;
-    if (requiredDefaultKeys) {
-      const stagedDefaults: Array<{ key: string; value: any }> = [];
-      for (let i = 0; i < requiredDefaultKeys.length; i++) {
-        const key = requiredDefaultKeys[i];
-        if (Object.prototype.hasOwnProperty.call(data, key)) {
-          continue;
-        }
-        const schemaProp = schema.properties[key];
-        const value = deepCloneUnfreeze(schemaProp.default);
-        const error = (schemaProp as any).$validate(value);
-        if (error) {
-          return defineError("Default property is invalid", {
-            item: key,
-            cause: error,
-            data: schemaProp.default
-          });
-        }
-        stagedDefaults.push({ key, value });
-      }
-
-      for (let i = 0; i < stagedDefaults.length; i++) {
-        const staged = stagedDefaults[i];
-        instance.setDefault(data, staged.key, staged.value);
-      }
-    }
-
     for (let i = 0; i < propKeys.length; i++) {
       const key = propKeys[i];
       const schemaProp = schema.properties[key];
 
-      if (!Object.prototype.hasOwnProperty.call(data, key)) {
+      if (!hasOwn(data, key)) {
         continue;
       }
 
@@ -193,7 +205,7 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
     }
 
     for (const key in data) {
-      if (!Object.prototype.hasOwnProperty.call(data, key)) {
+      if (!hasOwn(data, key)) {
         continue;
       }
 
@@ -215,7 +227,7 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
 
     let count = 0;
     for (const key in data) {
-      if (!Object.prototype.hasOwnProperty.call(data, key)) {
+      if (!hasOwn(data, key)) {
         continue;
       }
       count++;
@@ -234,7 +246,7 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
 
     let count = 0;
     for (const key in data) {
-      if (!Object.prototype.hasOwnProperty.call(data, key)) {
+      if (!hasOwn(data, key)) {
         continue;
       }
       count++;
@@ -259,7 +271,7 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
       apValidate = isCompiledSchema(schema.additionalProperties)
         ? schema.additionalProperties.$validate
         : null;
-      Object.defineProperty(schema, "_apValidate", {
+      definePropertyOrThrow(schema, "_apValidate", {
         value: apValidate,
         enumerable: false,
         configurable: false,
@@ -270,13 +282,13 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
     const patternEntries = getPatternPropertyEntries(schema);
 
     for (const key in data) {
-      if (!Object.prototype.hasOwnProperty.call(data, key)) {
+      if (!hasOwn(data, key)) {
         continue;
       }
 
       if (
         schema.properties &&
-        Object.prototype.hasOwnProperty.call(schema.properties, key)
+        hasOwn(schema.properties, key)
       ) {
         continue;
       }
@@ -319,7 +331,7 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
     }
 
     for (const key in data) {
-      if (!Object.prototype.hasOwnProperty.call(data, key)) {
+      if (!hasOwn(data, key)) {
         continue;
       }
 
@@ -328,7 +340,7 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
       if (matchingIndexes.length === 0) {
         if (
           schema.additionalProperties === false &&
-          !(schema.properties && Object.prototype.hasOwnProperty.call(schema.properties, key))
+          !(schema.properties && hasOwn(schema.properties, key))
         ) {
           return defineError("Additional properties are not allowed", {
             item: key,
@@ -378,7 +390,7 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
     if (typeof pn === "boolean") {
       if (pn === false) {
         for (const key in data) {
-          if (Object.prototype.hasOwnProperty.call(data, key)) {
+          if (hasOwn(data, key)) {
             return defineError("Properties are not allowed", { data });
           }
         }
@@ -393,7 +405,7 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
     }
 
     for (const key in data) {
-      if (!Object.prototype.hasOwnProperty.call(data, key)) {
+      if (!hasOwn(data, key)) {
         continue;
       }
       const error = validate(key);

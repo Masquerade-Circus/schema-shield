@@ -26,6 +26,19 @@ __export(lib_exports, {
 module.exports = __toCommonJS(lib_exports);
 
 // lib/utils/main-utils.ts
+var hasOwnPropertyIntrinsic = Object.prototype.hasOwnProperty;
+var hasOwnPropertyCall = Function.prototype.call.bind(
+  hasOwnPropertyIntrinsic
+);
+function definePropertyOrThrow(target, key, descriptor) {
+  if (!Reflect.defineProperty(target, key, descriptor)) {
+    throw new TypeError(`Cannot define property "${String(key)}"`);
+  }
+  return target;
+}
+function hasOwn(target, key) {
+  return hasOwnPropertyCall(target, key);
+}
 var ValidationError = class extends Error {
   code;
   message;
@@ -130,7 +143,7 @@ function isCompiledSchema(subSchema) {
   return !!subSchema && typeof subSchema === "object" && !Array.isArray(subSchema) && "$validate" in subSchema;
 }
 function getNamedFunction(name, fn) {
-  return Object.defineProperty(fn, "name", { value: name });
+  return definePropertyOrThrow(fn, "name", { value: name });
 }
 function resolvePath(root, path) {
   if (!path || path === "#") {
@@ -822,7 +835,7 @@ var ArrayKeywords = {
     let tupleLength = schema._tupleItemsLength;
     if (tupleLength === void 0) {
       tupleLength = schema.items.length;
-      Object.defineProperty(schema, "_tupleItemsLength", {
+      definePropertyOrThrow(schema, "_tupleItemsLength", {
         value: tupleLength,
         enumerable: false,
         configurable: false,
@@ -981,7 +994,7 @@ function isPlainObject(value) {
   if (!value || typeof value !== "object") {
     return false;
   }
-  const proto = Object.getPrototypeOf(value);
+  const proto = Reflect.getPrototypeOf(value);
   return proto === Object.prototype || proto === null;
 }
 function canUseStructuredClone(value) {
@@ -1076,7 +1089,7 @@ function deepCloneUnfreeze(obj, cloneClassInstances = false, seen = /* @__PURE__
         seen.set(source, clone);
         return clone;
       }
-      clone = Object.create(Object.getPrototypeOf(source));
+      clone = Object.create(Reflect.getPrototypeOf(source));
       seen.set(source, clone);
       break;
     }
@@ -1105,7 +1118,7 @@ function deepCloneUnfreeze(obj, cloneClassInstances = false, seen = /* @__PURE__
         seen
       );
     }
-    Object.defineProperty(clone, key, descriptor);
+    definePropertyOrThrow(clone, key, descriptor);
   }
   return clone;
 }
@@ -1248,6 +1261,29 @@ function compilePatternMatcher(pattern) {
 
 // lib/keywords/object-keywords.ts
 var PATTERN_KEY_CACHE_LIMIT = 512;
+function createApplyPropertyDefaults(replaceEmpty) {
+  return function applyPropertyDefaults2(schema, data, instance) {
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      return;
+    }
+    const defaultKeys = schema._defaultKeys;
+    for (let i = 0; i < defaultKeys.length; i++) {
+      const key = defaultKeys[i];
+      const hasOwnValue = hasOwn(data, key);
+      const value = hasOwnValue ? data[key] : void 0;
+      if (hasOwnValue && value !== void 0 && (!replaceEmpty || value !== null && value !== "")) {
+        continue;
+      }
+      instance.setDefault(
+        data,
+        key,
+        deepCloneUnfreeze(schema.properties[key].default)
+      );
+    }
+  };
+}
+var applyPropertyDefaults = createApplyPropertyDefaults(false);
+var applyEmptyPropertyDefaults = createApplyPropertyDefaults(true);
 function getPatternPropertyEntries(schema) {
   let entries = schema._patternPropertyEntries;
   if (entries) {
@@ -1267,7 +1303,7 @@ function getPatternPropertyEntries(schema) {
       match
     };
   }
-  Object.defineProperty(schema, "_patternPropertyEntries", {
+  definePropertyOrThrow(schema, "_patternPropertyEntries", {
     value: entries,
     enumerable: false,
     configurable: false,
@@ -1284,7 +1320,7 @@ function getPatternKeyMatchIndexes(schema, key, entries) {
     }
   } else {
     cache = /* @__PURE__ */ new Map();
-    Object.defineProperty(schema, "_patternKeyMatchIndexCache", {
+    definePropertyOrThrow(schema, "_patternKeyMatchIndexCache", {
       value: cache,
       enumerable: false,
       configurable: false,
@@ -1309,7 +1345,7 @@ var ObjectKeywords = {
     }
     for (let i = 0; i < schema.required.length; i++) {
       const key = schema.required[i];
-      if (!Object.prototype.hasOwnProperty.call(data, key)) {
+      if (!hasOwn(data, key)) {
         return defineError("Required property is missing", {
           item: key,
           data: data[key]
@@ -1323,35 +1359,10 @@ var ObjectKeywords = {
       return;
     }
     const propKeys = schema._propKeys;
-    const requiredDefaultKeys = schema._requiredDefaultKeys;
-    if (requiredDefaultKeys) {
-      const stagedDefaults = [];
-      for (let i = 0; i < requiredDefaultKeys.length; i++) {
-        const key = requiredDefaultKeys[i];
-        if (Object.prototype.hasOwnProperty.call(data, key)) {
-          continue;
-        }
-        const schemaProp = schema.properties[key];
-        const value = deepCloneUnfreeze(schemaProp.default);
-        const error = schemaProp.$validate(value);
-        if (error) {
-          return defineError("Default property is invalid", {
-            item: key,
-            cause: error,
-            data: schemaProp.default
-          });
-        }
-        stagedDefaults.push({ key, value });
-      }
-      for (let i = 0; i < stagedDefaults.length; i++) {
-        const staged = stagedDefaults[i];
-        instance.setDefault(data, staged.key, staged.value);
-      }
-    }
     for (let i = 0; i < propKeys.length; i++) {
       const key = propKeys[i];
       const schemaProp = schema.properties[key];
-      if (!Object.prototype.hasOwnProperty.call(data, key)) {
+      if (!hasOwn(data, key)) {
         continue;
       }
       if (typeof schemaProp === "boolean") {
@@ -1386,7 +1397,7 @@ var ObjectKeywords = {
       return;
     }
     for (const key in data) {
-      if (!Object.prototype.hasOwnProperty.call(data, key)) {
+      if (!hasOwn(data, key)) {
         continue;
       }
       const error = validate(data[key]);
@@ -1405,7 +1416,7 @@ var ObjectKeywords = {
     }
     let count = 0;
     for (const key in data) {
-      if (!Object.prototype.hasOwnProperty.call(data, key)) {
+      if (!hasOwn(data, key)) {
         continue;
       }
       count++;
@@ -1421,7 +1432,7 @@ var ObjectKeywords = {
     }
     let count = 0;
     for (const key in data) {
-      if (!Object.prototype.hasOwnProperty.call(data, key)) {
+      if (!hasOwn(data, key)) {
         continue;
       }
       count++;
@@ -1438,7 +1449,7 @@ var ObjectKeywords = {
     let apValidate = schema._apValidate;
     if (apValidate === void 0) {
       apValidate = isCompiledSchema(schema.additionalProperties) ? schema.additionalProperties.$validate : null;
-      Object.defineProperty(schema, "_apValidate", {
+      definePropertyOrThrow(schema, "_apValidate", {
         value: apValidate,
         enumerable: false,
         configurable: false,
@@ -1447,10 +1458,10 @@ var ObjectKeywords = {
     }
     const patternEntries = getPatternPropertyEntries(schema);
     for (const key in data) {
-      if (!Object.prototype.hasOwnProperty.call(data, key)) {
+      if (!hasOwn(data, key)) {
         continue;
       }
-      if (schema.properties && Object.prototype.hasOwnProperty.call(schema.properties, key)) {
+      if (schema.properties && hasOwn(schema.properties, key)) {
         continue;
       }
       if (patternEntries && patternEntries.length) {
@@ -1486,12 +1497,12 @@ var ObjectKeywords = {
       return;
     }
     for (const key in data) {
-      if (!Object.prototype.hasOwnProperty.call(data, key)) {
+      if (!hasOwn(data, key)) {
         continue;
       }
       const matchingIndexes = getPatternKeyMatchIndexes(schema, key, patternEntries);
       if (matchingIndexes.length === 0) {
-        if (schema.additionalProperties === false && !(schema.properties && Object.prototype.hasOwnProperty.call(schema.properties, key))) {
+        if (schema.additionalProperties === false && !(schema.properties && hasOwn(schema.properties, key))) {
           return defineError("Additional properties are not allowed", {
             item: key,
             data: data[key]
@@ -1532,7 +1543,7 @@ var ObjectKeywords = {
     if (typeof pn === "boolean") {
       if (pn === false) {
         for (const key in data) {
-          if (Object.prototype.hasOwnProperty.call(data, key)) {
+          if (hasOwn(data, key)) {
             return defineError("Properties are not allowed", { data });
           }
         }
@@ -1544,7 +1555,7 @@ var ObjectKeywords = {
       return;
     }
     for (const key in data) {
-      if (!Object.prototype.hasOwnProperty.call(data, key)) {
+      if (!hasOwn(data, key)) {
         continue;
       }
       const error = validate(key);
@@ -1643,7 +1654,7 @@ function getBranchEntries(schema, key) {
   for (let i = 0; i < source.length; i++) {
     entries.push(toBranchEntry(source[i]));
   }
-  Object.defineProperty(schema, cacheKey, {
+  definePropertyOrThrow(schema, cacheKey, {
     value: entries,
     enumerable: false,
     configurable: false,
@@ -1808,7 +1819,7 @@ var OtherKeywords = {
         }
       }
       enumCache = { primitiveSet, objectValues };
-      Object.defineProperty(schema, "_enumCache", {
+      definePropertyOrThrow(schema, "_enumCache", {
         value: enumCache,
         enumerable: false,
         configurable: false,
@@ -1961,7 +1972,7 @@ var StringKeywords = {
       try {
         const compiled = compilePatternMatcher(schema.pattern);
         patternMatch = compiled instanceof RegExp ? (value) => compiled.test(value) : compiled;
-        Object.defineProperty(schema, "_patternMatch", {
+        definePropertyOrThrow(schema, "_patternMatch", {
           value: patternMatch,
           enumerable: false,
           configurable: false,
@@ -1976,7 +1987,7 @@ var StringKeywords = {
     }
     if (!patternMatchCache) {
       patternMatchCache = /* @__PURE__ */ new Map();
-      Object.defineProperty(schema, "_patternMatchCache", {
+      definePropertyOrThrow(schema, "_patternMatchCache", {
         value: patternMatchCache,
         enumerable: false,
         configurable: false,
@@ -2008,7 +2019,7 @@ var StringKeywords = {
     let formatResultCache = schema._formatResultCache;
     if (formatValidate === void 0) {
       formatValidate = instance.getFormat(schema.format);
-      Object.defineProperty(schema, "_formatValidate", {
+      definePropertyOrThrow(schema, "_formatValidate", {
         value: formatValidate,
         enumerable: false,
         configurable: false,
@@ -2023,7 +2034,7 @@ var StringKeywords = {
         schema.format,
         formatValidate
       );
-      Object.defineProperty(schema, "_formatResultCacheEnabled", {
+      definePropertyOrThrow(schema, "_formatResultCacheEnabled", {
         value: formatResultCacheEnabled,
         enumerable: false,
         configurable: false,
@@ -2038,7 +2049,7 @@ var StringKeywords = {
     }
     if (!formatResultCache) {
       formatResultCache = /* @__PURE__ */ new Map();
-      Object.defineProperty(schema, "_formatResultCache", {
+      definePropertyOrThrow(schema, "_formatResultCache", {
         value: formatResultCache,
         enumerable: false,
         configurable: false,
@@ -2094,6 +2105,7 @@ var SchemaShield = class {
   formats = {};
   keywords = {};
   immutable = false;
+  useDefaults = false;
   rootSchema = null;
   failFast = true;
   maxDepth;
@@ -2104,7 +2116,8 @@ var SchemaShield = class {
   constructor({
     immutable = false,
     failFast = true,
-    maxDepth = 128
+    maxDepth = 128,
+    useDefaults = false
   } = {}) {
     if (!Number.isInteger(maxDepth) || maxDepth < 1 || maxDepth > 256) {
       const error = new ValidationError("maxDepth must be an integer from 1 to 256");
@@ -2112,9 +2125,18 @@ var SchemaShield = class {
       error.keyword = "maxDepth";
       throw error;
     }
+    if (useDefaults !== false && useDefaults !== true && useDefaults !== "empty") {
+      const error = new ValidationError(
+        'useDefaults must be false, true, or "empty"'
+      );
+      error.code = "INVALID_USE_DEFAULTS";
+      error.keyword = "useDefaults";
+      throw error;
+    }
     this.immutable = immutable;
     this.failFast = failFast;
     this.maxDepth = maxDepth;
+    this.useDefaults = useDefaults;
     for (const [type, validator] of Object.entries(Types)) {
       if (validator) {
         this.addType(type, validator);
@@ -2132,9 +2154,13 @@ var SchemaShield = class {
   setDefault(target, key, value) {
     const context = this.validationContexts[this.validationContexts.length - 1];
     if (context) {
-      context.defaults.push({ target, key });
+      context.defaults.push({
+        target,
+        key,
+        descriptor: Reflect.getOwnPropertyDescriptor(target, key)
+      });
     }
-    Object.defineProperty(target, key, {
+    definePropertyOrThrow(target, key, {
       value,
       enumerable: true,
       configurable: true,
@@ -2540,7 +2566,7 @@ var SchemaShield = class {
       }
       visiting.add(entry.value);
       stack.push({ ...entry, exit: true });
-      if (this.hasRequiredDefaults(entry.value)) {
+      if (this.useDefaults !== false && this.hasPropertyDefaults(entry.value)) {
         requiresMutationJournal = true;
       }
       for (const key of Object.keys(entry.value)) {
@@ -2604,7 +2630,7 @@ var SchemaShield = class {
             const keyword = this.getKeyword(key);
             return !!keyword && keyword !== keywords[key];
           });
-          if (this.hasRequiredDefaults(entry.value) || hasCustomKeyword || typeof entry.value.$ref === "string" || children2.some((child) => mutableSchemas.has(child))) {
+          if (this.useDefaults !== false && this.hasPropertyDefaults(entry.value) || hasCustomKeyword || typeof entry.value.$ref === "string" || children2.some((child) => mutableSchemas.has(child))) {
             mutableSchemas.add(entry.value);
           }
           continue;
@@ -2654,7 +2680,7 @@ var SchemaShield = class {
     let depthGuardState = null;
     if (analysis.requiresDepthGuard) {
       depthGuardState = this.installDepthGuards(compiledSchema);
-      Object.defineProperty(compiledSchema, "_requiresDepthGuard", {
+      definePropertyOrThrow(compiledSchema, "_requiresDepthGuard", {
         value: true,
         enumerable: false,
         configurable: false,
@@ -2842,7 +2868,7 @@ var SchemaShield = class {
     if (schema._hasRef === true) {
       return;
     }
-    Object.defineProperty(schema, "_hasRef", {
+    definePropertyOrThrow(schema, "_hasRef", {
       value: true,
       enumerable: false,
       configurable: false,
@@ -2900,14 +2926,15 @@ var SchemaShield = class {
         return false;
     }
   }
-  hasRequiredDefaults(schema) {
+  hasPropertyDefaults(schema) {
     const properties = schema.properties;
-    if (!this.isPlainObject(properties) || !Array.isArray(schema.required)) {
+    if (!this.isPlainObject(properties)) {
       return false;
     }
-    for (let i = 0; i < schema.required.length; i++) {
-      const subSchema = properties[schema.required[i]];
-      if (this.isPlainObject(subSchema) && "default" in subSchema) {
+    const propertyKeys = Object.keys(properties);
+    for (let i = 0; i < propertyKeys.length; i++) {
+      const subSchema = properties[propertyKeys[i]];
+      if (this.isPlainObject(subSchema) && hasOwn(subSchema, "default")) {
         return true;
       }
     }
@@ -2919,7 +2946,11 @@ var SchemaShield = class {
   rollbackDefaults(context, start) {
     for (let index = context.defaults.length - 1; index >= start; index--) {
       const entry = context.defaults[index];
-      delete entry.target[entry.key];
+      if (entry.descriptor) {
+        definePropertyOrThrow(entry.target, entry.key, entry.descriptor);
+      } else {
+        delete entry.target[entry.key];
+      }
     }
     context.defaults.length = start;
   }
@@ -3031,7 +3062,7 @@ var SchemaShield = class {
       this.compileCache.set(sourceSchema, compiledSchema);
     }
     if (schemaCanApplyDefaults) {
-      Object.defineProperty(compiledSchema, "_canApplyDefaults", {
+      definePropertyOrThrow(compiledSchema, "_canApplyDefaults", {
         value: true,
         enumerable: false,
         configurable: false,
@@ -3085,6 +3116,17 @@ var SchemaShield = class {
     const validators = [];
     const activeNames = [];
     const pendingCombinators = [];
+    if (this.useDefaults !== false && this.getKeyword("properties") === keywords.properties && this.hasPropertyDefaults(schema)) {
+      const applyDefaults = this.useDefaults === "empty" ? applyEmptyPropertyDefaults : applyPropertyDefaults;
+      validators.push({
+        name: applyDefaults.name,
+        validate: getNamedFunction(
+          applyDefaults.name,
+          (data) => applyDefaults(compiledSchema, data, this)
+        )
+      });
+      activeNames.push(applyDefaults.name);
+    }
     if ("type" in schema) {
       const defineTypeError = getDefinedErrorFunctionForKey(
         "type",
@@ -3204,11 +3246,7 @@ var SchemaShield = class {
     }
     const { type, $id, $ref, $validate, required, ...otherKeys } = schema;
     const otherKeyNames = Object.keys(otherKeys);
-    const keyOrder = required ? this.hasRequiredDefaults(schema) ? [
-      ...otherKeyNames.includes("properties") ? ["properties"] : [],
-      ...otherKeyNames.filter((key) => key !== "properties"),
-      "required"
-    ] : ["required", ...otherKeyNames] : otherKeyNames;
+    const keyOrder = required ? ["required", ...otherKeyNames] : otherKeyNames;
     for (const key of keyOrder) {
       const keywordFn = this.getKeyword(key);
       if (!keywordFn) {
@@ -3292,21 +3330,23 @@ var SchemaShield = class {
       }
     }
     if (this.isPlainObject(schema.properties)) {
-      Object.defineProperty(compiledSchema, "_propKeys", {
+      definePropertyOrThrow(compiledSchema, "_propKeys", {
         value: Object.keys(schema.properties),
         enumerable: false,
         configurable: false,
         writable: false
       });
     }
-    if (this.isPlainObject(schema.properties) && Array.isArray(schema.required)) {
-      const requiredDefaultKeys = schema.required.filter((key) => {
-        const property = schema.properties[key];
-        return property && typeof property === "object" && !Array.isArray(property) && Object.prototype.hasOwnProperty.call(property, "default");
-      });
-      if (requiredDefaultKeys.length > 0) {
-        Object.defineProperty(compiledSchema, "_requiredDefaultKeys", {
-          value: requiredDefaultKeys,
+    if (this.useDefaults !== false && this.isPlainObject(schema.properties) && this.hasPropertyDefaults(schema)) {
+      const defaultKeys = Object.keys(schema.properties).filter(
+        (key) => {
+          const property = schema.properties[key];
+          return property && typeof property === "object" && !Array.isArray(property) && hasOwn(property, "default");
+        }
+      );
+      if (defaultKeys.length > 0) {
+        definePropertyOrThrow(compiledSchema, "_defaultKeys", {
+          value: defaultKeys,
           enumerable: false,
           configurable: false,
           writable: false
@@ -3442,7 +3482,7 @@ var SchemaShield = class {
         }
         targetValidate = target.$validate;
       }
-      Object.defineProperty(node, "_resolvedRef", {
+      definePropertyOrThrow(node, "_resolvedRef", {
         value: targetValidate,
         enumerable: false,
         configurable: false,

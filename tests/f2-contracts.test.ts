@@ -1,6 +1,7 @@
 import { describe, it } from "mocha";
 import expect from "expect";
 import { SchemaShield, ValidationError } from "../lib";
+import { hasOwn } from "./test-utils";
 
 describe("F2 production corrections", () => {
   it("preserves explicit error codes through nested causes", () => {
@@ -33,7 +34,7 @@ describe("F2 production corrections", () => {
     });
   });
 
-  it("stages required defaults atomically and defines __proto__ as own data", () => {
+  it("applies required defaults and defines __proto__ as own data", () => {
     const schema = JSON.parse(`{
       "type": "object",
       "minProperties": 2,
@@ -44,19 +45,25 @@ describe("F2 production corrections", () => {
       "required": ["safe", "__proto__"]
     }`);
     const input: Record<string, any> = {};
-    const result = new SchemaShield({ failFast: false }).compile(schema)(input);
+    const result = new SchemaShield({
+      failFast: false,
+      useDefaults: true
+    }).compile(schema)(input);
 
     expect(result.valid).toBe(true);
-    expect(Object.getPrototypeOf(input)).toBe(Object.prototype);
-    expect(Object.prototype.hasOwnProperty.call(input, "__proto__")).toBe(true);
+    expect(Reflect.getPrototypeOf(input)).toBe(Object.prototype);
+    expect(hasOwn(input, "__proto__")).toBe(true);
     expect(input.safe).toBe("value");
     expect(input.__proto__).toEqual({ polluted: true });
     expect(({} as any).polluted).toBeUndefined();
   });
 
-  it("does not apply any required default when one staged default is invalid", () => {
+  it("inserts defaults before normal runtime validation rejects an invalid one", () => {
     const input: Record<string, any> = {};
-    const result = new SchemaShield({ failFast: false }).compile({
+    const result = new SchemaShield({
+      failFast: false,
+      useDefaults: true
+    }).compile({
       properties: {
         first: { type: "string", default: "valid" },
         second: { type: "string", default: 2 }
@@ -65,7 +72,7 @@ describe("F2 production corrections", () => {
     })(input);
 
     expect(result.valid).toBe(false);
-    expect(input).toEqual({});
+    expect(input).toEqual({ first: "valid", second: 2 });
   });
 
   it("supports boolean and transitive local references", () => {

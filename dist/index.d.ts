@@ -36,6 +36,7 @@ export declare class SchemaShield {
     private formats;
     private keywords;
     private immutable;
+    private useDefaults;
     private rootSchema;
     private failFast;
     private maxDepth;
@@ -43,10 +44,11 @@ export declare class SchemaShield {
     private compileCache;
     private compilingRequiresContext;
     private compilingMutableSchemas;
-    constructor({ immutable, failFast, maxDepth }?: {
+    constructor({ immutable, failFast, maxDepth, useDefaults }?: {
         immutable?: boolean;
         failFast?: boolean;
         maxDepth?: number;
+        useDefaults?: boolean | "empty";
     });
     setDefault(target: Record<string, any>, key: string, value: any): void;
     addType(name: string, validator: TypeFunction, overwrite?: boolean): void;
@@ -79,7 +81,7 @@ export declare class SchemaShield {
     private normalizeSchemaForCompile;
     private markSchemaHasRef;
     private shouldSkipKeyword;
-    private hasRequiredDefaults;
+    private hasPropertyDefaults;
     private isDefaultTypeValidator;
     private rollbackDefaults;
     private isDepthError;

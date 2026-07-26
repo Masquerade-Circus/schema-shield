@@ -237,6 +237,7 @@ This keeps transport validation and domain rules in one validation system withou
 SchemaShield is designed for restrictive JavaScript environments and reusable validators.
 
 - **Zero runtime dependencies**
+- **Node.js 16.1 or later** for the CJS and ESM package entry points
 - **No runtime code generation**, for environments that prohibit `eval()` and `new Function()`
 - **Synchronous execution**, with no implicit network access
 - **Verified package paths** for CJS, ESM, browser, and TypeScript declarations
@@ -296,15 +297,17 @@ const { SchemaShield } = require("schema-shield");
 const schemaShield = new SchemaShield({
   immutable: false,
   failFast: true,
-  maxDepth: 128
+  maxDepth: 128,
+  useDefaults: false
 });
 ```
 
-| Option      | Default | Behavior                                                                                                                                         |
-| :---------- | :------ | :----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `immutable` | `false` | Set to `true` to preserve the original input when defaults or custom keywords could modify data.                                                 |
-| `failFast`  | `true`  | Returns `error: true` on failure. With `false`, built-ins and custom failures created with `defineError()` return a detailed `ValidationError`. A custom keyword that returns `true` directly still returns `error: true`. |
-| `maxDepth`  | `128`   | Sets the maximum recursive validation depth. Accepts an integer from `1` to `256`; validation paths that exceed it fail with a controlled error. |
+| Option        | Default | Behavior                                                                                                                                                                                                                   |
+| :------------ | :------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `immutable`   | `false` | Set to `true` to preserve the original input when defaults or custom keywords could modify data.                                                                                                                           |
+| `failFast`    | `true`  | Returns `error: true` on failure. With `false`, built-ins and custom failures created with `defineError()` return a detailed `ValidationError`. A custom keyword that returns `true` directly still returns `error: true`. |
+| `maxDepth`    | `128`   | Sets the maximum recursive validation depth. Accepts an integer from `1` to `256`; validation paths that exceed it fail with a controlled error.                                                                           |
+| `useDefaults` | `false` | Leaves `default` as a JSON Schema annotation. Use `true` to replace absent or `undefined` properties, or `"empty"` to also replace `null` and empty strings.                                                               |
 
 Schema compilation applies its own depth limit before a validator is created. This compile-time protection is separate from the runtime `maxDepth` option.
 
@@ -330,24 +333,41 @@ Every result contains:
 - `data`: The validated data, including any applied defaults.
 - `error`: `null` on success, `true` on a fail-fast failure or when a custom keyword returns `true` directly, or a `ValidationError` for built-in failures and custom failures created with `defineError()` when `failFast: false`.
 
-### Intelligent Defaults
+### Defaults
 
-SchemaShield applies a `default` value when both conditions are true:
+SchemaShield keeps data shaping explicit. By default, `default` remains a standard JSON Schema annotation and your input stays unchanged.
 
-1. The property is missing from the input data.
-2. The property is listed as `required` in the schema.
+Enable `useDefaults` when you want validated data to apply defaults and leave the validator ready to use:
+
+| `useDefaults`      | Behavior                                                                              |
+| :----------------- | :------------------------------------------------------------------------------------ |
+| Omitted or `false` | Keeps defaults as annotations and does not modify data.                               |
+| `true`             | Completes missing required and optional properties.                                   |
+| `"empty"`          | Also replaces `null` and `""`, while preserving valid values such as `0` and `false`. |
+
+Combine `useDefaults` with `immutable: true` to receive completed data without modifying the original object:
 
 ```javascript
-const validator = new SchemaShield().compile({
+const validateUser = new SchemaShield({
+  useDefaults: true,
+  immutable: true
+}).compile({
   type: "object",
   properties: {
-    role: { type: "string", default: "member" }
+    role: { type: "string", default: "member" },
+    theme: { type: "string", default: "system" }
   },
   required: ["role"]
 });
 
-validator({});
-// { valid: true, data: { role: "member" }, error: null }
+const input = {};
+const result = validateUser(input);
+
+input;
+// {}
+
+result.data;
+// { role: "member", theme: "system" }
 ```
 
 ## Errors and Debugging
@@ -508,7 +528,10 @@ interface DefineErrorOptions {
 }
 
 interface DefineErrorFunction {
-  (message: string, options?: DefineErrorOptions): ValidationError | void | true;
+  (
+    message: string,
+    options?: DefineErrorOptions
+  ): ValidationError | void | true;
 }
 
 interface KeywordFunction {

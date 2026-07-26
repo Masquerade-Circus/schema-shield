@@ -1,4 +1,7 @@
-import { isCompiledSchema } from "../utils/main-utils";
+import {
+  definePropertyOrThrow,
+  isCompiledSchema
+} from "../utils/main-utils";
 
 import { KeywordFunction } from "../index";
 import { hasChanged } from "../utils/has-changed";
@@ -210,7 +213,7 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
     let tupleLength = (schema as any)._tupleItemsLength as number | undefined;
     if (tupleLength === undefined) {
       tupleLength = schema.items.length;
-      Object.defineProperty(schema, "_tupleItemsLength", {
+      definePropertyOrThrow(schema, "_tupleItemsLength", {
         value: tupleLength,
         enumerable: false,
         configurable: false,

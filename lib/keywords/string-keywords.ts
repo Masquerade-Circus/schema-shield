@@ -1,5 +1,6 @@
 import { FormatFunction, KeywordFunction } from "../index";
 import { compilePatternMatcher } from "../utils/pattern-matcher";
+import { definePropertyOrThrow } from "../utils/main-utils";
 
 const PATTERN_MATCH_CACHE_LIMIT = 512;
 const FORMAT_RESULT_CACHE_LIMIT = 512;
@@ -84,7 +85,7 @@ export const StringKeywords: Record<string, KeywordFunction> = {
             ? (value: string) => compiled.test(value)
             : compiled;
 
-        Object.defineProperty(schema, "_patternMatch", {
+        definePropertyOrThrow(schema, "_patternMatch", {
           value: patternMatch,
           enumerable: false,
           configurable: false,
@@ -100,7 +101,7 @@ export const StringKeywords: Record<string, KeywordFunction> = {
 
     if (!patternMatchCache) {
       patternMatchCache = new Map<string, boolean>();
-      Object.defineProperty(schema, "_patternMatchCache", {
+      definePropertyOrThrow(schema, "_patternMatchCache", {
         value: patternMatchCache,
         enumerable: false,
         configurable: false,
@@ -146,7 +147,7 @@ export const StringKeywords: Record<string, KeywordFunction> = {
 
     if (formatValidate === undefined) {
       formatValidate = instance.getFormat(schema.format);
-      Object.defineProperty(schema, "_formatValidate", {
+      definePropertyOrThrow(schema, "_formatValidate", {
         value: formatValidate,
         enumerable: false,
         configurable: false,
@@ -164,7 +165,7 @@ export const StringKeywords: Record<string, KeywordFunction> = {
         formatValidate
       );
 
-      Object.defineProperty(schema, "_formatResultCacheEnabled", {
+      definePropertyOrThrow(schema, "_formatResultCacheEnabled", {
         value: formatResultCacheEnabled,
         enumerable: false,
         configurable: false,
@@ -182,7 +183,7 @@ export const StringKeywords: Record<string, KeywordFunction> = {
 
     if (!formatResultCache) {
       formatResultCache = new Map<string, boolean>();
-      Object.defineProperty(schema, "_formatResultCache", {
+      definePropertyOrThrow(schema, "_formatResultCache", {
         value: formatResultCache,
         enumerable: false,
         configurable: false,

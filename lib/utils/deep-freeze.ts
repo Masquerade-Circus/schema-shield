@@ -1,3 +1,5 @@
+import { definePropertyOrThrow } from "./main-utils";
+
 export function deepFreeze(
   obj: any,
   freezeClassInstances: boolean = false,
@@ -26,7 +28,7 @@ export function deepFreeze(
 
     // If the object is an instance of a class (not a plain object or array) we need to freeze the prototype
     if (freezeClassInstances) {
-      const proto = Object.getPrototypeOf(obj);
+      const proto = Reflect.getPrototypeOf(obj);
       if (proto && proto !== Object.prototype) {
         deepFreeze(proto, freezeClassInstances, seen);
       }
@@ -43,7 +45,7 @@ function isPlainObject(value: any): boolean {
     return false;
   }
 
-  const proto = Object.getPrototypeOf(value);
+  const proto = Reflect.getPrototypeOf(value);
   return proto === Object.prototype || proto === null;
 }
 
@@ -168,7 +170,7 @@ export function deepCloneUnfreeze<T>(
         seen.set(source, clone);
         return clone;
       }
-      clone = Object.create(Object.getPrototypeOf(source));
+      clone = Object.create(Reflect.getPrototypeOf(source));
       seen.set(source, clone);
       break;
     }
@@ -201,7 +203,7 @@ export function deepCloneUnfreeze<T>(
         seen
       );
     }
-    Object.defineProperty(clone, key, descriptor);
+    definePropertyOrThrow(clone, key, descriptor);
   }
 
   return clone;

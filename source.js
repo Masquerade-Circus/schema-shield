@@ -40,7 +40,6 @@ async function build({
   emitDeclarations = false,
   libCheck = false,
   minify = "cjs",
-  embedSourceMap = false,
   external = []
 }) {
   try {
@@ -89,7 +88,7 @@ async function build({
       write: false,
       minify: false,
       outdir: outdir,
-      target: "esnext",
+      target: "node16.1",
       loader: { ".js": "jsx", ".ts": "tsx", ".mjs": "jsx" },
       format: "cjs",
       metafile: true,
@@ -103,7 +102,7 @@ async function build({
       write: false,
       minify: false,
       outdir: outdir,
-      target: "esnext",
+      target: "node16.1",
       loader: { ".js": "jsx", ".ts": "tsx", ".mjs": "jsx" },
       format: "esm",
       metafile: true,
@@ -130,43 +129,60 @@ async function build({
 
     let result2;
     if (minify) {
-      let codeToMinify = minify === "esm" ? esm : cjs;
+      const browser = esbuild.buildSync({
+        entryPoints: [entryPoint],
+        bundle: true,
+        sourcemap: false,
+        write: false,
+        minify: false,
+        outdir: outdir,
+        target: "esnext",
+        loader: { ".js": "jsx", ".ts": "tsx", ".mjs": "jsx" },
+        format: minify === "esm" ? "esm" : "cjs",
+        external
+      });
+      let codeToMinify = browser.outputFiles[0].text;
       if (codeToMinify) {
-        let code = convertToUMD(codeToMinify.outputFiles[1].text, globalName);
-        result2 = await terser.minify(code, {
-          sourceMap: {
-            content: codeToMinify.outputFiles[0].text.toString()
-          },
-          compress: {
-            booleans_as_integers: false,
-            passes: 2,
-            unsafe_arrows: true,
-            unsafe_methods: true,
-            unsafe_proto: true,
-            unsafe_regexp: true,
-            unsafe_undefined: true
-          },
-          mangle: {
-            properties: false
-          },
-          output: {
-            wrap_func_args: false,
-            comments: false
-          },
-          ecma: 2022
-        });
+        let code = convertToUMD(codeToMinify, globalName);
+        const minifiedFile = `${outfile}.min.js`;
+        const sourceMapFile = `${minifiedFile}.map`;
+        result2 = await terser.minify(
+          { [`${outfile}.browser.js`]: code },
+          {
+            sourceMap: {
+              filename: minifiedFile,
+              url: sourceMapFile,
+              includeSources: true
+            },
+            compress: {
+              booleans_as_integers: false,
+              passes: 2,
+              unsafe_arrows: true,
+              unsafe_methods: true,
+              unsafe_proto: true,
+              unsafe_regexp: true,
+              unsafe_undefined: true
+            },
+            mangle: {
+              properties: false
+            },
+            output: {
+              wrap_func_args: false,
+              comments: false
+            },
+            ecma: 2022
+          }
+        );
 
-        let mapBase64 = Buffer.from(result2.map.toString()).toString("base64");
-        let map = `//# sourceMappingURL=data:application/json;charset=utf-8;base64,${mapBase64}`;
-        if (embedSourceMap) {
-          fs.writeFileSync(`${outfileName}.min.js`, result2.code + map);
-        } else {
-          fs.writeFileSync(
-            `${outfileName}.min.js`,
-            result2.code + `//# sourceMappingURL=${outfile}.min.js.map`
-          );
-          fs.writeFileSync(`${outfileName}.min.js.map`, map);
-        }
+        const minifiedPath = `${outfileName}.min.js`;
+        const sourceMapPath = `${minifiedPath}.map`;
+        fs.writeFileSync(minifiedPath, result2.code);
+        fs.writeFileSync(sourceMapPath, result2.map);
+        validateExternalSourceMap(
+          minifiedPath,
+          sourceMapPath,
+          sourceMapFile
+        );
       }
     }
 
@@ -189,6 +205,31 @@ async function build({
     console.log(`/${Array(header.length).fill("*").join("")}/`);
   } catch (e) {
     console.error(e);
+    process.exitCode = 1;
+  }
+}
+
+function validateExternalSourceMap(minifiedPath, sourceMapPath, sourceMapFile) {
+  const minified = fs.readFileSync(minifiedPath, "utf8");
+  const references = [
+    ...minified.matchAll(/\/\/# sourceMappingURL=([^\s]+)/g)
+  ];
+  if (references.length !== 1 || references[0][1] !== sourceMapFile) {
+    throw new Error("Minified bundle must contain one external source map URL");
+  }
+  if (minified.includes("sourceMappingURL=data:")) {
+    throw new Error("Minified bundle must not contain an inline source map");
+  }
+
+  const sourceMap = JSON.parse(fs.readFileSync(sourceMapPath, "utf8"));
+  if (
+    sourceMap.version !== 3 ||
+    sourceMap.file !== sourceMapFile.slice(0, -4) ||
+    !Array.isArray(sourceMap.sources) ||
+    !Array.isArray(sourceMap.sourcesContent) ||
+    typeof sourceMap.mappings !== "string"
+  ) {
+    throw new Error("Minified source map is incomplete or inconsistent");
   }
 }
 

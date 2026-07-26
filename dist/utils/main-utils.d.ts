@@ -1,4 +1,6 @@
-import { CompiledSchema } from "../index";
+import type { CompiledSchema } from "../index";
+export declare function definePropertyOrThrow<T extends object>(target: T, key: PropertyKey, descriptor: PropertyDescriptor): T;
+export declare function hasOwn(target: any, key: PropertyKey): boolean;
 interface ErrorTree {
     message: string;
     keyword: string;
@@ -39,7 +41,7 @@ export declare function getDefinedErrorFunctionForKey(key: string, schema: Compi
 export declare function escapeJsonPointerToken(value: string | number): string;
 export declare function getUTF16Length(str: any): number;
 export declare function isCompiledSchema(subSchema: any): subSchema is CompiledSchema;
-export declare function getNamedFunction<T>(name: string, fn: T): T;
+export declare function getNamedFunction<T extends object>(name: string, fn: T): T;
 export declare function resolvePath(root: any, path: string): any;
 export declare function areCloseEnough(a: number, b: number, epsilon?: number): boolean;
 export {};
