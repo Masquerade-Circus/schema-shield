@@ -4,20 +4,25 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 
 function isolatedProbe(operation: string, depth: number) {
+  const defaultsProbe = operation === "validate-defaults";
   const coordinator = path.resolve(
-    "performance/measure-compile-threshold.cjs"
+    defaultsProbe
+      ? "tests/validate-defaults-depth-probe.cjs"
+      : "performance/measure-compile-threshold.cjs"
   );
   const child = spawnSync(
     process.execPath,
-    [
-      coordinator,
-      "--operation",
-      operation,
-      "--depths",
-      String(depth),
-      "--phase",
-      "post-guard"
-    ],
+    defaultsProbe
+      ? [coordinator, String(depth)]
+      : [
+          coordinator,
+          "--operation",
+          operation,
+          "--depths",
+          String(depth),
+          "--phase",
+          "post-guard"
+        ],
     {
       cwd: path.resolve("."),
       encoding: "utf8",
