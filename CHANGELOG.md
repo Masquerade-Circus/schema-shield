@@ -1,5 +1,23 @@
 
 
+## [1.1.0](https://github.com/Masquerade-Circus/schema-shield/compare/1.0.5...1.1.0) (2026-07-26)
+
+
+### Features
+
+* add configurable defaults and modernize builds ([2224d9a](https://github.com/Masquerade-Circus/schema-shield/commit/2224d9a1e8f051528a8296f1d60290cef85ad81a))
+* rebuild validation with selective depth guards ([e4eb59c](https://github.com/Masquerade-Circus/schema-shield/commit/e4eb59cb0fc805e666ebcfed4a13e037202f2cae))
+
+
+### Bug Fixes
+
+* support Unicode lengths and local schema identifiers ([2e46326](https://github.com/Masquerade-Circus/schema-shield/commit/2e4632648ebd26a6ef73e64537ca8ccd5df2ee3a))
+
+
+### Documentation
+
+* improve README for adoption ([651dc29](https://github.com/Masquerade-Circus/schema-shield/commit/651dc296db8afc26cc503187467a578b2772c21c))
+
 ### [1.0.5](https://github.com/Masquerade-Circus/schema-shield/compare/1.0.4...1.0.5) (2026-03-02)
 
 
