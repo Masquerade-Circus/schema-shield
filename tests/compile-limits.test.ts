@@ -2,27 +2,21 @@ import { describe, it } from "mocha";
 import { expect } from "expect";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { SchemaShield, ValidationError } from "../lib";
 
 function isolatedProbe(operation: string, depth: number) {
-  const defaultsProbe = operation === "validate-defaults";
-  const coordinator = path.resolve(
-    defaultsProbe
-      ? "tests/validate-defaults-depth-probe.cjs"
-      : "performance/measure-compile-threshold.cjs"
-  );
+  const coordinator = path.resolve("performance/measure-compile-threshold.cjs");
   const child = spawnSync(
     process.execPath,
-    defaultsProbe
-      ? [coordinator, String(depth)]
-      : [
-          coordinator,
-          "--operation",
-          operation,
-          "--depths",
-          String(depth),
-          "--phase",
-          "post-guard"
-        ],
+    [
+      coordinator,
+      "--operation",
+      operation,
+      "--depths",
+      String(depth),
+      "--phase",
+      "post-guard"
+    ],
     {
       cwd: path.resolve("."),
       encoding: "utf8",
@@ -59,11 +53,46 @@ describe("compile safety contracts", () => {
     expect(result.error.rangeError).toBe(false);
   });
 
-  it("rolls back defaults after a depth rejection in an isolated process", () => {
-    const result = isolatedProbe("validate-defaults", 129);
-    expect(result.outcome).toBe("rejected");
-    expect(result.error.code).toBe("MAX_DEPTH_EXCEEDED");
-    expect(result.insertedDefaults).toBe(0);
+  it("rolls back defaults after a depth rejection", () => {
+    const schema = {
+      definitions: {
+        node: {
+          type: "object",
+          properties: {
+            marker: { type: "string", default: "inserted" },
+            child: { $ref: "#/definitions/node" }
+          },
+          required: ["marker"]
+        }
+      },
+      $ref: "#/definitions/node"
+    };
+    type ProbeNode = { marker?: string; child?: ProbeNode };
+    const input: ProbeNode = {};
+    let current = input;
+
+    for (let index = 0; index < 129; index++) {
+      current.child = {};
+      current = current.child;
+    }
+
+    const result = new SchemaShield({ failFast: false, useDefaults: true })
+      .compile(schema)(input);
+
+    expect(result.valid).toBe(false);
+    expect((result.error as ValidationError).getCause().code).toBe(
+      "MAX_DEPTH_EXCEEDED"
+    );
+
+    let insertedDefaults = 0;
+    let node: ProbeNode | undefined = input;
+    while (node !== undefined) {
+      if (Object.prototype.hasOwnProperty.call(node, "marker")) {
+        insertedDefaults++;
+      }
+      node = node.child;
+    }
+    expect(insertedDefaults).toBe(0);
   });
 
   it("uses the historical fail-fast sentinel in an isolated process", () => {

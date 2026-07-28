@@ -111,5 +111,6 @@ docs/.vuepress/.temp/
 docs/.vuepress/dist/
 benchmark
 .tmp
-docs
+docs/
 performance 
+benchmarks/
