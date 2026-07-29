@@ -61,6 +61,7 @@ const invalidResult = validateUser({ name: "Ada", age: 16 });
 - [Domain-Aware Validation](#domain-aware-validation)
 - [Edge, Serverless, and Package Support](#edge-serverless-and-package-support)
 - [Core API](#core-api)
+- [Register External Schemas](#register-external-schemas)
 - [Errors and Debugging](#errors-and-debugging)
 - [Extensibility](#extensibility)
 - [Supported Formats and Compatibility](#supported-formats-and-compatibility)
@@ -131,7 +132,7 @@ SchemaShield removes that runtime dependency:
 - No remote schema substitution during validation
 - No network latency inside the validation path
 
-> Treat external schemas as code dependencies. Review them, version them, and incorporate every required target into the single root schema passed to `compile()`. Deploy that controlled schema with the application.
+> Treat external schemas as code dependencies. Review them, version them, register them with `addSchema()`, and deploy those controlled objects with the application.
 
 ### No Runtime Code Generation
 
@@ -332,6 +333,56 @@ Every result contains:
 - `valid`: `true` when validation succeeds, otherwise `false`.
 - `data`: The validated data, including any applied defaults.
 - `error`: `null` on success, `true` on a fail-fast failure or when a custom keyword returns `true` directly, or a `ValidationError` for built-in failures and custom failures created with `defineError()` when `failFast: false`.
+
+### Register External Schemas
+
+`addSchema()` registers an already downloaded and reviewed JSON Schema object on one `SchemaShield` instance. Registration and reference resolution stay synchronous and local. An HTTP or HTTPS URI acts only as an identifier. SchemaShield never fetches it and performs no HTTP, DNS, file system, or other network I/O.
+
+```typescript
+import { SchemaShield } from "schema-shield";
+
+const shield = new SchemaShield();
+
+shield.addSchema(
+  {
+    $id: "address.json",
+    type: "object",
+    properties: {
+      city: { type: "string" }
+    },
+    required: ["city"]
+  },
+  {
+    uri: "https://retrieval.example/schemas/address-source.json",
+    aliases: ["https://schemas.example/address"]
+  }
+);
+
+const validateCustomer = shield.compile({
+  type: "object",
+  properties: {
+    address: { $ref: "https://schemas.example/address" }
+  },
+  required: ["address"]
+});
+```
+
+```typescript
+export interface AddSchemaOptions {
+  uri?: string;
+  aliases?: readonly string[];
+}
+
+class SchemaShield {
+  addSchema(schema: JSONSchema, options?: AddSchemaOptions): void;
+}
+```
+
+The `uri`, the root `$id` resolved against that URI, and every alias identify the same resource. Each identity must be absolute and omit fragments. Without `uri`, the root `$id` must already be absolute and omit fragments. Boolean schemas require an explicit `uri`.
+
+SchemaShield snapshots the schema at registration. Later mutations to the source object do not affect future compilations. New registrations affect future `compile()` calls, while existing validators retain their compiled targets. Duplicate identities fail with `DUPLICATE_SCHEMA_ID`, and unresolved references fail synchronously with `REFERENCE_NOT_FOUND`.
+
+Registered resources can reference each other in any registration order. Compilation follows only the reachable reference closure, including relative references, aliases, JSON Pointers, transitive references, and cycles protected by `maxDepth`. Runtime loading callbacks, overwrite, removal, `$dynamicRef`, `$recursiveRef`, and remote fetching are outside this API.
 
 ### Defaults
 
@@ -589,7 +640,7 @@ SchemaShield supports draft-06 and draft-07 JSON Schema validation and includes 
 - **JSON Pointers:** `json-pointer`, `relative-json-pointer`
 - **Regular expressions:** `regex`
 
-Remote references are intentionally outside the offline execution model described above.
+Remote retrieval is intentionally outside the offline execution model described above. Cross-document references work when the application has registered every reachable resource with `addSchema()`.
 
 Any built-in format can be replaced, and new formats can be added with `schemaShield.addFormat()`.
 
@@ -611,9 +662,9 @@ Immutable mode creates a deep copy before validation. This preserves ordinary JS
 
 Leave immutable mode disabled when input preservation is unnecessary and validation performance is the priority.
 
-### Remote References
+### External References
 
-SchemaShield does not retrieve remote references and does not provide an external registry or multi-document bundle API. Every referenced target must form part of the single root schema supplied to `compile()`.
+SchemaShield resolves cross-document references from the per-instance `addSchema()` registry. The application must provide each schema object locally. SchemaShield does not retrieve missing resources, invoke loaders, or perform network or file system access.
 
 ### Structural Equality
 
