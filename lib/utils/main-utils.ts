@@ -210,6 +210,9 @@ export function resolvePath(root: any, path: string): any {
 
     for (const part of parts) {
       const decodedUriPart = decodeURIComponent(part);
+      if (/~(?:[^01]|$)/.test(decodedUriPart)) {
+        throw new URIError("Invalid JSON Pointer escape");
+      }
       const key = decodedUriPart.replace(/~1/g, "/").replace(/~0/g, "~");
 
       if (current && typeof current === "object" && key in current) {

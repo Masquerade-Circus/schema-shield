@@ -3,6 +3,11 @@ import { DefineErrorFunction, ValidationError } from "./utils/main-utils";
 export { ValidationError } from "./utils/main-utils";
 export { deepCloneUnfreeze as deepClone } from "./utils/deep-freeze";
 export type Result = void | ValidationError | true;
+export type JSONSchema = boolean | Record<string, any>;
+export interface AddSchemaOptions {
+    uri?: string;
+    aliases?: readonly string[];
+}
 export interface ValidateSubschemaFunction {
     (schema: CompiledSchema, data: any): Result;
 }
@@ -44,6 +49,8 @@ export declare class SchemaShield {
     private compileCache;
     private compilingRequiresContext;
     private compilingMutableSchemas;
+    private registeredSchemas;
+    private registeredSchemaIds;
     constructor({ immutable, failFast, maxDepth, useDefaults }?: {
         immutable?: boolean;
         failFast?: boolean;
@@ -58,6 +65,13 @@ export declare class SchemaShield {
     isDefaultFormatValidator(format: string, validator: FormatFunction): boolean;
     addKeyword(name: string, validator: KeywordFunction, overwrite?: boolean): void;
     getKeyword(keyword: string): KeywordFunction | false;
+    addSchema(schema: JSONSchema, options?: AddSchemaOptions): void;
+    private schemaRegistrationError;
+    private absoluteResourceUri;
+    private resourceIdentityFromReference;
+    private isJsonSchema;
+    private isJsonObject;
+    private collectRegisteredNestedIdentities;
     getSchemaRef(path: string): CompiledSchema | undefined;
     getSchemaById(id: string): CompiledSchema | undefined;
     private depthError;
@@ -69,6 +83,7 @@ export declare class SchemaShield {
     private resourceUri;
     private buildReferenceRegistry;
     private resolveReferenceSource;
+    private collectReachableSchemas;
     private analyzeSchema;
     compile(schema: any): Validator;
     private prepareSchema;

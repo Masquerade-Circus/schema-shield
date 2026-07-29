@@ -127,6 +127,9 @@ function resolvePath(root, path) {
     let current = root;
     for (const part of parts) {
       const decodedUriPart = decodeURIComponent(part);
+      if (/~(?:[^01]|$)/.test(decodedUriPart)) {
+        throw new URIError("Invalid JSON Pointer escape");
+      }
       const key = decodedUriPart.replace(/~1/g, "/").replace(/~0/g, "~");
       if (current && typeof current === "object" && key in current) {
         current = current[key];
@@ -2086,6 +2089,8 @@ var SchemaShield = class {
   compileCache = /* @__PURE__ */ new WeakMap();
   compilingRequiresContext = false;
   compilingMutableSchemas = /* @__PURE__ */ new WeakSet();
+  registeredSchemas = [];
+  registeredSchemaIds = /* @__PURE__ */ new Map();
   constructor({
     immutable = false,
     failFast = true,
@@ -2197,6 +2202,217 @@ var SchemaShield = class {
   }
   getKeyword(keyword) {
     return this.keywords[keyword];
+  }
+  addSchema(schema, options = {}) {
+    if (!this.isJsonSchema(schema)) {
+      throw this.schemaRegistrationError(
+        "Invalid schema",
+        "INVALID_SCHEMA",
+        "schema"
+      );
+    }
+    if (!this.isJsonObject(options)) {
+      throw this.schemaRegistrationError(
+        "addSchema options must be an object",
+        "INVALID_ADD_SCHEMA_OPTIONS",
+        "addSchema"
+      );
+    }
+    let retrievalUri = null;
+    if (hasOwn(options, "uri")) {
+      retrievalUri = this.absoluteResourceUri(
+        options.uri,
+        "INVALID_SCHEMA_URI",
+        "uri"
+      );
+    }
+    let resolvedRootId = null;
+    if (schema !== true && schema !== false && hasOwn(schema, "$id")) {
+      if (typeof schema.$id !== "string") {
+        throw this.schemaRegistrationError(
+          "Root $id must be a string",
+          "INVALID_SCHEMA_ID",
+          "$id"
+        );
+      }
+      resolvedRootId = retrievalUri ? this.resourceIdentityFromReference(schema.$id, retrievalUri, "$id") : this.absoluteResourceUri(schema.$id, "INVALID_SCHEMA_ID", "$id");
+    }
+    if (retrievalUri === null && resolvedRootId === null) {
+      throw this.schemaRegistrationError(
+        "Schema requires an absolute root $id or an explicit uri",
+        "INVALID_SCHEMA_ID",
+        "$id"
+      );
+    }
+    const aliases = hasOwn(options, "aliases") ? options.aliases : [];
+    if (!Array.isArray(aliases)) {
+      throw this.schemaRegistrationError(
+        "Schema aliases must be an array",
+        "INVALID_SCHEMA_ALIAS",
+        "aliases"
+      );
+    }
+    const identities = /* @__PURE__ */ new Set();
+    if (retrievalUri !== null) {
+      identities.add(retrievalUri);
+    }
+    if (resolvedRootId !== null) {
+      identities.add(resolvedRootId);
+    }
+    for (const alias of aliases) {
+      identities.add(
+        this.absoluteResourceUri(alias, "INVALID_SCHEMA_ALIAS", "aliases")
+      );
+    }
+    for (const identity of identities) {
+      if (this.registeredSchemaIds.has(identity)) {
+        throw this.schemaRegistrationError(
+          `Duplicate schema identity: ${identity}`,
+          "DUPLICATE_SCHEMA_ID",
+          "$id"
+        );
+      }
+    }
+    const snapshot = deepCloneUnfreeze(schema);
+    const baseUri = retrievalUri || resolvedRootId;
+    const registration = Object.freeze({
+      schema: snapshot,
+      identities: Object.freeze(Array.from(identities)),
+      nestedIdentities: Object.freeze(
+        this.collectRegisteredNestedIdentities(snapshot, baseUri)
+      ),
+      baseUri
+    });
+    this.registeredSchemas.push(registration);
+    for (const identity of identities) {
+      this.registeredSchemaIds.set(identity, registration);
+    }
+  }
+  schemaRegistrationError(message, code, keyword) {
+    const error = new ValidationError(message);
+    error.code = code;
+    error.keyword = keyword;
+    return error;
+  }
+  absoluteResourceUri(value, code, keyword) {
+    if (typeof value !== "string") {
+      throw this.schemaRegistrationError(
+        `${keyword} must be an absolute URI without a fragment`,
+        code,
+        keyword
+      );
+    }
+    try {
+      const url = new URL(value);
+      if (url.hash !== "" || value.includes("#")) {
+        throw new Error("fragment");
+      }
+      return url.href;
+    } catch {
+      throw this.schemaRegistrationError(
+        `${keyword} must be an absolute URI without a fragment`,
+        code,
+        keyword
+      );
+    }
+  }
+  resourceIdentityFromReference(reference, baseUri, keyword) {
+    try {
+      const url = new URL(reference, baseUri);
+      if (url.hash !== "" || reference.includes("#")) {
+        throw new Error("fragment");
+      }
+      return url.href;
+    } catch {
+      throw this.schemaRegistrationError(
+        `${keyword} must resolve to a URI without a fragment`,
+        "INVALID_SCHEMA_ID",
+        keyword
+      );
+    }
+  }
+  isJsonSchema(schema) {
+    if (schema === true || schema === false) {
+      return true;
+    }
+    if (!this.isJsonObject(schema)) {
+      return false;
+    }
+    const seen = /* @__PURE__ */ new WeakSet();
+    const stack = [schema];
+    while (stack.length > 0) {
+      const value = stack.pop();
+      if (value === null || typeof value === "string" || typeof value === "boolean") {
+        continue;
+      }
+      if (typeof value === "number") {
+        if (!Number.isFinite(value)) {
+          return false;
+        }
+        continue;
+      }
+      if (typeof value !== "object") {
+        return false;
+      }
+      if (seen.has(value)) {
+        return false;
+      }
+      seen.add(value);
+      if (!Array.isArray(value) && !this.isJsonObject(value)) {
+        return false;
+      }
+      for (const key of Object.keys(value)) {
+        stack.push(value[key]);
+      }
+    }
+    return true;
+  }
+  isJsonObject(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return false;
+    }
+    const prototype = Reflect.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+  }
+  collectRegisteredNestedIdentities(schema, baseUri) {
+    if (schema === true || schema === false) {
+      return [];
+    }
+    const identities = /* @__PURE__ */ new Set();
+    const visited = /* @__PURE__ */ new WeakSet();
+    const stack = [
+      { node: schema, baseUri }
+    ];
+    while (stack.length > 0) {
+      const entry = stack.pop();
+      if (visited.has(entry.node)) {
+        continue;
+      }
+      visited.add(entry.node);
+      let childBase = entry.baseUri;
+      if (typeof entry.node.$id === "string") {
+        try {
+          childBase = new URL(entry.node.$id, entry.baseUri).href;
+          identities.add(childBase);
+          if (childBase.indexOf("#") === -1 || childBase.endsWith("#")) {
+            identities.add(this.resourceUri(childBase));
+          }
+        } catch {
+          childBase = entry.baseUri;
+        }
+      }
+      const children = this.registrySubschemaEntries(entry.node);
+      for (let index = children.length - 1; index >= 0; index--) {
+        const child = children[index];
+        if (!Array.isArray(child.value)) {
+          stack.push({
+            node: child.value,
+            baseUri: childBase
+          });
+        }
+      }
+    }
+    return Array.from(identities);
   }
   getSchemaRef(path) {
     if (!this.rootSchema) {
@@ -2319,7 +2535,7 @@ var SchemaShield = class {
   }
   registrySubschemaEntries(schema) {
     const children = [];
-    const mapKeys = ["properties", "patternProperties", "definitions"];
+    const mapKeys = ["properties", "patternProperties", "definitions", "$defs"];
     const arrayKeys = ["allOf", "anyOf", "oneOf", "items"];
     const singleKeys = [
       "items",
@@ -2412,12 +2628,15 @@ var SchemaShield = class {
       return Object.freeze({
         aliases,
         positions: Object.freeze(positions),
-        positionsByNode
+        positionsByNode,
+        ensureIndexed: () => {
+        },
+        resolveRegisteredIdentity: () => {
+        }
       });
     }
     const register = (uri, node) => {
-      const existing = aliases.get(uri);
-      if (existing && existing !== node) {
+      if (aliases.has(uri) && aliases.get(uri) !== node) {
         const error = new ValidationError(`Duplicate schema identity: ${uri}`);
         error.code = "DUPLICATE_SCHEMA_ID";
         error.keyword = "$id";
@@ -2425,81 +2644,181 @@ var SchemaShield = class {
       }
       aliases.set(uri, node);
     };
-    register(LOCAL_SCHEMA_BASE, schema);
-    const visited = /* @__PURE__ */ new WeakSet();
-    const stack = [
-      {
-        node: schema,
-        inheritedBase: LOCAL_SCHEMA_BASE,
-        resourceRoot: schema,
-        pointer: "#"
-      }
-    ];
-    while (stack.length > 0) {
-      const entry = stack.pop();
-      if (visited.has(entry.node)) {
-        continue;
-      }
-      visited.add(entry.node);
-      let baseUri = entry.inheritedBase;
-      let resourceRoot = entry.resourceRoot;
-      if (typeof entry.node.$id === "string" && !("$ref" in entry.node)) {
-        baseUri = this.resolveUri(entry.node.$id, entry.inheritedBase, "$id");
-        register(baseUri, entry.node);
-        if (baseUri.indexOf("#") === -1 || baseUri.endsWith("#")) {
-          resourceRoot = entry.node;
-          register(this.resourceUri(baseUri), entry.node);
-        }
-      }
-      const position = {
-        source: entry.node,
-        baseUri,
-        resourceRoot,
-        pointer: entry.pointer
-      };
-      positions.push(position);
-      positionsByNode.set(entry.node, position);
-      const children = this.registrySubschemaEntries(entry.node);
-      for (let index = children.length - 1; index >= 0; index--) {
-        const child = children[index];
-        if (Array.isArray(child.value)) {
-          continue;
-        }
-        stack.push({
-          node: child.value,
-          inheritedBase: baseUri,
-          resourceRoot,
-          pointer: `${entry.pointer}${child.pointer}`
-        });
+    for (const registration of this.registeredSchemas) {
+      for (const identity of registration.identities) {
+        register(identity, registration.schema);
       }
     }
+    register(LOCAL_SCHEMA_BASE, schema);
+    const registrationsByRoot = /* @__PURE__ */ new WeakMap();
+    const registrationsByNestedIdentity = /* @__PURE__ */ new Map();
+    for (const registration of this.registeredSchemas) {
+      if (registration.schema !== true && registration.schema !== false) {
+        registrationsByRoot.set(registration.schema, registration);
+      }
+      for (const identity of registration.nestedIdentities) {
+        const candidates = registrationsByNestedIdentity.get(identity);
+        if (candidates) {
+          candidates.push(registration);
+        } else {
+          registrationsByNestedIdentity.set(identity, [registration]);
+        }
+      }
+    }
+    const indexed = /* @__PURE__ */ new WeakSet();
+    const indexResource = (root, inheritedBase, idsBesideRefs) => {
+      if (indexed.has(root)) {
+        return;
+      }
+      const visited = /* @__PURE__ */ new WeakSet();
+      const stack = [
+        {
+          node: root,
+          inheritedBase,
+          resourceRoot: root,
+          pointer: "#"
+        }
+      ];
+      while (stack.length > 0) {
+        const entry = stack.pop();
+        if (visited.has(entry.node)) {
+          continue;
+        }
+        visited.add(entry.node);
+        let baseUri = entry.inheritedBase;
+        let resourceRoot = entry.resourceRoot;
+        if (typeof entry.node.$id === "string" && (idsBesideRefs || !("$ref" in entry.node))) {
+          baseUri = this.resolveUri(entry.node.$id, entry.inheritedBase, "$id");
+          register(baseUri, entry.node);
+          if (baseUri.indexOf("#") === -1 || baseUri.endsWith("#")) {
+            resourceRoot = entry.node;
+            register(this.resourceUri(baseUri), entry.node);
+          }
+        }
+        const position = {
+          source: entry.node,
+          baseUri,
+          resourceRoot,
+          pointer: entry.pointer
+        };
+        positions.push(position);
+        positionsByNode.set(entry.node, position);
+        const children = this.registrySubschemaEntries(entry.node);
+        for (let index = children.length - 1; index >= 0; index--) {
+          const child = children[index];
+          if (Array.isArray(child.value)) {
+            continue;
+          }
+          stack.push({
+            node: child.value,
+            inheritedBase: baseUri,
+            resourceRoot,
+            pointer: `${entry.pointer}${child.pointer}`
+          });
+        }
+      }
+      indexed.add(root);
+    };
+    indexResource(schema, LOCAL_SCHEMA_BASE, false);
+    const ensureIndexed = (target) => {
+      if (target === true || target === false) {
+        return;
+      }
+      const registration = registrationsByRoot.get(target);
+      if (registration) {
+        indexResource(target, registration.baseUri, true);
+      }
+    };
+    const resolveRegisteredIdentity = (uri) => {
+      const candidates = registrationsByNestedIdentity.get(uri) || [];
+      for (const registration of candidates) {
+        ensureIndexed(registration.schema);
+      }
+    };
     return Object.freeze({
       aliases,
-      positions: Object.freeze(positions),
-      positionsByNode
+      positions,
+      positionsByNode,
+      ensureIndexed,
+      resolveRegisteredIdentity
     });
   }
   resolveReferenceSource(ref, position, registry) {
     const resolvedUri = this.resolveUri(ref, position.baseUri, "$ref");
-    const exactTarget = registry.aliases.get(resolvedUri);
-    if (exactTarget) {
-      return exactTarget;
+    if (!registry.aliases.has(resolvedUri)) {
+      registry.resolveRegisteredIdentity(resolvedUri);
     }
-    const resourceRoot = registry.aliases.get(this.resourceUri(resolvedUri));
-    if (!resourceRoot) {
+    if (registry.aliases.has(resolvedUri)) {
+      const target = registry.aliases.get(resolvedUri);
+      registry.ensureIndexed(target);
+      return target;
+    }
+    const resourceIdentity = this.resourceUri(resolvedUri);
+    if (!registry.aliases.has(resourceIdentity)) {
+      registry.resolveRegisteredIdentity(resourceIdentity);
+    }
+    if (!registry.aliases.has(resourceIdentity)) {
       return;
     }
+    const resourceRoot = registry.aliases.get(resourceIdentity);
+    registry.ensureIndexed(resourceRoot);
     const hashIndex = resolvedUri.indexOf("#");
     const fragment = hashIndex === -1 ? "" : resolvedUri.slice(hashIndex + 1);
     if (fragment.length === 0) {
       return resourceRoot;
     }
-    if (fragment.startsWith("/")) {
-      return resolvePath(resourceRoot, `#${fragment}`);
+    if (fragment.startsWith("/") && resourceRoot !== true && resourceRoot !== false) {
+      try {
+        return resolvePath(resourceRoot, `#${fragment}`);
+      } catch {
+        const error = new ValidationError(`Reference not found: ${ref}`);
+        error.code = "REFERENCE_NOT_FOUND";
+        error.keyword = "$ref";
+        throw error;
+      }
     }
     return;
   }
-  analyzeSchema(schema, registry) {
+  collectReachableSchemas(schema, registry) {
+    const reachable = [];
+    const seen = /* @__PURE__ */ new WeakSet();
+    const stack = [schema];
+    const resolveBuiltinRefs = this.getKeyword("$ref") === keywords.$ref;
+    while (stack.length > 0) {
+      const current = stack.pop();
+      if (current === true || current === false) {
+        reachable.push(current);
+        continue;
+      }
+      if (!current || typeof current !== "object" || Array.isArray(current)) {
+        continue;
+      }
+      if (seen.has(current)) {
+        continue;
+      }
+      seen.add(current);
+      reachable.push(current);
+      const children = this.schemaChildren(current);
+      for (let index = children.length - 1; index >= 0; index--) {
+        stack.push(children[index]);
+      }
+      if (resolveBuiltinRefs && typeof current.$ref === "string") {
+        const position = registry.positionsByNode.get(current);
+        const target = position ? this.resolveReferenceSource(current.$ref, position, registry) : null;
+        if (target === null || typeof target === "undefined") {
+          const error = new ValidationError(
+            `Reference not found: ${current.$ref}`
+          );
+          error.code = "REFERENCE_NOT_FOUND";
+          error.keyword = "$ref";
+          throw error;
+        }
+        stack.push(target);
+      }
+    }
+    return reachable;
+  }
+  analyzeSchema(schema, registry, reachable) {
     if (!schema || typeof schema !== "object") {
       return {
         requiresDepthGuard: false,
@@ -2509,9 +2828,16 @@ var SchemaShield = class {
     }
     const visiting = /* @__PURE__ */ new WeakSet();
     const visited = /* @__PURE__ */ new WeakSet();
-    const stack = [{ value: schema, depth: 0, exit: false }];
+    const stack = [];
+    for (let index = reachable.length - 1; index >= 0; index--) {
+      const value = reachable[index];
+      if (value !== true && value !== false) {
+        stack.push({ value, depth: 0, exit: false });
+      }
+    }
     let requiresDepthGuard = false;
     let requiresMutationJournal = false;
+    const allNodes = [];
     while (stack.length > 0) {
       const entry = stack.pop();
       if (entry.exit) {
@@ -2538,6 +2864,7 @@ var SchemaShield = class {
         requiresDepthGuard = true;
       }
       visiting.add(entry.value);
+      allNodes.push(entry.value);
       stack.push({ ...entry, exit: true });
       if (this.useDefaults !== false && this.hasPropertyDefaults(entry.value)) {
         requiresMutationJournal = true;
@@ -2593,33 +2920,8 @@ var SchemaShield = class {
     }
     const mutableSchemas = /* @__PURE__ */ new WeakSet();
     if (requiresMutationJournal) {
-      const mutationStack = [{ value: schema, exit: false }];
-      const mutationVisited = /* @__PURE__ */ new WeakSet();
-      while (mutationStack.length > 0) {
-        const entry = mutationStack.pop();
-        if (entry.exit) {
-          const children2 = this.schemaChildren(entry.value);
-          const hasCustomKeyword = Object.keys(entry.value).some((key) => {
-            const keyword = this.getKeyword(key);
-            return !!keyword && keyword !== keywords[key];
-          });
-          if (this.useDefaults !== false && this.hasPropertyDefaults(entry.value) || hasCustomKeyword || typeof entry.value.$ref === "string" || children2.some((child) => mutableSchemas.has(child))) {
-            mutableSchemas.add(entry.value);
-          }
-          continue;
-        }
-        if (mutationVisited.has(entry.value)) {
-          continue;
-        }
-        mutationVisited.add(entry.value);
-        mutationStack.push({ value: entry.value, exit: true });
-        const children = this.schemaChildren(entry.value);
-        for (let index = children.length - 1; index >= 0; index--) {
-          mutationStack.push({
-            value: children[index],
-            exit: false
-          });
-        }
+      for (const node of allNodes) {
+        mutableSchemas.add(node);
       }
     }
     return { requiresDepthGuard, requiresMutationJournal, mutableSchemas };
@@ -2644,15 +2946,37 @@ var SchemaShield = class {
   }
   prepareSchema(schema) {
     const referenceRegistry = this.buildReferenceRegistry(schema);
-    const analysis = this.analyzeSchema(schema, referenceRegistry);
+    const reachableSchemas = this.collectReachableSchemas(
+      schema,
+      referenceRegistry
+    );
+    const analysis = this.analyzeSchema(
+      schema,
+      referenceRegistry,
+      reachableSchemas
+    );
     this.compileCache = /* @__PURE__ */ new WeakMap();
     this.compilingRequiresContext = analysis.requiresDepthGuard || analysis.requiresMutationJournal;
     this.compilingMutableSchemas = analysis.mutableSchemas;
     const compiledSchema = this.compileSchema(schema);
+    for (const reachableSchema of reachableSchemas) {
+      if (reachableSchema !== schema) {
+        this.compileSchema(reachableSchema);
+      }
+    }
     this.rootSchema = compiledSchema;
     let depthGuardState = null;
     if (analysis.requiresDepthGuard) {
-      depthGuardState = this.installDepthGuards(compiledSchema);
+      const compiledRoots = [compiledSchema];
+      for (const reachableSchema of reachableSchemas) {
+        if (reachableSchema !== true && reachableSchema !== false && reachableSchema !== schema) {
+          const compiledReachable = this.compileCache.get(reachableSchema);
+          if (compiledReachable) {
+            compiledRoots.push(compiledReachable);
+          }
+        }
+      }
+      depthGuardState = this.installDepthGuards(compiledRoots);
       definePropertyOrThrow(compiledSchema, "_requiresDepthGuard", {
         value: true,
         enumerable: false,
@@ -2956,9 +3280,9 @@ var SchemaShield = class {
       throw error;
     }
   }
-  installDepthGuards(root) {
+  installDepthGuards(roots) {
     const state = { context: null };
-    const stack = [root];
+    const stack = roots.slice();
     const seen = /* @__PURE__ */ new WeakSet();
     while (stack.length > 0) {
       const schema = stack.pop();
@@ -3270,7 +3594,7 @@ var SchemaShield = class {
         continue;
       }
       if (schema[key] && typeof schema[key] === "object" && !Array.isArray(schema[key])) {
-        if (key === "properties") {
+        if (key === "properties" || key === "definitions" || key === "$defs") {
           for (const subKey of Object.keys(schema[key])) {
             const compiledSubSchema2 = this.compileSchema(
               schema[key][subKey]
@@ -3388,26 +3712,12 @@ var SchemaShield = class {
     return false;
   }
   getCompiledReferenceTarget(ref, position, registry) {
-    const resolvedUri = this.resolveUri(ref, position.baseUri, "$ref");
-    const exactTarget = registry.aliases.get(resolvedUri);
-    if (exactTarget) {
-      return this.compileCache.get(exactTarget);
+    const target = this.resolveReferenceSource(ref, position, registry);
+    if (target === true || target === false) {
+      return target;
     }
-    const resourceRoot = registry.aliases.get(this.resourceUri(resolvedUri));
-    if (!resourceRoot) {
-      return;
-    }
-    const compiledResource = this.compileCache.get(resourceRoot);
-    if (!compiledResource) {
-      return;
-    }
-    const hashIndex = resolvedUri.indexOf("#");
-    const fragment = hashIndex === -1 ? "" : resolvedUri.slice(hashIndex + 1);
-    if (fragment.length === 0) {
-      return compiledResource;
-    }
-    if (fragment.startsWith("/")) {
-      return resolvePath(compiledResource, `#${fragment}`);
+    if (target && typeof target === "object") {
+      return this.compileCache.get(target);
     }
     return;
   }
@@ -3418,12 +3728,15 @@ var SchemaShield = class {
         continue;
       }
       const node = this.compileCache.get(position.source);
+      if (!node) {
+        continue;
+      }
       const target = this.getCompiledReferenceTarget(
         position.source.$ref,
         position,
         registry
       );
-      if (!node || typeof target === "undefined") {
+      if (typeof target === "undefined") {
         const error = new ValidationError(
           `Reference not found: ${position.source.$ref}`
         );

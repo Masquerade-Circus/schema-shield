@@ -27,6 +27,13 @@ export { deepCloneUnfreeze as deepClone } from "./utils/deep-freeze";
 
 export type Result = void | ValidationError | true;
 
+export type JSONSchema = boolean | Record<string, any>;
+
+export interface AddSchemaOptions {
+  uri?: string;
+  aliases?: readonly string[];
+}
+
 export interface ValidateSubschemaFunction {
   (schema: CompiledSchema, data: any): Result;
 }
@@ -100,9 +107,18 @@ interface SchemaPosition {
 }
 
 interface ReferenceRegistry {
-  aliases: ReadonlyMap<string, Record<string, any>>;
+  aliases: ReadonlyMap<string, JSONSchema>;
   positions: ReadonlyArray<SchemaPosition>;
   positionsByNode: WeakMap<object, SchemaPosition>;
+  ensureIndexed(schema: JSONSchema): void;
+  resolveRegisteredIdentity(uri: string): void;
+}
+
+interface RegisteredSchema {
+  schema: JSONSchema;
+  identities: readonly string[];
+  nestedIdentities: readonly string[];
+  baseUri: string;
 }
 
 interface DefaultMutation {
@@ -166,6 +182,8 @@ export class SchemaShield {
   private compileCache: WeakMap<object, CompiledSchema> = new WeakMap();
   private compilingRequiresContext = false;
   private compilingMutableSchemas: WeakSet<object> = new WeakSet();
+  private registeredSchemas: RegisteredSchema[] = [];
+  private registeredSchemaIds: Map<string, RegisteredSchema> = new Map();
 
   constructor({
     immutable = false,
@@ -303,6 +321,248 @@ export class SchemaShield {
 
   getKeyword(keyword: string): KeywordFunction | false {
     return this.keywords[keyword];
+  }
+
+  addSchema(schema: JSONSchema, options: AddSchemaOptions = {}): void {
+    if (!this.isJsonSchema(schema)) {
+      throw this.schemaRegistrationError(
+        "Invalid schema",
+        "INVALID_SCHEMA",
+        "schema"
+      );
+    }
+    if (!this.isJsonObject(options)) {
+      throw this.schemaRegistrationError(
+        "addSchema options must be an object",
+        "INVALID_ADD_SCHEMA_OPTIONS",
+        "addSchema"
+      );
+    }
+
+    let retrievalUri: string | null = null;
+    if (hasOwn(options, "uri")) {
+      retrievalUri = this.absoluteResourceUri(
+        options.uri,
+        "INVALID_SCHEMA_URI",
+        "uri"
+      );
+    }
+
+    let resolvedRootId: string | null = null;
+    if (schema !== true && schema !== false && hasOwn(schema, "$id")) {
+      if (typeof schema.$id !== "string") {
+        throw this.schemaRegistrationError(
+          "Root $id must be a string",
+          "INVALID_SCHEMA_ID",
+          "$id"
+        );
+      }
+      resolvedRootId = retrievalUri
+        ? this.resourceIdentityFromReference(schema.$id, retrievalUri, "$id")
+        : this.absoluteResourceUri(schema.$id, "INVALID_SCHEMA_ID", "$id");
+    }
+
+    if (retrievalUri === null && resolvedRootId === null) {
+      throw this.schemaRegistrationError(
+        "Schema requires an absolute root $id or an explicit uri",
+        "INVALID_SCHEMA_ID",
+        "$id"
+      );
+    }
+
+    const aliases = hasOwn(options, "aliases") ? options.aliases : [];
+    if (!Array.isArray(aliases)) {
+      throw this.schemaRegistrationError(
+        "Schema aliases must be an array",
+        "INVALID_SCHEMA_ALIAS",
+        "aliases"
+      );
+    }
+
+    const identities = new Set<string>();
+    if (retrievalUri !== null) {
+      identities.add(retrievalUri);
+    }
+    if (resolvedRootId !== null) {
+      identities.add(resolvedRootId);
+    }
+    for (const alias of aliases) {
+      identities.add(
+        this.absoluteResourceUri(alias, "INVALID_SCHEMA_ALIAS", "aliases")
+      );
+    }
+
+    for (const identity of identities) {
+      if (this.registeredSchemaIds.has(identity)) {
+        throw this.schemaRegistrationError(
+          `Duplicate schema identity: ${identity}`,
+          "DUPLICATE_SCHEMA_ID",
+          "$id"
+        );
+      }
+    }
+
+    const snapshot = deepCloneUnfreeze(schema) as JSONSchema;
+    const baseUri = retrievalUri || resolvedRootId!;
+    const registration: RegisteredSchema = Object.freeze({
+      schema: snapshot,
+      identities: Object.freeze(Array.from(identities)),
+      nestedIdentities: Object.freeze(
+        this.collectRegisteredNestedIdentities(snapshot, baseUri)
+      ),
+      baseUri
+    });
+    this.registeredSchemas.push(registration);
+    for (const identity of identities) {
+      this.registeredSchemaIds.set(identity, registration);
+    }
+  }
+
+  private schemaRegistrationError(message: string, code: string, keyword: string) {
+    const error = new ValidationError(message);
+    error.code = code;
+    error.keyword = keyword;
+    return error;
+  }
+
+  private absoluteResourceUri(value: any, code: string, keyword: string): string {
+    if (typeof value !== "string") {
+      throw this.schemaRegistrationError(
+        `${keyword} must be an absolute URI without a fragment`,
+        code,
+        keyword
+      );
+    }
+    try {
+      const url = new URL(value);
+      if (url.hash !== "" || value.includes("#")) {
+        throw new Error("fragment");
+      }
+      return url.href;
+    } catch {
+      throw this.schemaRegistrationError(
+        `${keyword} must be an absolute URI without a fragment`,
+        code,
+        keyword
+      );
+    }
+  }
+
+  private resourceIdentityFromReference(
+    reference: string,
+    baseUri: string,
+    keyword: string
+  ): string {
+    try {
+      const url = new URL(reference, baseUri);
+      if (url.hash !== "" || reference.includes("#")) {
+        throw new Error("fragment");
+      }
+      return url.href;
+    } catch {
+      throw this.schemaRegistrationError(
+        `${keyword} must resolve to a URI without a fragment`,
+        "INVALID_SCHEMA_ID",
+        keyword
+      );
+    }
+  }
+
+  private isJsonSchema(schema: any): schema is JSONSchema {
+    if (schema === true || schema === false) {
+      return true;
+    }
+    if (!this.isJsonObject(schema)) {
+      return false;
+    }
+
+    const seen = new WeakSet<object>();
+    const stack: any[] = [schema];
+    while (stack.length > 0) {
+      const value = stack.pop();
+      if (
+        value === null ||
+        typeof value === "string" ||
+        typeof value === "boolean"
+      ) {
+        continue;
+      }
+      if (typeof value === "number") {
+        if (!Number.isFinite(value)) {
+          return false;
+        }
+        continue;
+      }
+      if (typeof value !== "object") {
+        return false;
+      }
+      if (seen.has(value)) {
+        return false;
+      }
+      seen.add(value);
+      if (!Array.isArray(value) && !this.isJsonObject(value)) {
+        return false;
+      }
+      for (const key of Object.keys(value)) {
+        stack.push(value[key]);
+      }
+    }
+    return true;
+  }
+
+  private isJsonObject(value: any): value is Record<string, any> {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return false;
+    }
+    const prototype = Reflect.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+  }
+
+  private collectRegisteredNestedIdentities(
+    schema: JSONSchema,
+    baseUri: string
+  ): string[] {
+    if (schema === true || schema === false) {
+      return [];
+    }
+
+    const identities = new Set<string>();
+    const visited = new WeakSet<object>();
+    const stack: Array<{ node: Record<string, any>; baseUri: string }> = [
+      { node: schema, baseUri }
+    ];
+    while (stack.length > 0) {
+      const entry = stack.pop()!;
+      if (visited.has(entry.node)) {
+        continue;
+      }
+      visited.add(entry.node);
+
+      let childBase = entry.baseUri;
+      if (typeof entry.node.$id === "string") {
+        try {
+          childBase = new URL(entry.node.$id, entry.baseUri).href;
+          identities.add(childBase);
+          if (childBase.indexOf("#") === -1 || childBase.endsWith("#")) {
+            identities.add(this.resourceUri(childBase));
+          }
+        } catch {
+          childBase = entry.baseUri;
+        }
+      }
+
+      const children = this.registrySubschemaEntries(entry.node);
+      for (let index = children.length - 1; index >= 0; index--) {
+        const child = children[index];
+        if (!Array.isArray(child.value)) {
+          stack.push({
+            node: child.value as Record<string, any>,
+            baseUri: childBase
+          });
+        }
+      }
+    }
+    return Array.from(identities);
   }
 
   getSchemaRef(path: string): CompiledSchema | undefined {
@@ -456,7 +716,7 @@ export class SchemaShield {
     schema: Record<string, any>
   ): Array<{ value: object; pointer: string }> {
     const children: Array<{ value: object; pointer: string }> = [];
-    const mapKeys = ["properties", "patternProperties", "definitions"];
+    const mapKeys = ["properties", "patternProperties", "definitions", "$defs"];
     const arrayKeys = ["allOf", "anyOf", "oneOf", "items"];
     const singleKeys = [
       "items",
@@ -555,21 +815,22 @@ export class SchemaShield {
   }
 
   private buildReferenceRegistry(schema: any): ReferenceRegistry {
-    const aliases = new Map<string, Record<string, any>>();
+    const aliases = new Map<string, JSONSchema>();
     const positions: SchemaPosition[] = [];
     const positionsByNode = new WeakMap<object, SchemaPosition>();
 
     if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
       return Object.freeze({
-        aliases: aliases as ReadonlyMap<string, Record<string, any>>,
+        aliases: aliases as ReadonlyMap<string, JSONSchema>,
         positions: Object.freeze(positions),
-        positionsByNode
+        positionsByNode,
+        ensureIndexed: () => {},
+        resolveRegisteredIdentity: () => {}
       });
     }
 
-    const register = (uri: string, node: Record<string, any>) => {
-      const existing = aliases.get(uri);
-      if (existing && existing !== node) {
+    const register = (uri: string, node: JSONSchema) => {
+      if (aliases.has(uri) && aliases.get(uri) !== node) {
         const error = new ValidationError(`Duplicate schema identity: ${uri}`);
         error.code = "DUPLICATE_SCHEMA_ID";
         error.keyword = "$id";
@@ -577,69 +838,127 @@ export class SchemaShield {
       }
       aliases.set(uri, node);
     };
+
+    for (const registration of this.registeredSchemas) {
+      for (const identity of registration.identities) {
+        register(identity, registration.schema);
+      }
+    }
     register(LOCAL_SCHEMA_BASE, schema);
 
-    const visited = new WeakSet<object>();
-    const stack: Array<{
-      node: Record<string, any>;
-      inheritedBase: string;
-      resourceRoot: Record<string, any>;
-      pointer: string;
-    }> = [
-      {
-        node: schema,
-        inheritedBase: LOCAL_SCHEMA_BASE,
-        resourceRoot: schema,
-        pointer: "#"
+    const registrationsByRoot = new WeakMap<object, RegisteredSchema>();
+    const registrationsByNestedIdentity = new Map<string, RegisteredSchema[]>();
+    for (const registration of this.registeredSchemas) {
+      if (registration.schema !== true && registration.schema !== false) {
+        registrationsByRoot.set(registration.schema, registration);
       }
-    ];
-
-    while (stack.length > 0) {
-      const entry = stack.pop()!;
-      if (visited.has(entry.node)) {
-        continue;
-      }
-      visited.add(entry.node);
-
-      let baseUri = entry.inheritedBase;
-      let resourceRoot = entry.resourceRoot;
-      if (typeof entry.node.$id === "string" && !("$ref" in entry.node)) {
-        baseUri = this.resolveUri(entry.node.$id, entry.inheritedBase, "$id");
-        register(baseUri, entry.node);
-        if (baseUri.indexOf("#") === -1 || baseUri.endsWith("#")) {
-          resourceRoot = entry.node;
-          register(this.resourceUri(baseUri), entry.node);
+      for (const identity of registration.nestedIdentities) {
+        const candidates = registrationsByNestedIdentity.get(identity);
+        if (candidates) {
+          candidates.push(registration);
+        } else {
+          registrationsByNestedIdentity.set(identity, [registration]);
         }
-      }
-
-      const position = {
-        source: entry.node,
-        baseUri,
-        resourceRoot,
-        pointer: entry.pointer
-      };
-      positions.push(position);
-      positionsByNode.set(entry.node, position);
-
-      const children = this.registrySubschemaEntries(entry.node);
-      for (let index = children.length - 1; index >= 0; index--) {
-        const child = children[index];
-        if (Array.isArray(child.value)) {
-          continue;
-        }
-        stack.push({
-          node: child.value as Record<string, any>,
-          inheritedBase: baseUri,
-          resourceRoot,
-          pointer: `${entry.pointer}${child.pointer}`
-        });
       }
     }
 
+    const indexed = new WeakSet<object>();
+    const indexResource = (
+      root: Record<string, any>,
+      inheritedBase: string,
+      idsBesideRefs: boolean
+    ) => {
+      if (indexed.has(root)) {
+        return;
+      }
+
+      const visited = new WeakSet<object>();
+      const stack: Array<{
+        node: Record<string, any>;
+        inheritedBase: string;
+        resourceRoot: Record<string, any>;
+        pointer: string;
+      }> = [
+        {
+          node: root,
+          inheritedBase,
+          resourceRoot: root,
+          pointer: "#"
+        }
+      ];
+
+      while (stack.length > 0) {
+        const entry = stack.pop()!;
+        if (visited.has(entry.node)) {
+          continue;
+        }
+        visited.add(entry.node);
+
+        let baseUri = entry.inheritedBase;
+        let resourceRoot = entry.resourceRoot;
+        if (
+          typeof entry.node.$id === "string" &&
+          (idsBesideRefs || !("$ref" in entry.node))
+        ) {
+          baseUri = this.resolveUri(entry.node.$id, entry.inheritedBase, "$id");
+          register(baseUri, entry.node);
+          if (baseUri.indexOf("#") === -1 || baseUri.endsWith("#")) {
+            resourceRoot = entry.node;
+            register(this.resourceUri(baseUri), entry.node);
+          }
+        }
+
+        const position = {
+          source: entry.node,
+          baseUri,
+          resourceRoot,
+          pointer: entry.pointer
+        };
+        positions.push(position);
+        positionsByNode.set(entry.node, position);
+
+        const children = this.registrySubschemaEntries(entry.node);
+        for (let index = children.length - 1; index >= 0; index--) {
+          const child = children[index];
+          if (Array.isArray(child.value)) {
+            continue;
+          }
+          stack.push({
+            node: child.value as Record<string, any>,
+            inheritedBase: baseUri,
+            resourceRoot,
+            pointer: `${entry.pointer}${child.pointer}`
+          });
+        }
+      }
+
+      indexed.add(root);
+    };
+
+    indexResource(schema, LOCAL_SCHEMA_BASE, false);
+
+    const ensureIndexed = (target: JSONSchema) => {
+      if (target === true || target === false) {
+        return;
+      }
+      const registration = registrationsByRoot.get(target);
+      if (registration) {
+        indexResource(target, registration.baseUri, true);
+      }
+    };
+    const resolveRegisteredIdentity = (uri: string) => {
+      const candidates = registrationsByNestedIdentity.get(uri) || [];
+      for (const registration of candidates) {
+        ensureIndexed(registration.schema);
+      }
+    };
+
     return Object.freeze({
-      aliases: aliases as ReadonlyMap<string, Record<string, any>>,
-      positions: Object.freeze(positions),
-      positionsByNode
+      aliases: aliases as ReadonlyMap<string, JSONSchema>,
+      positions,
+      positionsByNode,
+      ensureIndexed,
+      resolveRegisteredIdentity
     });
   }
 
@@ -649,29 +968,102 @@ export class SchemaShield {
     registry: ReferenceRegistry
   ): any {
     const resolvedUri = this.resolveUri(ref, position.baseUri, "$ref");
-    const exactTarget = registry.aliases.get(resolvedUri);
-    if (exactTarget) {
-      return exactTarget;
+    if (!registry.aliases.has(resolvedUri)) {
+      registry.resolveRegisteredIdentity(resolvedUri);
+    }
+    if (registry.aliases.has(resolvedUri)) {
+      const target = registry.aliases.get(resolvedUri)!;
+      registry.ensureIndexed(target);
+      return target;
     }
 
-    const resourceRoot = registry.aliases.get(this.resourceUri(resolvedUri));
-    if (!resourceRoot) {
+    const resourceIdentity = this.resourceUri(resolvedUri);
+    if (!registry.aliases.has(resourceIdentity)) {
+      registry.resolveRegisteredIdentity(resourceIdentity);
+    }
+    if (!registry.aliases.has(resourceIdentity)) {
       return;
     }
+    const resourceRoot = registry.aliases.get(resourceIdentity)!;
+    registry.ensureIndexed(resourceRoot);
 
     const hashIndex = resolvedUri.indexOf("#");
     const fragment = hashIndex === -1 ? "" : resolvedUri.slice(hashIndex + 1);
     if (fragment.length === 0) {
       return resourceRoot;
     }
-    if (fragment.startsWith("/")) {
-      return resolvePath(resourceRoot, `#${fragment}`);
+    if (
+      fragment.startsWith("/") &&
+      resourceRoot !== true &&
+      resourceRoot !== false
+    ) {
+      try {
+        return resolvePath(resourceRoot, `#${fragment}`);
+      } catch {
+        const error = new ValidationError(`Reference not found: ${ref}`);
+        error.code = "REFERENCE_NOT_FOUND";
+        error.keyword = "$ref";
+        throw error;
+      }
     }
 
     return;
   }
 
-  private analyzeSchema(schema: any, registry: ReferenceRegistry): SchemaAnalysis {
+  private collectReachableSchemas(
+    schema: any,
+    registry: ReferenceRegistry
+  ): JSONSchema[] {
+    const reachable: JSONSchema[] = [];
+    const seen = new WeakSet<object>();
+    const stack: JSONSchema[] = [schema];
+    const resolveBuiltinRefs = this.getKeyword("$ref") === keywords.$ref;
+
+    while (stack.length > 0) {
+      const current = stack.pop()!;
+      if (current === true || current === false) {
+        reachable.push(current);
+        continue;
+      }
+      if (!current || typeof current !== "object" || Array.isArray(current)) {
+        continue;
+      }
+      if (seen.has(current)) {
+        continue;
+      }
+      seen.add(current);
+      reachable.push(current);
+
+      const children = this.schemaChildren(current);
+      for (let index = children.length - 1; index >= 0; index--) {
+        stack.push(children[index] as JSONSchema);
+      }
+
+      if (resolveBuiltinRefs && typeof current.$ref === "string") {
+        const position = registry.positionsByNode.get(current);
+        const target = position
+          ? this.resolveReferenceSource(current.$ref, position, registry)
+          : null;
+        if (target === null || typeof target === "undefined") {
+          const error = new ValidationError(
+            `Reference not found: ${current.$ref}`
+          );
+          error.code = "REFERENCE_NOT_FOUND";
+          error.keyword = "$ref";
+          throw error;
+        }
+        stack.push(target as JSONSchema);
+      }
+    }
+
+    return reachable;
+  }
+
+  private analyzeSchema(
+    schema: any,
+    registry: ReferenceRegistry,
+    reachable: JSONSchema[]
+  ): SchemaAnalysis {
     if (!schema || typeof schema !== "object") {
       return {
         requiresDepthGuard: false,
@@ -686,9 +1078,16 @@ export class SchemaShield {
       value: Record<string, any>;
       depth: number;
       exit: boolean;
-    }> = [{ value: schema, depth: 0, exit: false }];
+    }> = [];
+    for (let index = reachable.length - 1; index >= 0; index--) {
+      const value = reachable[index];
+      if (value !== true && value !== false) {
+        stack.push({ value, depth: 0, exit: false });
+      }
+    }
     let requiresDepthGuard = false;
     let requiresMutationJournal = false;
+    const allNodes: Record<string, any>[] = [];
 
     while (stack.length > 0) {
       const entry = stack.pop()!;
@@ -717,6 +1116,7 @@ export class SchemaShield {
       }
 
       visiting.add(entry.value);
+      allNodes.push(entry.value);
       stack.push({ ...entry, exit: true });
 
       if (this.useDefaults !== false && this.hasPropertyDefaults(entry.value)) {
@@ -785,42 +1185,8 @@ export class SchemaShield {
 
     const mutableSchemas = new WeakSet<object>();
     if (requiresMutationJournal) {
-      const mutationStack: Array<{
-        value: Record<string, any>;
-        exit: boolean;
-      }> = [{ value: schema, exit: false }];
-      const mutationVisited = new WeakSet<object>();
-      while (mutationStack.length > 0) {
-        const entry = mutationStack.pop()!;
-        if (entry.exit) {
-          const children = this.schemaChildren(entry.value);
-          const hasCustomKeyword = Object.keys(entry.value).some((key) => {
-            const keyword = this.getKeyword(key);
-            return !!keyword && keyword !== keywords[key];
-          });
-          if (
-            (this.useDefaults !== false &&
-              this.hasPropertyDefaults(entry.value)) ||
-            hasCustomKeyword ||
-            typeof entry.value.$ref === "string" ||
-            children.some((child) => mutableSchemas.has(child))
-          ) {
-            mutableSchemas.add(entry.value);
-          }
-          continue;
-        }
-        if (mutationVisited.has(entry.value)) {
-          continue;
-        }
-        mutationVisited.add(entry.value);
-        mutationStack.push({ value: entry.value, exit: true });
-        const children = this.schemaChildren(entry.value);
-        for (let index = children.length - 1; index >= 0; index--) {
-          mutationStack.push({
-            value: children[index] as Record<string, any>,
-            exit: false
-          });
-        }
+      for (const node of allNodes) {
+        mutableSchemas.add(node);
       }
     }
 
@@ -854,17 +1220,43 @@ export class SchemaShield {
 
   private prepareSchema(schema: any) {
     const referenceRegistry = this.buildReferenceRegistry(schema);
-    const analysis = this.analyzeSchema(schema, referenceRegistry);
+    const reachableSchemas = this.collectReachableSchemas(
+      schema,
+      referenceRegistry
+    );
+    const analysis = this.analyzeSchema(
+      schema,
+      referenceRegistry,
+      reachableSchemas
+    );
     this.compileCache = new WeakMap();
     this.compilingRequiresContext =
       analysis.requiresDepthGuard || analysis.requiresMutationJournal;
     this.compilingMutableSchemas = analysis.mutableSchemas;
     const compiledSchema = this.compileSchema(schema);
+    for (const reachableSchema of reachableSchemas) {
+      if (reachableSchema !== schema) {
+        this.compileSchema(reachableSchema);
+      }
+    }
     this.rootSchema = compiledSchema;
 
     let depthGuardState: DepthGuardState | null = null;
     if (analysis.requiresDepthGuard) {
-      depthGuardState = this.installDepthGuards(compiledSchema);
+      const compiledRoots: CompiledSchema[] = [compiledSchema];
+      for (const reachableSchema of reachableSchemas) {
+        if (
+          reachableSchema !== true &&
+          reachableSchema !== false &&
+          reachableSchema !== schema
+        ) {
+          const compiledReachable = this.compileCache.get(reachableSchema);
+          if (compiledReachable) {
+            compiledRoots.push(compiledReachable);
+          }
+        }
+      }
+      depthGuardState = this.installDepthGuards(compiledRoots);
       definePropertyOrThrow(compiledSchema, "_requiresDepthGuard", {
         value: true,
         enumerable: false,
@@ -1261,9 +1653,9 @@ export class SchemaShield {
     }
   }
 
-  private installDepthGuards(root: CompiledSchema): DepthGuardState {
+  private installDepthGuards(roots: CompiledSchema[]): DepthGuardState {
     const state: DepthGuardState = { context: null };
-    const stack: CompiledSchema[] = [root];
+    const stack: CompiledSchema[] = roots.slice();
     const seen = new WeakSet<object>();
 
     while (stack.length > 0) {
@@ -1649,7 +2041,7 @@ export class SchemaShield {
         typeof schema[key] === "object" &&
         !Array.isArray(schema[key])
       ) {
-        if (key === "properties") {
+        if (key === "properties" || key === "definitions" || key === "$defs") {
           for (const subKey of Object.keys(schema[key])) {
             const compiledSubSchema = this.compileSchema(
               schema[key][subKey]
@@ -1808,30 +2200,13 @@ export class SchemaShield {
     position: SchemaPosition,
     registry: ReferenceRegistry
   ): CompiledSchema | boolean | undefined {
-    const resolvedUri = this.resolveUri(ref, position.baseUri, "$ref");
-    const exactTarget = registry.aliases.get(resolvedUri);
-    if (exactTarget) {
-      return this.compileCache.get(exactTarget);
+    const target = this.resolveReferenceSource(ref, position, registry);
+    if (target === true || target === false) {
+      return target;
     }
-
-    const resourceRoot = registry.aliases.get(this.resourceUri(resolvedUri));
-    if (!resourceRoot) {
-      return;
+    if (target && typeof target === "object") {
+      return this.compileCache.get(target);
     }
-    const compiledResource = this.compileCache.get(resourceRoot);
-    if (!compiledResource) {
-      return;
-    }
-
-    const hashIndex = resolvedUri.indexOf("#");
-    const fragment = hashIndex === -1 ? "" : resolvedUri.slice(hashIndex + 1);
-    if (fragment.length === 0) {
-      return compiledResource;
-    }
-    if (fragment.startsWith("/")) {
-      return resolvePath(compiledResource, `#${fragment}`);
-    }
-
     return;
   }
 
@@ -1846,12 +2221,15 @@ export class SchemaShield {
       }
 
       const node = this.compileCache.get(position.source);
+      if (!node) {
+        continue;
+      }
       const target = this.getCompiledReferenceTarget(
         position.source.$ref,
         position,
         registry
       );
-      if (!node || typeof target === "undefined") {
+      if (typeof target === "undefined") {
         const error = new ValidationError(
           `Reference not found: ${position.source.$ref}`
         );
