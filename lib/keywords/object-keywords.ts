@@ -135,6 +135,43 @@ function getPatternKeyMatchIndexes(
   return indexes;
 }
 
+function decodeBase64(data: string): string | null {
+  if (
+    data.length % 4 !== 0 ||
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(
+      data
+    )
+  ) {
+    return null;
+  }
+
+  const alphabet =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const bytes: number[] = [];
+  for (let index = 0; index < data.length; index += 4) {
+    const first = alphabet.indexOf(data[index]);
+    const second = alphabet.indexOf(data[index + 1]);
+    const third = data[index + 2] === "=" ? 0 : alphabet.indexOf(data[index + 2]);
+    const fourth = data[index + 3] === "=" ? 0 : alphabet.indexOf(data[index + 3]);
+    const value = (first << 18) | (second << 12) | (third << 6) | fourth;
+    bytes.push((value >> 16) & 255);
+    if (data[index + 2] !== "=") {
+      bytes.push((value >> 8) & 255);
+    }
+    if (data[index + 3] !== "=") {
+      bytes.push(value & 255);
+    }
+  }
+
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(
+      new Uint8Array(bytes)
+    );
+  } catch {
+    return null;
+  }
+}
+
 export const ObjectKeywords: Record<string, KeywordFunction | false> = {
   required(schema, data, defineError) {
     if (!data || typeof data !== "object" || Array.isArray(data)) {
@@ -154,7 +191,7 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
     return;
   },
 
-  properties(schema, data, defineError, instance) {
+  properties(schema, data, defineError, _instance, validateSubschema) {
     if (!data || typeof data !== "object" || Array.isArray(data)) {
       return;
     }
@@ -166,6 +203,18 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
       const schemaProp = schema.properties[key];
 
       if (!hasOwn(data, key)) {
+        continue;
+      }
+
+      if (validateSubschema) {
+        const error = validateSubschema(schemaProp, data[key], { property: key });
+        if (error) {
+          return defineError("Property is invalid", {
+            item: key,
+            cause: error,
+            data: data[key]
+          });
+        }
         continue;
       }
 
@@ -258,7 +307,7 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
     return defineError("Too few properties", { data });
   },
 
-  additionalProperties(schema, data, defineError) {
+  additionalProperties(schema, data, defineError, _instance, validateSubschema) {
     if (!data || typeof data !== "object" || Array.isArray(data)) {
       return;
     }
@@ -306,6 +355,20 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
         });
       }
 
+      if (validateSubschema) {
+        const error = validateSubschema(schema.additionalProperties, data[key], {
+          property: key
+        });
+        if (error) {
+          return defineError("Additional properties are invalid", {
+            item: key,
+            cause: error,
+            data: data[key]
+          });
+        }
+        continue;
+      }
+
       if (apValidate) {
         const error = apValidate(data[key]);
         if (error) {
@@ -320,7 +383,7 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
 
     return;
   },
-  patternProperties(schema, data, defineError) {
+  patternProperties(schema, data, defineError, _instance, validateSubschema) {
     if (!data || typeof data !== "object" || Array.isArray(data)) {
       return;
     }
@@ -353,6 +416,18 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
 
       for (let j = 0; j < matchingIndexes.length; j++) {
         const schemaProp = patternEntries[matchingIndexes[j]].schemaProp;
+
+        if (validateSubschema) {
+          const error = validateSubschema(schemaProp, data[key], { property: key });
+          if (error) {
+            return defineError("Property is invalid", {
+              item: key,
+              cause: error,
+              data: data[key]
+            });
+          }
+          continue;
+        }
 
         if (typeof schemaProp === "boolean") {
           if (schemaProp === false) {
@@ -419,7 +494,7 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
     }
   },
 
-  dependencies(schema, data, defineError) {
+  dependencies(schema, data, defineError, _instance, validateSubschema) {
     if (!data || typeof data !== "object" || Array.isArray(data)) {
       return;
     }
@@ -454,7 +529,9 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
         }
         return defineError("Dependency is not satisfied", { data: dependency });
       }
-      const error = dependency.$validate(data);
+      const error = validateSubschema
+        ? validateSubschema(dependency, data)
+        : dependency.$validate(data);
       if (error) {
         return defineError("Dependency is not satisfied", {
           cause: error,
@@ -464,6 +541,139 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
     }
 
     return;
+  },
+
+  dependentRequired(schema, data, defineError) {
+    if (
+      !data ||
+      typeof data !== "object" ||
+      Array.isArray(data) ||
+      !schema.dependentRequired ||
+      typeof schema.dependentRequired !== "object" ||
+      Array.isArray(schema.dependentRequired)
+    ) {
+      return;
+    }
+
+    for (const key of Object.keys(schema.dependentRequired)) {
+      if (!hasOwn(data, key)) {
+        continue;
+      }
+      const required = schema.dependentRequired[key];
+      if (!Array.isArray(required)) {
+        continue;
+      }
+      for (let index = 0; index < required.length; index++) {
+        if (typeof required[index] !== "string" || hasOwn(data, required[index])) {
+          continue;
+        }
+        return defineError("Dependent property is missing", {
+          item: required[index],
+          data
+        });
+      }
+    }
+  },
+
+  dependentSchemas(schema, data, defineError, _instance, validateSubschema) {
+    if (
+      !data ||
+      typeof data !== "object" ||
+      Array.isArray(data) ||
+      !schema.dependentSchemas ||
+      typeof schema.dependentSchemas !== "object" ||
+      Array.isArray(schema.dependentSchemas)
+    ) {
+      return;
+    }
+
+    for (const key of Object.keys(schema.dependentSchemas)) {
+      if (!hasOwn(data, key)) {
+        continue;
+      }
+      const dependentSchema = schema.dependentSchemas[key];
+      if (dependentSchema === false) {
+        return defineError("Dependent schema is not satisfied", { data });
+      }
+      if (!isCompiledSchema(dependentSchema)) {
+        continue;
+      }
+      const error = validateSubschema
+        ? validateSubschema(dependentSchema, data)
+        : dependentSchema.$validate(data);
+      if (error) {
+        return defineError("Dependent schema is not satisfied", {
+          cause: error,
+          data
+        });
+      }
+    }
+  },
+
+  contentEncoding(schema, data, defineError) {
+    if (
+      typeof data !== "string" ||
+      schema.contentEncoding !== "base64"
+    ) {
+      return;
+    }
+    if (decodeBase64(data) !== null) {
+      return;
+    }
+    return defineError("String content encoding is invalid", { data });
+  },
+
+  contentMediaType(schema, data, defineError) {
+    if (
+      typeof data !== "string" ||
+      schema.contentMediaType !== "application/json"
+    ) {
+      return;
+    }
+
+    const content =
+      schema.contentEncoding === "base64" ? decodeBase64(data) : data;
+    if (content === null) {
+      return defineError("String content encoding is invalid", { data });
+    }
+    try {
+      JSON.parse(content);
+      return;
+    } catch {
+      return defineError("String content does not match its media type", {
+        data
+      });
+    }
+  },
+
+  unevaluatedProperties(
+    schema,
+    data,
+    defineError,
+    _instance,
+    validateSubschema
+  ) {
+    if (
+      !data ||
+      typeof data !== "object" ||
+      Array.isArray(data) ||
+      !validateSubschema
+    ) {
+      return;
+    }
+    for (const key of Object.keys(data)) {
+      const error = validateSubschema(schema.unevaluatedProperties, data[key], {
+        property: key,
+        unevaluated: true
+      });
+      if (error) {
+        return defineError("Unevaluated property is invalid", {
+          item: key,
+          cause: error,
+          data: data[key]
+        });
+      }
+    }
   },
 
   // Required by other keywords but not used as a function itself
@@ -481,8 +691,7 @@ export const ObjectKeywords: Record<string, KeywordFunction | false> = {
   description: false,
   $comment: false,
   examples: false,
-  contentMediaType: false,
-  contentEncoding: false,
+  contentSchema: false,
 
   // Not supported Open API keywords
   discriminator: false,
