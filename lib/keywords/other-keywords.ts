@@ -93,32 +93,45 @@ function evaluateAllOf(
 function evaluateAnyOf(
   branches: BranchEntry[],
   data: any,
-  defineError: DefineErrorFunction
+  defineError: DefineErrorFunction,
+  collectAll = false
 ): Result {
+  let matched = false;
   for (let i = 0; i < branches.length; i++) {
     const branch = branches[i];
     if (branch.kind === "validate") {
       if (!branch.validate(data)) {
-        return;
+        matched = true;
+        if (!collectAll) {
+          return;
+        }
       }
       continue;
     }
     if (branch.kind === "alwaysValid") {
-      return;
+      matched = true;
+      if (!collectAll) {
+        return;
+      }
+      continue;
     }
     if (branch.kind === "literal" && data === branch.value) {
-      return;
+      matched = true;
+      if (!collectAll) {
+        return;
+      }
     }
+  }
+  if (matched) {
+    return;
   }
   return defineError("Value is not valid", { data });
 }
 
 function evaluateOneOf(
   branches: BranchEntry[],
-  data: any,
-  defineError: DefineErrorFunction
-): { error: Result; winnerIndex: number } {
-  let validCount = 0;
+  data: any
+): number {
   let winnerIndex = -1;
   for (let i = 0; i < branches.length; i++) {
     const branch = branches[i];
@@ -131,23 +144,13 @@ function evaluateOneOf(
       isValid = data === branch.value;
     }
     if (isValid) {
-      validCount++;
-      winnerIndex = i;
-      if (validCount > 1) {
-        return {
-          error: defineError("Value is not valid", { data }),
-          winnerIndex: -1
-        };
+      if (winnerIndex !== -1) {
+        return -1;
       }
+      winnerIndex = i;
     }
   }
-  return {
-    error:
-      validCount === 1
-        ? undefined
-        : defineError("Value is not valid", { data }),
-    winnerIndex: validCount === 1 ? winnerIndex : -1
-  };
+  return winnerIndex;
 }
 
 export function createCombinatorValidator(
@@ -155,7 +158,8 @@ export function createCombinatorValidator(
   schema: any,
   defineError: DefineErrorFunction,
   validateSubschema?: ValidateSubschemaFunction,
-  transactions?: TransactionHooks
+  transactions?: TransactionHooks,
+  collectAnnotations = false
 ): ValidateFunction {
   const sourceBranches = getBranchEntries(schema, key);
   const branches = validateSubschema
@@ -174,9 +178,14 @@ export function createCombinatorValidator(
       return (data) => evaluateAllOf(branches, data, defineError);
     }
     if (key === "anyOf") {
-      return (data) => evaluateAnyOf(branches, data, defineError);
+      return (data) =>
+        evaluateAnyOf(branches, data, defineError, collectAnnotations);
     }
-    return (data) => evaluateOneOf(branches, data, defineError).error;
+    return (data) => {
+      if (evaluateOneOf(branches, data) === -1) {
+        return defineError("Value is not valid", { data });
+      }
+    };
   }
 
   if (key === "allOf") {
@@ -196,34 +205,41 @@ export function createCombinatorValidator(
   }
 
   if (key === "anyOf") {
-    return (data) => evaluateAnyOf(branches, data, defineError);
+    return (data) =>
+      evaluateAnyOf(branches, data, defineError, collectAnnotations);
   }
 
   return (data) => {
     const savepoint = transactions.savepoint();
-    const defaultsByBranch: DefaultMutation[][] = [];
-    const isolatedBranches = branches.map((branch, index): BranchEntry =>
-      branch.kind === "validate"
-        ? {
-            kind: "validate",
-            validate: (value) => {
-              const branchSavepoint = transactions.savepoint();
-              const error = branch.validate(value);
-              if (!error) {
-                defaultsByBranch[index] = transactions.capture(branchSavepoint);
-              }
-              return error;
-            }
-          }
-        : branch
-    );
+    let winnerIndex = -1;
+    let winnerDefaults: DefaultMutation[] = [];
     try {
-      const result = evaluateOneOf(isolatedBranches, data, defineError);
-      if (result.error) {
-        transactions.rollback(savepoint);
-        return result.error;
+      for (let index = 0; index < branches.length; index++) {
+        const branch = branches[index];
+        const branchSavepoint = transactions.savepoint();
+        let isValid = false;
+        if (branch.kind === "validate") {
+          isValid = !branch.validate(data);
+        } else if (branch.kind === "alwaysValid") {
+          isValid = true;
+        } else if (branch.kind === "literal") {
+          isValid = data === branch.value;
+        }
+        if (!isValid) {
+          continue;
+        }
+        if (winnerIndex !== -1) {
+          transactions.rollback(savepoint);
+          return defineError("Value is not valid", { data });
+        }
+        winnerIndex = index;
+        winnerDefaults = transactions.capture(branchSavepoint);
       }
-      transactions.restore(defaultsByBranch[result.winnerIndex] || []);
+      if (winnerIndex === -1) {
+        transactions.rollback(savepoint);
+        return defineError("Value is not valid", { data });
+      }
+      transactions.restore(winnerDefaults);
       return;
     } catch (error) {
       transactions.rollback(savepoint);
@@ -327,17 +343,33 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
     return defineError("Value is not valid", { data });
   },
 
-  if(schema, data) {
-    if ("then" in schema === false && "else" in schema === false) {
+  if(schema, data, defineError, _instance, validateSubschema) {
+    if (
+      "then" in schema === false &&
+      "else" in schema === false &&
+      !validateSubschema?.tracksEvaluated
+    ) {
       return;
     }
     if (typeof schema.if === "boolean") {
       if (schema.if) {
-        if (isCompiledSchema(schema.then)) {
-          return schema.then.$validate(data);
+        if (schema.then === false) {
+          return defineError("Value is not valid", { data });
         }
-      } else if (isCompiledSchema(schema.else)) {
-        return schema.else.$validate(data);
+        if (isCompiledSchema(schema.then)) {
+          return validateSubschema
+            ? validateSubschema(schema.then, data)
+            : schema.then.$validate(data);
+        }
+      } else {
+        if (schema.else === false) {
+          return defineError("Value is not valid", { data });
+        }
+        if (isCompiledSchema(schema.else)) {
+          return validateSubschema
+            ? validateSubschema(schema.else, data)
+            : schema.else.$validate(data);
+        }
       }
       return;
     }
@@ -346,21 +378,33 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
       return;
     }
 
-    const error = schema.if.$validate(data);
+    const error = validateSubschema
+      ? validateSubschema(schema.if, data)
+      : schema.if.$validate(data);
     if (!error) {
+      if (schema.then === false) {
+        return defineError("Value is not valid", { data });
+      }
       if (isCompiledSchema(schema.then)) {
-        return schema.then.$validate(data);
+        return validateSubschema
+          ? validateSubschema(schema.then, data)
+          : schema.then.$validate(data);
       }
       return;
     } else {
+      if (schema.else === false) {
+        return defineError("Value is not valid", { data });
+      }
       if (isCompiledSchema(schema.else)) {
-        return schema.else.$validate(data);
+        return validateSubschema
+          ? validateSubschema(schema.else, data)
+          : schema.else.$validate(data);
       }
       return;
     }
   },
 
-  not(schema, data, defineError) {
+  not(schema, data, defineError, _instance, validateSubschema) {
     if (typeof schema.not === "boolean") {
       if (schema.not) {
         return defineError("Value is not valid", { data });
@@ -374,11 +418,20 @@ export const OtherKeywords: Record<string, KeywordFunction> = {
       !Array.isArray(schema.not)
     ) {
       if ("$validate" in schema.not) {
-        const error = (schema.not as any).$validate(data);
-        if (!error) {
-          return defineError("Value is not valid", { data });
+        const savepoint = validateSubschema?.savepoint?.();
+        try {
+          const error = validateSubschema
+            ? validateSubschema(schema.not, data, { discardAnnotations: true })
+            : (schema.not as any).$validate(data);
+          if (!error) {
+            return defineError("Value is not valid", { data });
+          }
+          return;
+        } finally {
+          if (typeof savepoint === "number") {
+            validateSubschema?.rollback?.(savepoint);
+          }
         }
-        return;
       }
       return defineError("Value is not valid", { data });
     }

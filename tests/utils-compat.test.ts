@@ -10,6 +10,19 @@ import {
 } from "../lib/utils";
 
 describe("utils compatibility exports", () => {
+  it("rejects values unsupported by structuredClone", () => {
+    const unsupportedValues = [
+      () => true,
+      Promise.resolve(true),
+      new WeakMap(),
+      new WeakSet()
+    ];
+
+    for (const value of unsupportedValues) {
+      expect(() => deepClone(value)).toThrow();
+    }
+  });
+
   it("exports deepClone alias", () => {
     const source = {
       foo: {

@@ -10,14 +10,20 @@ export const NumberKeywords: Record<string, KeywordFunction> = {
       return defineError("Value must be finite", { data });
     }
 
-    let min = schema.minimum;
-    if (typeof schema.exclusiveMinimum === "number") {
-      min = schema.exclusiveMinimum + 1e-15;
+    if (
+      (schema as any)._dialect !== "draft4" &&
+      typeof schema.exclusiveMinimum === "number"
+    ) {
+      if (data <= schema.exclusiveMinimum) {
+        return defineError("Value is less than or equal to the exclusiveMinimum", {
+          data
+        });
+      }
     } else if (schema.exclusiveMinimum === true) {
-      min += 1e-15;
-    }
-
-    if (data < min) {
+      if (data <= schema.minimum) {
+        return defineError("Value is less than or equal to the minimum", { data });
+      }
+    } else if (data < schema.minimum) {
       return defineError("Value is less than the minimum", { data });
     }
 
@@ -32,14 +38,23 @@ export const NumberKeywords: Record<string, KeywordFunction> = {
       return defineError("Value must be finite", { data });
     }
 
-    let max = schema.maximum;
-    if (typeof schema.exclusiveMaximum === "number") {
-      max = schema.exclusiveMaximum - 1e-15;
+    if (
+      (schema as any)._dialect !== "draft4" &&
+      typeof schema.exclusiveMaximum === "number"
+    ) {
+      if (data >= schema.exclusiveMaximum) {
+        return defineError(
+          "Value is greater than or equal to the exclusiveMaximum",
+          { data }
+        );
+      }
     } else if (schema.exclusiveMaximum === true) {
-      max -= 1e-15;
-    }
-
-    if (data > max) {
+      if (data >= schema.maximum) {
+        return defineError("Value is greater than or equal to the maximum", {
+          data
+        });
+      }
+    } else if (data > schema.maximum) {
       return defineError("Value is greater than the maximum", { data });
     }
 
@@ -75,13 +90,14 @@ export const NumberKeywords: Record<string, KeywordFunction> = {
   exclusiveMinimum(schema, data, defineError, instance) {
     if (
       typeof data !== "number" ||
+      (schema as any)._dialect === "draft4" ||
       typeof schema.exclusiveMinimum !== "number" ||
       "minimum" in schema
     ) {
       return;
     }
 
-    if (data <= schema.exclusiveMinimum + 1e-15) {
+    if (data <= schema.exclusiveMinimum) {
       return defineError("Value is less than or equal to the exclusiveMinimum");
     }
 
@@ -91,6 +107,7 @@ export const NumberKeywords: Record<string, KeywordFunction> = {
   exclusiveMaximum(schema, data, defineError, instance) {
     if (
       typeof data !== "number" ||
+      (schema as any)._dialect === "draft4" ||
       typeof schema.exclusiveMaximum !== "number" ||
       "maximum" in schema
     ) {

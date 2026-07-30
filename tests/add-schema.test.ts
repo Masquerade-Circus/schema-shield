@@ -235,6 +235,7 @@ describe("SchemaShield.addSchema reference resolution", () => {
     const shield = new SchemaShield();
     shield.addSchema(
       {
+        $schema: "https://json-schema.org/draft/2020-12/schema",
         $id: "resource.json",
         definitions: { value: { type: "integer" } },
         $ref: "#/definitions/value"
@@ -275,6 +276,44 @@ describe("SchemaShield.addSchema reference resolution", () => {
     });
     expect(validate("ok").valid).toBe(true);
     expect(validate(1).valid).toBe(false);
+
+    const canonical = shield.compile({
+      $ref: "https://schemas.example/id-base/a.json"
+    });
+    expect(canonical("ok").valid).toBe(true);
+    expect(canonical(1).valid).toBe(false);
+  });
+
+  it("ignores a root $id beside $ref for explicitly registered draft6 and draft7 resources", () => {
+    for (const $schema of [
+      "http://json-schema.org/draft-06/schema#",
+      "http://json-schema.org/draft-07/schema#"
+    ]) {
+      const shield = new SchemaShield();
+      shield.addSchema(
+        {
+          $schema,
+          $id: "https://schemas.example/ignored/a.json",
+          $ref: "target.json"
+        },
+        { uri: "https://retrieval.example/legacy/a.json" }
+      );
+      shield.addSchema(
+        { type: "integer" },
+        { uri: "https://retrieval.example/legacy/target.json" }
+      );
+
+      const validate = shield.compile({
+        $ref: "https://retrieval.example/legacy/a.json"
+      });
+      expect(validate(1).valid).toBe(true);
+      expect(validate("1").valid).toBe(false);
+      expect(
+        captureError(() =>
+          shield.compile({ $ref: "https://schemas.example/ignored/a.json" })
+        ).code
+      ).toBe("REFERENCE_NOT_FOUND");
+    }
   });
 
   it("resolves root fragments, JSON Pointers, relative refs, and transitive refs", () => {

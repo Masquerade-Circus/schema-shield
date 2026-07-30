@@ -35,7 +35,19 @@ export interface AddSchemaOptions {
 }
 
 export interface ValidateSubschemaFunction {
-  (schema: CompiledSchema, data: any): Result;
+  (
+    schema: CompiledSchema | boolean,
+    data: any,
+    evaluated?: {
+      property?: string;
+      item?: number;
+      unevaluated?: boolean;
+      discardAnnotations?: boolean;
+    }
+  ): Result;
+  savepoint?(): number;
+  rollback?(savepoint: number): void;
+  tracksEvaluated?: boolean;
 }
 
 export interface KeywordFunction {
@@ -91,12 +103,24 @@ interface ValidationContext {
   depthExceeded: boolean;
   depthError?: ValidationError | true;
   defaults: DefaultJournalEntry[];
+  resources: EvaluationResource[];
+  evaluations: EvaluatedState[];
+  completedEvaluation?: EvaluatedState;
 }
 
 interface SchemaAnalysis {
   requiresDepthGuard: boolean;
   requiresMutationJournal: boolean;
+  requiresDynamicScope: boolean;
+  requiresEvaluatedTracking: boolean;
   mutableSchemas: WeakSet<object>;
+  reachableSchemas: JSONSchema[];
+}
+
+interface EvaluatedState {
+  data: any;
+  properties?: Set<string>;
+  items?: Set<number>;
 }
 
 interface SchemaPosition {
@@ -104,14 +128,21 @@ interface SchemaPosition {
   baseUri: string;
   resourceRoot: Record<string, any>;
   pointer: string;
+  dialect: SchemaDialect;
+  environment: SchemaEnvironment;
 }
 
 interface ReferenceRegistry {
   aliases: ReadonlyMap<string, JSONSchema>;
   positions: ReadonlyArray<SchemaPosition>;
   positionsByNode: WeakMap<object, SchemaPosition>;
-  ensureIndexed(schema: JSONSchema): void;
-  resolveRegisteredIdentity(uri: string): void;
+  ensureIndexed(schema: JSONSchema, environment: SchemaEnvironment): void;
+  ensurePointerPosition(
+    schema: JSONSchema,
+    resourceRoot: Record<string, any>,
+    pointer: string
+  ): void;
+  resolveRegisteredIdentity(uri: string, environment: SchemaEnvironment): void;
 }
 
 interface RegisteredSchema {
@@ -119,6 +150,37 @@ interface RegisteredSchema {
   identities: readonly string[];
   nestedIdentities: readonly string[];
   baseUri: string;
+  rootIdBesideRef: boolean;
+}
+
+type SchemaDialect =
+  | "legacy"
+  | "draft4"
+  | "draft6"
+  | "draft7"
+  | "2019-09"
+  | "2020-12";
+
+type VocabularyCategory =
+  | "applicator"
+  | "content"
+  | "core"
+  | "format"
+  | "metadata"
+  | "unevaluated"
+  | "validation";
+
+interface SchemaEnvironment {
+  dialect: SchemaDialect;
+  vocabularies: ReadonlySet<VocabularyCategory> | null;
+  dependenciesCompatibility: boolean;
+  definitionsCompatibility: boolean;
+}
+
+interface EvaluationResource {
+  compiledRoot: CompiledSchema;
+  dynamicAnchors: ReadonlyMap<string, CompiledSchema>;
+  recursiveAnchor: boolean;
 }
 
 interface DefaultMutation {
@@ -181,7 +243,12 @@ export class SchemaShield {
   private validationContexts: ValidationContext[] = [];
   private compileCache: WeakMap<object, CompiledSchema> = new WeakMap();
   private compilingRequiresContext = false;
+  private compilingEvaluatedTracking = false;
+  private compilingValidateSubschema?: ValidateSubschemaFunction;
   private compilingMutableSchemas: WeakSet<object> = new WeakSet();
+  private compilingDialects: WeakMap<object, SchemaDialect> = new WeakMap();
+  private compilingEnvironments: WeakMap<object, SchemaEnvironment> = new WeakMap();
+  private compilingSchemaChildren: WeakMap<object, object[]> = new WeakMap();
   private registeredSchemas: RegisteredSchema[] = [];
   private registeredSchemaIds: Map<string, RegisteredSchema> = new Map();
 
@@ -271,10 +338,14 @@ export class SchemaShield {
       return [];
     }
 
-    const mutations = context.defaults.slice(savepoint).map((entry) => ({
-      ...entry,
-      value: entry.target[entry.key]
-    }));
+    const mutations: DefaultMutation[] = [];
+    for (let index = savepoint; index < context.defaults.length; index++) {
+      const entry = context.defaults[index];
+      mutations.push({
+        ...entry,
+        value: entry.target[entry.key]
+      });
+    }
     this.rollbackDefaults(context, savepoint);
     return mutations;
   }
@@ -348,25 +419,38 @@ export class SchemaShield {
       );
     }
 
+    const rootDialect =
+      schema === true || schema === false
+        ? "legacy"
+        : this.effectiveDialect(schema, "legacy");
+    const rootIdIsActive =
+      schema !== true &&
+      schema !== false &&
+      ((rootDialect !== "draft4" &&
+        rootDialect !== "draft6" &&
+        rootDialect !== "draft7") ||
+        !("$ref" in schema));
+    const rootIdKeyword = rootDialect === "draft4" ? "id" : "$id";
     let resolvedRootId: string | null = null;
-    if (schema !== true && schema !== false && hasOwn(schema, "$id")) {
-      if (typeof schema.$id !== "string") {
+    if (rootIdIsActive && hasOwn(schema, rootIdKeyword)) {
+      const rootId = schema[rootIdKeyword];
+      if (typeof rootId !== "string") {
         throw this.schemaRegistrationError(
-          "Root $id must be a string",
+          `Root ${rootIdKeyword} must be a string`,
           "INVALID_SCHEMA_ID",
-          "$id"
+          rootIdKeyword
         );
       }
       resolvedRootId = retrievalUri
-        ? this.resourceIdentityFromReference(schema.$id, retrievalUri, "$id")
-        : this.absoluteResourceUri(schema.$id, "INVALID_SCHEMA_ID", "$id");
+        ? this.resourceIdentityFromReference(rootId, retrievalUri, rootIdKeyword)
+        : this.absoluteResourceUri(rootId, "INVALID_SCHEMA_ID", rootIdKeyword);
     }
 
     if (retrievalUri === null && resolvedRootId === null) {
       throw this.schemaRegistrationError(
-        "Schema requires an absolute root $id or an explicit uri",
+        `Schema requires an absolute root ${rootIdKeyword} or an explicit uri`,
         "INVALID_SCHEMA_ID",
-        "$id"
+        rootIdKeyword
       );
     }
 
@@ -404,13 +488,32 @@ export class SchemaShield {
 
     const snapshot = deepCloneUnfreeze(schema) as JSONSchema;
     const baseUri = retrievalUri || resolvedRootId!;
+    const nestedIdentities = new Set(
+      this.collectRegisteredNestedIdentities(
+        snapshot,
+        baseUri,
+        rootDialect,
+        rootIdIsActive
+      )
+    );
+    if (rootDialect === "legacy") {
+      for (const dialect of ["2019-09", "2020-12"] as const) {
+        for (const identity of this.collectRegisteredNestedIdentities(
+          snapshot,
+          baseUri,
+          dialect,
+          rootIdIsActive
+        )) {
+          nestedIdentities.add(identity);
+        }
+      }
+    }
     const registration: RegisteredSchema = Object.freeze({
       schema: snapshot,
       identities: Object.freeze(Array.from(identities)),
-      nestedIdentities: Object.freeze(
-        this.collectRegisteredNestedIdentities(snapshot, baseUri)
-      ),
-      baseUri
+      nestedIdentities: Object.freeze(Array.from(nestedIdentities)),
+      baseUri,
+      rootIdBesideRef: rootIdIsActive
     });
     this.registeredSchemas.push(registration);
     for (const identity of identities) {
@@ -520,7 +623,9 @@ export class SchemaShield {
 
   private collectRegisteredNestedIdentities(
     schema: JSONSchema,
-    baseUri: string
+    baseUri: string,
+    inheritedDialect: SchemaDialect,
+    rootIdBesideRef: boolean
   ): string[] {
     if (schema === true || schema === false) {
       return [];
@@ -528,8 +633,13 @@ export class SchemaShield {
 
     const identities = new Set<string>();
     const visited = new WeakSet<object>();
-    const stack: Array<{ node: Record<string, any>; baseUri: string }> = [
-      { node: schema, baseUri }
+    const stack: Array<{
+      node: Record<string, any>;
+      baseUri: string;
+      dialect: SchemaDialect;
+      root: boolean;
+    }> = [
+      { node: schema, baseUri, dialect: inheritedDialect, root: true }
     ];
     while (stack.length > 0) {
       const entry = stack.pop()!;
@@ -538,10 +648,19 @@ export class SchemaShield {
       }
       visited.add(entry.node);
 
+      const dialect = this.effectiveDialect(entry.node, entry.dialect);
       let childBase = entry.baseUri;
-      if (typeof entry.node.$id === "string") {
+      if (
+        typeof entry.node[dialect === "draft4" ? "id" : "$id"] === "string" &&
+        (this.isModernDialect(dialect) ||
+          !("$ref" in entry.node) ||
+          (entry.root && rootIdBesideRef))
+      ) {
         try {
-          childBase = new URL(entry.node.$id, entry.baseUri).href;
+          childBase = new URL(
+            entry.node[dialect === "draft4" ? "id" : "$id"],
+            entry.baseUri
+          ).href;
           identities.add(childBase);
           if (childBase.indexOf("#") === -1 || childBase.endsWith("#")) {
             identities.add(this.resourceUri(childBase));
@@ -551,13 +670,15 @@ export class SchemaShield {
         }
       }
 
-      const children = this.registrySubschemaEntries(entry.node);
+      const children = this.registrySubschemaEntries(entry.node, dialect);
       for (let index = children.length - 1; index >= 0; index--) {
         const child = children[index];
         if (!Array.isArray(child.value)) {
           stack.push({
             node: child.value as Record<string, any>,
-            baseUri: childBase
+            baseUri: childBase,
+            dialect,
+            root: false
           });
         }
       }
@@ -585,7 +706,7 @@ export class SchemaShield {
         continue;
       }
       seen.add(node);
-      if (node.$id === id) {
+      if (node.$id === id || node.id === id) {
         return node;
       }
 
@@ -609,71 +730,37 @@ export class SchemaShield {
   }
 
   private schemaChildEntries(
-    schema: Record<string, any>
+    schema: Record<string, any>,
+    knownDialect?: SchemaDialect,
+    knownEnvironment?: SchemaEnvironment
   ): Array<{ value: object; pointer: string }> {
-    const children: Array<{ value: object; pointer: string }> = [];
-    const mapKeys = [
-      "properties",
-      "patternProperties",
-      "definitions",
-      "$defs",
-      "dependencies"
-    ];
-    const arrayKeys = ["allOf", "anyOf", "oneOf", "items"];
-    const singleKeys = [
-      "items",
-      "additionalItems",
-      "additionalProperties",
-      "contains",
-      "propertyNames",
-      "values",
-      "elements",
-      "not",
-      "if",
-      "then",
-      "else"
-    ];
-
-    for (const key of mapKeys) {
-      const value = schema[key];
-      if (!value || typeof value !== "object" || Array.isArray(value)) {
-        continue;
-      }
-      for (const childKey of Object.keys(value)) {
-        const child = value[childKey];
-        if (child && typeof child === "object") {
-          children.push({
-            value: child,
-            pointer: `/${this.escapePointerToken(key)}/${this.escapePointerToken(
-              childKey
-            )}`
-          });
-        }
-      }
+    const dialect =
+      knownDialect ||
+      (schema as any)._dialect ||
+      this.compilingDialects.get(schema) ||
+      "legacy";
+    const environment =
+      knownEnvironment ||
+      this.compilingEnvironments.get(schema) ||
+      this.defaultEnvironment(dialect);
+    if (
+      (dialect === "draft4" || dialect === "draft6" || dialect === "draft7") &&
+      typeof schema.$ref === "string" &&
+      this.getKeyword("$ref") === keywords.$ref
+    ) {
+      return [];
     }
-
-    for (const key of arrayKeys) {
-      const value = schema[key];
-      if (!Array.isArray(value)) {
-        continue;
-      }
-      for (let index = 0; index < value.length; index++) {
-        const child = value[index];
-        if (child && typeof child === "object") {
-          children.push({
-            value: child,
-            pointer: `/${this.escapePointerToken(key)}/${index}`
-          });
-        }
-      }
-    }
-
-    for (const key of singleKeys) {
+    const children = this.registrySubschemaEntries(
+      schema,
+      dialect,
+      environment
+    );
+    for (const key of ["values", "elements"]) {
       const value = schema[key];
       if (value && typeof value === "object" && !Array.isArray(value)) {
         children.push({
           value,
-          pointer: `/${this.escapePointerToken(key)}`
+          pointer: `/${key}`
         });
       }
     }
@@ -684,9 +771,13 @@ export class SchemaShield {
         key === "const" ||
         key === "default" ||
         key === "examples" ||
-        mapKeys.includes(key) ||
-        arrayKeys.includes(key) ||
-        singleKeys.includes(key)
+        children.some((child) => {
+          const keyPointer = `/${this.escapePointerToken(key)}`;
+          return (
+            child.pointer === keyPointer ||
+            child.pointer.startsWith(`${keyPointer}/`)
+          );
+        })
       ) {
         continue;
       }
@@ -708,16 +799,74 @@ export class SchemaShield {
     return children;
   }
 
-  private schemaChildren(schema: Record<string, any>): object[] {
-    return this.schemaChildEntries(schema).map((entry) => entry.value);
+  private schemaChildren(
+    schema: Record<string, any>,
+    knownDialect?: SchemaDialect,
+    knownEnvironment?: SchemaEnvironment
+  ): object[] {
+    const cached = this.compilingSchemaChildren.get(schema);
+    if (cached) {
+      return cached;
+    }
+    const entries = this.schemaChildEntries(
+      schema,
+      knownDialect,
+      knownEnvironment
+    );
+    const children: object[] = [];
+    for (let index = 0; index < entries.length; index++) {
+      children.push(entries[index].value);
+    }
+    this.compilingSchemaChildren.set(schema, children);
+    return children;
   }
 
   private registrySubschemaEntries(
-    schema: Record<string, any>
+    schema: Record<string, any>,
+    dialect: SchemaDialect,
+    environment = this.defaultEnvironment(dialect)
   ): Array<{ value: object; pointer: string }> {
     const children: Array<{ value: object; pointer: string }> = [];
-    const mapKeys = ["properties", "patternProperties", "definitions", "$defs"];
-    const arrayKeys = ["allOf", "anyOf", "oneOf", "items"];
+    if (
+      (dialect === "draft4" || dialect === "draft6" || dialect === "draft7") &&
+      typeof schema.$ref === "string" &&
+      this.getKeyword("$ref") === keywords.$ref
+    ) {
+      return children;
+    }
+    const mapKeys: string[] = [];
+    if (this.isKeywordActive("definitions", environment)) {
+      mapKeys.push("definitions");
+    }
+    if (this.isKeywordActive("properties", environment)) {
+      mapKeys.push("properties", "patternProperties");
+    }
+    if (this.isModernDialect(dialect)) {
+      mapKeys.push("$defs");
+      if (this.isKeywordActive("dependentSchemas", environment)) {
+        mapKeys.push("dependentSchemas");
+      }
+      if (this.isKeywordActive("dependencies", environment)) {
+        mapKeys.push("dependencies");
+      }
+    } else if (this.isKeywordActive("dependencies", environment)) {
+      mapKeys.push("dependencies");
+    }
+    const arrayKeys = ["allOf", "anyOf", "oneOf"].filter((key) =>
+      this.isKeywordActive(key, environment)
+    );
+    if (
+      dialect !== "2020-12" &&
+      this.isKeywordActive("items", environment)
+    ) {
+      arrayKeys.push("items");
+    }
+    if (
+      dialect === "2020-12" &&
+      this.isKeywordActive("prefixItems", environment)
+    ) {
+      arrayKeys.push("prefixItems");
+    }
     const singleKeys = [
       "items",
       "additionalItems",
@@ -727,8 +876,30 @@ export class SchemaShield {
       "not",
       "if",
       "then",
-      "else"
-    ];
+      "else",
+      "unevaluatedItems",
+      "unevaluatedProperties",
+      "contentSchema"
+    ].filter((key) => {
+      if (key === "additionalItems" && dialect === "2020-12") {
+        return false;
+      }
+      if (
+        (key === "if" || key === "then" || key === "else") &&
+        (dialect === "draft4" || dialect === "draft6")
+      ) {
+        return false;
+      }
+      if (
+        (key === "unevaluatedItems" ||
+          key === "unevaluatedProperties" ||
+          key === "contentSchema") &&
+        !this.isModernDialect(dialect)
+      ) {
+        return false;
+      }
+      return this.isKeywordActive(key, environment);
+    });
 
     for (const key of mapKeys) {
       const value = schema[key];
@@ -743,23 +914,6 @@ export class SchemaShield {
             pointer: `/${this.escapePointerToken(key)}/${this.escapePointerToken(
               childKey
             )}`
-          });
-        }
-      }
-    }
-
-    const dependencies = schema.dependencies;
-    if (
-      dependencies &&
-      typeof dependencies === "object" &&
-      !Array.isArray(dependencies)
-    ) {
-      for (const dependencyKey of Object.keys(dependencies)) {
-        const child = dependencies[dependencyKey];
-        if (child && typeof child === "object" && !Array.isArray(child)) {
-          children.push({
-            value: child,
-            pointer: `/dependencies/${this.escapePointerToken(dependencyKey)}`
           });
         }
       }
@@ -794,16 +948,340 @@ export class SchemaShield {
     return children;
   }
 
+  private effectiveDialect(
+    schema: Record<string, any>,
+    inherited: SchemaDialect
+  ): SchemaDialect {
+    if (typeof schema.$schema !== "string") {
+      return inherited;
+    }
+    if (schema.$schema.includes("draft-04/")) {
+      return "draft4";
+    }
+    if (schema.$schema.includes("draft/2019-09/")) {
+      return "2019-09";
+    }
+    if (schema.$schema.includes("draft/2020-12/")) {
+      return "2020-12";
+    }
+    if (
+      schema.$schema.includes("draft-06/")
+    ) {
+      return "draft6";
+    }
+    if (schema.$schema.includes("draft-07/")) {
+      return "draft7";
+    }
+    return inherited;
+  }
+
+  private defaultEnvironment(dialect: SchemaDialect): SchemaEnvironment {
+    return {
+      dialect,
+      vocabularies: null,
+      dependenciesCompatibility: !this.isModernDialect(dialect),
+      definitionsCompatibility: !this.isModernDialect(dialect)
+    };
+  }
+
+  private vocabularyCategory(uri: string): VocabularyCategory | null {
+    if (uri.endsWith("/vocab/core")) {
+      return "core";
+    }
+    if (uri.endsWith("/vocab/applicator")) {
+      return "applicator";
+    }
+    if (uri.endsWith("/vocab/validation")) {
+      return "validation";
+    }
+    if (uri.endsWith("/vocab/unevaluated")) {
+      return "unevaluated";
+    }
+    if (
+      uri.endsWith("/vocab/format") ||
+      uri.endsWith("/vocab/format-annotation") ||
+      uri.endsWith("/vocab/format-assertion")
+    ) {
+      return "format";
+    }
+    if (uri.endsWith("/vocab/content")) {
+      return "content";
+    }
+    if (uri.endsWith("/vocab/meta-data")) {
+      return "metadata";
+    }
+    return null;
+  }
+
+  private metaschemaDefinesKeyword(schema: JSONSchema, keyword: string): boolean {
+    if (schema === true || schema === false) {
+      return false;
+    }
+    const seen = new WeakSet<object>();
+    const stack: Record<string, any>[] = [schema];
+    while (stack.length > 0) {
+      const current = stack.pop()!;
+      if (seen.has(current)) {
+        continue;
+      }
+      seen.add(current);
+      if (
+        this.isJsonObject(current.properties) &&
+        hasOwn(current.properties, keyword)
+      ) {
+        return true;
+      }
+      for (const value of Object.values(current)) {
+        if (this.isJsonObject(value)) {
+          stack.push(value);
+        } else if (Array.isArray(value)) {
+          for (const item of value) {
+            if (this.isJsonObject(item)) {
+              stack.push(item);
+            }
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  private schemaEnvironment(
+    schema: Record<string, any>,
+    inherited: SchemaEnvironment
+  ): SchemaEnvironment {
+    if (typeof schema.$schema !== "string") {
+      return inherited;
+    }
+
+    const dialect = this.effectiveDialect(schema, inherited.dialect);
+    if (dialect !== inherited.dialect || this.isModernDialect(dialect)) {
+      if (
+        schema.$schema.includes("draft-04/") ||
+        schema.$schema.includes("draft/2019-09/") ||
+        schema.$schema.includes("draft/2020-12/") ||
+        schema.$schema.includes("draft-06/") ||
+        schema.$schema.includes("draft-07/")
+      ) {
+        return {
+          ...this.defaultEnvironment(dialect),
+          dependenciesCompatibility: true,
+          definitionsCompatibility: !this.isModernDialect(dialect)
+        };
+      }
+    }
+
+    let metaschemaUri: string;
+    try {
+      metaschemaUri = new URL(schema.$schema).href;
+    } catch {
+      return inherited;
+    }
+    const registration = this.registeredSchemaIds.get(
+      this.resourceUri(metaschemaUri)
+    );
+    const metaschema = registration?.schema;
+    if (!metaschema || metaschema === true) {
+      return inherited;
+    }
+
+    const metaschemaDialect = this.effectiveDialect(
+      metaschema,
+      inherited.dialect
+    );
+    const declared = metaschema.$vocabulary;
+    if (!this.isJsonObject(declared)) {
+      return {
+        ...this.defaultEnvironment(metaschemaDialect),
+        dependenciesCompatibility: this.metaschemaDefinesKeyword(
+          metaschema,
+          "dependencies"
+        ),
+        definitionsCompatibility: this.metaschemaDefinesKeyword(
+          metaschema,
+          "definitions"
+        )
+      };
+    }
+
+    const vocabularies = new Set<VocabularyCategory>();
+    for (const [uri, required] of Object.entries(declared)) {
+      const category = this.vocabularyCategory(uri);
+      if (category !== null) {
+        vocabularies.add(category);
+        continue;
+      }
+      if (required === true) {
+        const error = new ValidationError(
+          `Unknown required vocabulary: ${uri}`
+        );
+        error.code = "UNKNOWN_REQUIRED_VOCABULARY";
+        error.keyword = "$vocabulary";
+        throw error;
+      }
+    }
+    return {
+      dialect: metaschemaDialect,
+      vocabularies,
+      dependenciesCompatibility: this.metaschemaDefinesKeyword(
+        metaschema,
+        "dependencies"
+      ),
+      definitionsCompatibility: this.metaschemaDefinesKeyword(
+        metaschema,
+        "definitions"
+      )
+    };
+  }
+
+  private isModernDialect(dialect: SchemaDialect): boolean {
+    return dialect === "2019-09" || dialect === "2020-12";
+  }
+
+  private keywordVocabulary(key: string): VocabularyCategory | null {
+    if (
+      key === "type" ||
+      key === "enum" ||
+      key === "const" ||
+      key === "multipleOf" ||
+      key === "maximum" ||
+      key === "exclusiveMaximum" ||
+      key === "minimum" ||
+      key === "exclusiveMinimum" ||
+      key === "maxLength" ||
+      key === "minLength" ||
+      key === "pattern" ||
+      key === "maxItems" ||
+      key === "minItems" ||
+      key === "uniqueItems" ||
+      key === "maxContains" ||
+      key === "minContains" ||
+      key === "maxProperties" ||
+      key === "minProperties" ||
+      key === "required" ||
+      key === "dependentRequired"
+    ) {
+      return "validation";
+    }
+    if (key === "unevaluatedItems" || key === "unevaluatedProperties") {
+      return "unevaluated";
+    }
+    if (key === "format") {
+      return "format";
+    }
+    if (
+      key === "contentEncoding" ||
+      key === "contentMediaType" ||
+      key === "contentSchema"
+    ) {
+      return "content";
+    }
+    if (
+      key === "allOf" ||
+      key === "anyOf" ||
+      key === "oneOf" ||
+      key === "not" ||
+      key === "if" ||
+      key === "then" ||
+      key === "else" ||
+      key === "dependentSchemas" ||
+      key === "prefixItems" ||
+      key === "items" ||
+      key === "contains" ||
+      key === "additionalItems" ||
+      key === "properties" ||
+      key === "patternProperties" ||
+      key === "additionalProperties" ||
+      key === "propertyNames"
+    ) {
+      return "applicator";
+    }
+    return null;
+  }
+
+  private isKeywordActive(key: string, environment: SchemaEnvironment): boolean {
+    const dialect = environment.dialect;
+    if (key === "dependencies") {
+      return environment.dependenciesCompatibility;
+    }
+    if (key === "definitions") {
+      return environment.definitionsCompatibility;
+    }
+    const vocabulary = this.keywordVocabulary(key);
+    if (
+      vocabulary !== null &&
+      environment.vocabularies !== null &&
+      !environment.vocabularies.has(vocabulary)
+    ) {
+      return false;
+    }
+    if (key === "$defs") {
+      return this.isModernDialect(dialect);
+    }
+    if (
+      dialect === "draft4" &&
+      (key === "const" || key === "contains" || key === "propertyNames")
+    ) {
+      return false;
+    }
+    if (key === "dependentRequired" || key === "dependentSchemas") {
+      return this.isModernDialect(dialect);
+    }
+    if (key === "minContains" || key === "maxContains") {
+      return this.isModernDialect(dialect);
+    }
+    if (key === "prefixItems") {
+      return dialect === "2020-12";
+    }
+    if (key === "unevaluatedItems" || key === "unevaluatedProperties") {
+      return this.isModernDialect(dialect);
+    }
+    if (key === "additionalItems") {
+      return dialect !== "2020-12";
+    }
+    if (key === "if" || key === "then" || key === "else") {
+      return dialect !== "draft4" && dialect !== "draft6";
+    }
+    if (key === "contentMediaType" || key === "contentEncoding") {
+      return dialect === "legacy" || dialect === "draft7";
+    }
+    return true;
+  }
+
+  private validateAnchor(
+    value: any,
+    dialect: "2019-09" | "2020-12",
+    keyword: "$anchor" | "$dynamicAnchor"
+  ): string {
+    const pattern =
+      dialect === "2019-09"
+        ? /^[A-Za-z][-A-Za-z0-9.:_]*$/
+        : /^[A-Za-z_][-A-Za-z0-9._]*$/;
+    if (typeof value !== "string" || !pattern.test(value)) {
+      const error = new ValidationError(
+        `Invalid ${keyword}: ${String(value)}`
+      );
+      error.code = "INVALID_ANCHOR";
+      error.keyword = keyword;
+      throw error;
+    }
+    return value;
+  }
+
   private escapePointerToken(value: string): string {
     return value.replace(/~/g, "~0").replace(/\//g, "~1");
   }
 
-  private resolveUri(reference: string, baseUri: string, keyword: "$id" | "$ref") {
+  private resolveUri(
+    reference: string,
+    baseUri: string,
+    keyword: "id" | "$id" | "$ref"
+  ) {
     try {
       return new URL(reference, baseUri).href;
     } catch {
       const error = new ValidationError(`Invalid ${keyword} URI: ${reference}`);
-      error.code = keyword === "$id" ? "INVALID_SCHEMA_ID" : "REFERENCE_NOT_FOUND";
+      error.code = keyword === "$ref" ? "REFERENCE_NOT_FOUND" : "INVALID_SCHEMA_ID";
       error.keyword = keyword;
       throw error;
     }
@@ -825,15 +1303,21 @@ export class SchemaShield {
         positions: Object.freeze(positions),
         positionsByNode,
         ensureIndexed: () => {},
+        ensurePointerPosition: () => {},
         resolveRegisteredIdentity: () => {}
       });
     }
 
-    const register = (uri: string, node: JSONSchema) => {
+    const register = (
+      uri: string,
+      node: JSONSchema,
+      code = "DUPLICATE_SCHEMA_ID",
+      keyword = "$id"
+    ) => {
       if (aliases.has(uri) && aliases.get(uri) !== node) {
         const error = new ValidationError(`Duplicate schema identity: ${uri}`);
-        error.code = "DUPLICATE_SCHEMA_ID";
-        error.keyword = "$id";
+        error.code = code;
+        error.keyword = keyword;
         throw error;
       }
       aliases.set(uri, node);
@@ -866,7 +1350,10 @@ export class SchemaShield {
     const indexResource = (
       root: Record<string, any>,
       inheritedBase: string,
-      idsBesideRefs: boolean
+      inheritedEnvironment: SchemaEnvironment,
+      rootIdBesideRef = false,
+      containingResourceRoot = root,
+      rootPointer = "#"
     ) => {
       if (indexed.has(root)) {
         return;
@@ -878,12 +1365,16 @@ export class SchemaShield {
         inheritedBase: string;
         resourceRoot: Record<string, any>;
         pointer: string;
+        environment: SchemaEnvironment;
+        root: boolean;
       }> = [
         {
           node: root,
           inheritedBase,
-          resourceRoot: root,
-          pointer: "#"
+          resourceRoot: containingResourceRoot,
+          pointer: rootPointer,
+          environment: inheritedEnvironment,
+          root: true
         }
       ];
 
@@ -894,13 +1385,30 @@ export class SchemaShield {
         }
         visited.add(entry.node);
 
+        const environment = this.schemaEnvironment(
+          entry.node,
+          entry.environment
+        );
+        const dialect = environment.dialect;
         let baseUri = entry.inheritedBase;
         let resourceRoot = entry.resourceRoot;
+        const idKeyword = dialect === "draft4" ? "id" : "$id";
+        const schemaId = entry.node[idKeyword];
         if (
-          typeof entry.node.$id === "string" &&
-          (idsBesideRefs || !("$ref" in entry.node))
+          typeof schemaId === "string" &&
+          (this.isModernDialect(dialect) ||
+            !("$ref" in entry.node) ||
+            (entry.root && rootIdBesideRef))
         ) {
-          baseUri = this.resolveUri(entry.node.$id, entry.inheritedBase, "$id");
+          baseUri = this.resolveUri(schemaId, entry.inheritedBase, idKeyword);
+          if (this.isModernDialect(dialect) && schemaId.includes("#")) {
+            const error = new ValidationError(
+              `Invalid $id URI for ${dialect}: ${schemaId}`
+            );
+            error.code = "INVALID_SCHEMA_ID";
+            error.keyword = idKeyword;
+            throw error;
+          }
           register(baseUri, entry.node);
           if (baseUri.indexOf("#") === -1 || baseUri.endsWith("#")) {
             resourceRoot = entry.node;
@@ -908,16 +1416,62 @@ export class SchemaShield {
           }
         }
 
+        const registerAnchor = (
+          anchor: string,
+          keyword: "$anchor" | "$dynamicAnchor"
+        ) => {
+          const resourceIdentities = new Set([this.resourceUri(baseUri)]);
+          for (const [identity, target] of aliases) {
+            if (target === resourceRoot && !identity.includes("#")) {
+              resourceIdentities.add(identity);
+            }
+          }
+          for (const identity of resourceIdentities) {
+            register(
+              `${identity}#${anchor}`,
+              entry.node,
+              "DUPLICATE_ANCHOR",
+              keyword
+            );
+          }
+        };
+
+        if (
+          (dialect === "2019-09" || dialect === "2020-12") &&
+          hasOwn(entry.node, "$anchor")
+        ) {
+          registerAnchor(
+            this.validateAnchor(entry.node.$anchor, dialect, "$anchor"),
+            "$anchor"
+          );
+        }
+        if (dialect === "2020-12" && hasOwn(entry.node, "$dynamicAnchor")) {
+          registerAnchor(
+            this.validateAnchor(
+              entry.node.$dynamicAnchor,
+              dialect,
+              "$dynamicAnchor"
+            ),
+            "$dynamicAnchor"
+          );
+        }
+
         const position = {
           source: entry.node,
           baseUri,
           resourceRoot,
-          pointer: entry.pointer
+          pointer: entry.pointer,
+          dialect,
+          environment
         };
         positions.push(position);
         positionsByNode.set(entry.node, position);
 
-        const children = this.registrySubschemaEntries(entry.node);
+        const children = this.registrySubschemaEntries(
+          entry.node,
+          dialect,
+          environment
+        );
         for (let index = children.length - 1; index >= 0; index--) {
           const child = children[index];
           if (Array.isArray(child.value)) {
@@ -927,7 +1481,9 @@ export class SchemaShield {
             node: child.value as Record<string, any>,
             inheritedBase: baseUri,
             resourceRoot,
-            pointer: `${entry.pointer}${child.pointer}`
+            pointer: `${entry.pointer}${child.pointer}`,
+            environment,
+            root: false
           });
         }
       }
@@ -935,22 +1491,59 @@ export class SchemaShield {
       indexed.add(root);
     };
 
-    indexResource(schema, LOCAL_SCHEMA_BASE, false);
+    indexResource(schema, LOCAL_SCHEMA_BASE, this.defaultEnvironment("legacy"));
 
-    const ensureIndexed = (target: JSONSchema) => {
+    const ensureIndexed = (
+      target: JSONSchema,
+      environment: SchemaEnvironment
+    ) => {
       if (target === true || target === false) {
         return;
       }
       const registration = registrationsByRoot.get(target);
       if (registration) {
-        indexResource(target, registration.baseUri, true);
+        indexResource(
+          target,
+          registration.baseUri,
+          environment,
+          registration.rootIdBesideRef
+        );
       }
     };
-    const resolveRegisteredIdentity = (uri: string) => {
+    const resolveRegisteredIdentity = (
+      uri: string,
+      environment: SchemaEnvironment
+    ) => {
       const candidates = registrationsByNestedIdentity.get(uri) || [];
       for (const registration of candidates) {
-        ensureIndexed(registration.schema);
+        ensureIndexed(registration.schema, environment);
       }
+    };
+    const ensurePointerPosition = (
+      target: JSONSchema,
+      resourceRoot: Record<string, any>,
+      pointer: string
+    ) => {
+      if (
+        target === true ||
+        target === false ||
+        Array.isArray(target) ||
+        positionsByNode.has(target)
+      ) {
+        return;
+      }
+      const resourcePosition = positionsByNode.get(resourceRoot);
+      if (!resourcePosition) {
+        return;
+      }
+      indexResource(
+        target,
+        resourcePosition.baseUri,
+        resourcePosition.environment,
+        false,
+        resourceRoot,
+        pointer
+      );
     };
 
     return Object.freeze({
@@ -958,6 +1551,7 @@ export class SchemaShield {
       positions,
       positionsByNode,
       ensureIndexed,
+      ensurePointerPosition,
       resolveRegisteredIdentity
     });
   }
@@ -969,23 +1563,26 @@ export class SchemaShield {
   ): any {
     const resolvedUri = this.resolveUri(ref, position.baseUri, "$ref");
     if (!registry.aliases.has(resolvedUri)) {
-      registry.resolveRegisteredIdentity(resolvedUri);
+      registry.resolveRegisteredIdentity(resolvedUri, position.environment);
     }
     if (registry.aliases.has(resolvedUri)) {
       const target = registry.aliases.get(resolvedUri)!;
-      registry.ensureIndexed(target);
+      registry.ensureIndexed(target, position.environment);
       return target;
     }
 
     const resourceIdentity = this.resourceUri(resolvedUri);
     if (!registry.aliases.has(resourceIdentity)) {
-      registry.resolveRegisteredIdentity(resourceIdentity);
+      registry.resolveRegisteredIdentity(resourceIdentity, position.environment);
     }
     if (!registry.aliases.has(resourceIdentity)) {
       return;
     }
     const resourceRoot = registry.aliases.get(resourceIdentity)!;
-    registry.ensureIndexed(resourceRoot);
+    registry.ensureIndexed(resourceRoot, position.environment);
+    if (registry.aliases.has(resolvedUri)) {
+      return registry.aliases.get(resolvedUri)!;
+    }
 
     const hashIndex = resolvedUri.indexOf("#");
     const fragment = hashIndex === -1 ? "" : resolvedUri.slice(hashIndex + 1);
@@ -998,7 +1595,9 @@ export class SchemaShield {
       resourceRoot !== false
     ) {
       try {
-        return resolvePath(resourceRoot, `#${fragment}`);
+        const target = resolvePath(resourceRoot, `#${fragment}`);
+        registry.ensurePointerPosition(target, resourceRoot, `#${fragment}`);
+        return target;
       } catch {
         const error = new ValidationError(`Reference not found: ${ref}`);
         error.code = "REFERENCE_NOT_FOUND";
@@ -1010,134 +1609,187 @@ export class SchemaShield {
     return;
   }
 
-  private collectReachableSchemas(
-    schema: any,
-    registry: ReferenceRegistry
-  ): JSONSchema[] {
-    const reachable: JSONSchema[] = [];
-    const seen = new WeakSet<object>();
-    const stack: JSONSchema[] = [schema];
-    const resolveBuiltinRefs = this.getKeyword("$ref") === keywords.$ref;
-
-    while (stack.length > 0) {
-      const current = stack.pop()!;
-      if (current === true || current === false) {
-        reachable.push(current);
-        continue;
-      }
-      if (!current || typeof current !== "object" || Array.isArray(current)) {
-        continue;
-      }
-      if (seen.has(current)) {
-        continue;
-      }
-      seen.add(current);
-      reachable.push(current);
-
-      const children = this.schemaChildren(current);
-      for (let index = children.length - 1; index >= 0; index--) {
-        stack.push(children[index] as JSONSchema);
-      }
-
-      if (resolveBuiltinRefs && typeof current.$ref === "string") {
-        const position = registry.positionsByNode.get(current);
-        const target = position
-          ? this.resolveReferenceSource(current.$ref, position, registry)
-          : null;
-        if (target === null || typeof target === "undefined") {
-          const error = new ValidationError(
-            `Reference not found: ${current.$ref}`
-          );
-          error.code = "REFERENCE_NOT_FOUND";
-          error.keyword = "$ref";
-          throw error;
-        }
-        stack.push(target as JSONSchema);
-      }
+  private builtinReferences(
+    schema: Record<string, any>,
+    position: SchemaPosition
+  ): Array<{
+    keyword: "$ref" | "$recursiveRef" | "$dynamicRef";
+    ref: string;
+  }> {
+    const references: Array<{
+      keyword: "$ref" | "$recursiveRef" | "$dynamicRef";
+      ref: string;
+    }> = [];
+    if (
+      typeof schema.$ref === "string" &&
+      this.getKeyword("$ref") === keywords.$ref
+    ) {
+      references.push({ keyword: "$ref", ref: schema.$ref });
     }
-
-    return reachable;
+    if (
+      position.dialect === "2019-09" &&
+      typeof schema.$recursiveRef === "string"
+    ) {
+      references.push({ keyword: "$recursiveRef", ref: schema.$recursiveRef });
+    }
+    if (
+      position.dialect === "2020-12" &&
+      typeof schema.$dynamicRef === "string"
+    ) {
+      references.push({ keyword: "$dynamicRef", ref: schema.$dynamicRef });
+    }
+    return references;
   }
 
   private analyzeSchema(
     schema: any,
-    registry: ReferenceRegistry,
-    reachable: JSONSchema[]
+    registry: ReferenceRegistry
   ): SchemaAnalysis {
-    if (!schema || typeof schema !== "object") {
+    if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
       return {
         requiresDepthGuard: false,
         requiresMutationJournal: false,
-        mutableSchemas: new WeakSet()
+        requiresDynamicScope: false,
+        requiresEvaluatedTracking: false,
+        mutableSchemas: new WeakSet(),
+        reachableSchemas: [schema]
       };
     }
 
     const visiting = new WeakSet<object>();
     const visited = new WeakSet<object>();
-    const stack: Array<{
-      value: Record<string, any>;
-      depth: number;
-      exit: boolean;
-    }> = [];
-    for (let index = reachable.length - 1; index >= 0; index--) {
-      const value = reachable[index];
-      if (value !== true && value !== false) {
-        stack.push({ value, depth: 0, exit: false });
-      }
-    }
+    const queuedRoots = new WeakSet<object>();
+    const roots: JSONSchema[] = [schema];
+    queuedRoots.add(schema);
+    const reachableSchemas: JSONSchema[] = [];
     let requiresDepthGuard = false;
     let requiresMutationJournal = false;
+    let requiresDynamicScope = false;
+    let requiresEvaluatedTracking = false;
     const allNodes: Record<string, any>[] = [];
 
-    while (stack.length > 0) {
-      const entry = stack.pop()!;
-      if (entry.exit) {
-        visiting.delete(entry.value);
-        visited.add(entry.value);
+    for (let rootIndex = 0; rootIndex < roots.length; rootIndex++) {
+      const root = roots[rootIndex];
+      if (root === true || root === false) {
+        reachableSchemas.push(root);
         continue;
       }
-      if (visited.has(entry.value)) {
+      if (!root || typeof root !== "object" || visited.has(root)) {
         continue;
       }
-      if (visiting.has(entry.value)) {
-        const error = new ValidationError("Cyclic schema graph is not supported");
-        error.code = "CYCLIC_SCHEMA_GRAPH";
-        error.keyword = "compile";
-        throw error;
-      }
-      if (entry.depth > MAX_COMPILE_DEPTH) {
-        const error = new ValidationError("Maximum compile depth exceeded");
-        error.code = "MAX_COMPILE_DEPTH_EXCEEDED";
-        error.keyword = "compile";
-        throw error;
-      }
-      if (entry.depth > this.maxDepth) {
-        requiresDepthGuard = true;
-      }
-
-      visiting.add(entry.value);
-      allNodes.push(entry.value);
-      stack.push({ ...entry, exit: true });
-
-      if (this.useDefaults !== false && this.hasPropertyDefaults(entry.value)) {
-        requiresMutationJournal = true;
-      }
-
-      for (const key of Object.keys(entry.value)) {
-        const keyword = this.getKeyword(key);
-        if (keyword && keyword !== keywords[key]) {
+      const stack: Array<{
+        value: Record<string, any>;
+        depth: number;
+        exit: boolean;
+      }> = [{ value: root, depth: 0, exit: false }];
+      while (stack.length > 0) {
+        const entry = stack.pop()!;
+        if (entry.exit) {
+          visiting.delete(entry.value);
+          visited.add(entry.value);
+          continue;
+        }
+        if (visited.has(entry.value)) {
+          continue;
+        }
+        if (visiting.has(entry.value)) {
+          const error = new ValidationError(
+            "Cyclic schema graph is not supported"
+          );
+          error.code = "CYCLIC_SCHEMA_GRAPH";
+          error.keyword = "compile";
+          throw error;
+        }
+        if (entry.depth > MAX_COMPILE_DEPTH) {
+          const error = new ValidationError("Maximum compile depth exceeded");
+          error.code = "MAX_COMPILE_DEPTH_EXCEEDED";
+          error.keyword = "compile";
+          throw error;
+        }
+        if (entry.depth > this.maxDepth) {
           requiresDepthGuard = true;
+        }
+
+        visiting.add(entry.value);
+        reachableSchemas.push(entry.value);
+        allNodes.push(entry.value);
+        stack.push({ ...entry, exit: true });
+
+        const position = registry.positionsByNode.get(entry.value);
+        const environment =
+          position?.environment || this.defaultEnvironment("legacy");
+        if (
+          this.useDefaults !== false &&
+          this.isKeywordActive("properties", environment) &&
+          this.hasPropertyDefaults(entry.value)
+        ) {
           requiresMutationJournal = true;
         }
-      }
 
-      const children = this.schemaChildren(entry.value);
-      for (let index = children.length - 1; index >= 0; index--) {
-        stack.push({
-          value: children[index] as Record<string, any>,
-          depth: entry.depth + 1,
-          exit: false
-        });
+        if (
+          position &&
+          this.isModernDialect(position.dialect) &&
+          ((hasOwn(entry.value, "unevaluatedItems") &&
+            this.isKeywordActive("unevaluatedItems", environment)) ||
+            (hasOwn(entry.value, "unevaluatedProperties") &&
+              this.isKeywordActive("unevaluatedProperties", environment)))
+        ) {
+          requiresEvaluatedTracking = true;
+        }
+        if (
+          (position?.dialect === "2019-09" &&
+            typeof entry.value.$recursiveRef === "string") ||
+          (position?.dialect === "2020-12" &&
+            typeof entry.value.$dynamicRef === "string")
+        ) {
+          requiresDepthGuard = true;
+          requiresDynamicScope = true;
+        }
+
+        for (const key of Object.keys(entry.value)) {
+          const keyword = this.getKeyword(key);
+          if (keyword && keyword !== keywords[key]) {
+            requiresDepthGuard = true;
+            requiresMutationJournal = true;
+          }
+        }
+
+        const children = this.schemaChildren(
+          entry.value,
+          position?.dialect,
+          position?.environment
+        );
+        for (let index = children.length - 1; index >= 0; index--) {
+          stack.push({
+            value: children[index] as Record<string, any>,
+            depth: entry.depth + 1,
+            exit: false
+          });
+        }
+
+        if (position) {
+          for (const reference of this.builtinReferences(entry.value, position)) {
+            const target = this.resolveReferenceSource(
+              reference.ref,
+              position,
+              registry
+            );
+            if (typeof target === "undefined") {
+              const error = new ValidationError(
+                `Reference not found: ${reference.ref}`
+              );
+              error.code = "REFERENCE_NOT_FOUND";
+              error.keyword = reference.keyword;
+              throw error;
+            }
+            if (target === true || target === false) {
+              roots.push(target);
+            } else if (!queuedRoots.has(target)) {
+              queuedRoots.add(target);
+              roots.push(target);
+            }
+          }
+        }
       }
     }
 
@@ -1162,17 +1814,22 @@ export class SchemaShield {
       }
       semanticState.set(entry.value, 1);
       semanticStack.push({ value: entry.value, exit: true });
-      const children = this.schemaChildren(entry.value);
-      if (
-        typeof entry.value.$ref === "string" &&
-        this.getKeyword("$ref") === keywords.$ref
-      ) {
-        const position = registry.positionsByNode.get(entry.value);
-        const target = position
-          ? this.resolveReferenceSource(entry.value.$ref, position, registry)
-          : undefined;
-        if (target && typeof target === "object") {
-          children.push(target);
+      const position = registry.positionsByNode.get(entry.value);
+      const children = this.schemaChildren(
+        entry.value,
+        position?.dialect,
+        position?.environment
+      );
+      if (position) {
+        for (const reference of this.builtinReferences(entry.value, position)) {
+          const target = this.resolveReferenceSource(
+            reference.ref,
+            position,
+            registry
+          );
+          if (target && typeof target === "object") {
+            children.push(target);
+          }
         }
       }
       for (let index = children.length - 1; index >= 0; index--) {
@@ -1190,13 +1847,24 @@ export class SchemaShield {
       }
     }
 
-    return { requiresDepthGuard, requiresMutationJournal, mutableSchemas };
+    return {
+      requiresDepthGuard,
+      requiresMutationJournal,
+      requiresDynamicScope,
+      requiresEvaluatedTracking,
+      mutableSchemas,
+      reachableSchemas
+    };
   }
 
   compile(schema: any): Validator {
     const prepared = this.prepareSchema(schema);
     const compiledSchema = prepared.compiledSchema;
-    if (!prepared.requiresDepthGuard && !prepared.requiresMutationJournal) {
+    if (
+      !prepared.requiresDepthGuard &&
+      !prepared.requiresMutationJournal &&
+      !prepared.requiresEvaluatedTracking
+    ) {
       const directValidate = compiledSchema.$validate!;
       const validate = (this.immutable
         ? ((data: any) => {
@@ -1219,20 +1887,34 @@ export class SchemaShield {
   }
 
   private prepareSchema(schema: any) {
+    this.compilingSchemaChildren = new WeakMap();
     const referenceRegistry = this.buildReferenceRegistry(schema);
-    const reachableSchemas = this.collectReachableSchemas(
-      schema,
-      referenceRegistry
-    );
-    const analysis = this.analyzeSchema(
-      schema,
-      referenceRegistry,
-      reachableSchemas
-    );
+    const analysis = this.analyzeSchema(schema, referenceRegistry);
+    const reachableSchemas = analysis.reachableSchemas;
     this.compileCache = new WeakMap();
     this.compilingRequiresContext =
-      analysis.requiresDepthGuard || analysis.requiresMutationJournal;
+      analysis.requiresDepthGuard ||
+      analysis.requiresMutationJournal ||
+      analysis.requiresDynamicScope ||
+      analysis.requiresEvaluatedTracking;
+    this.compilingValidateSubschema = this.compilingRequiresContext
+      ? this.validateSubschema.bind(this)
+      : undefined;
+    if (this.compilingValidateSubschema) {
+      this.compilingValidateSubschema.savepoint = () => this.#defaultSavepoint();
+      this.compilingValidateSubschema.rollback = (savepoint: number) =>
+        this.#rollbackDefaultSavepoint(savepoint);
+      this.compilingValidateSubschema.tracksEvaluated =
+        analysis.requiresEvaluatedTracking;
+    }
     this.compilingMutableSchemas = analysis.mutableSchemas;
+    this.compilingEvaluatedTracking = analysis.requiresEvaluatedTracking;
+    this.compilingDialects = new WeakMap();
+    this.compilingEnvironments = new WeakMap();
+    for (const position of referenceRegistry.positions) {
+      this.compilingDialects.set(position.source, position.dialect);
+      this.compilingEnvironments.set(position.source, position.environment);
+    }
     const compiledSchema = this.compileSchema(schema);
     for (const reachableSchema of reachableSchemas) {
       if (reachableSchema !== schema) {
@@ -1240,36 +1922,6 @@ export class SchemaShield {
       }
     }
     this.rootSchema = compiledSchema;
-
-    let depthGuardState: DepthGuardState | null = null;
-    if (analysis.requiresDepthGuard) {
-      const compiledRoots: CompiledSchema[] = [compiledSchema];
-      for (const reachableSchema of reachableSchemas) {
-        if (
-          reachableSchema !== true &&
-          reachableSchema !== false &&
-          reachableSchema !== schema
-        ) {
-          const compiledReachable = this.compileCache.get(reachableSchema);
-          if (compiledReachable) {
-            compiledRoots.push(compiledReachable);
-          }
-        }
-      }
-      depthGuardState = this.installDepthGuards(compiledRoots);
-      definePropertyOrThrow(compiledSchema, "_requiresDepthGuard", {
-        value: true,
-        enumerable: false,
-        configurable: false,
-        writable: false
-      });
-    } else if (analysis.requiresMutationJournal) {
-      depthGuardState = { context: null };
-    }
-
-    if ((compiledSchema as any)._hasRef === true) {
-      this.linkReferences(referenceRegistry);
-    }
 
     if (!compiledSchema.$validate) {
       if (schema === false) {
@@ -1298,10 +1950,55 @@ export class SchemaShield {
       }
     }
 
+    const evaluationResources = analysis.requiresDynamicScope
+      ? this.installEvaluationResourceScopes(referenceRegistry)
+      : null;
+
+    const compiledRoots: CompiledSchema[] = [compiledSchema];
+    if (analysis.requiresDepthGuard || analysis.requiresEvaluatedTracking) {
+      for (const reachableSchema of reachableSchemas) {
+        if (
+          reachableSchema !== true &&
+          reachableSchema !== false &&
+          reachableSchema !== schema
+        ) {
+          const compiledReachable = this.compileCache.get(reachableSchema);
+          if (compiledReachable) {
+            compiledRoots.push(compiledReachable);
+          }
+        }
+      }
+    }
+
+    if (analysis.requiresEvaluatedTracking) {
+      this.installEvaluationTracking(compiledRoots);
+    }
+
+    let depthGuardState: DepthGuardState | null = null;
+    if (analysis.requiresDepthGuard) {
+      depthGuardState = this.installDepthGuards(compiledRoots);
+      definePropertyOrThrow(compiledSchema, "_requiresDepthGuard", {
+        value: true,
+        enumerable: false,
+        configurable: false,
+        writable: false
+      });
+    } else if (
+      analysis.requiresMutationJournal ||
+      analysis.requiresEvaluatedTracking
+    ) {
+      depthGuardState = { context: null };
+    }
+
+    if ((compiledSchema as any)._hasRef === true) {
+      this.linkReferences(referenceRegistry, evaluationResources);
+    }
+
     return {
       compiledSchema,
       requiresDepthGuard: analysis.requiresDepthGuard,
       requiresMutationJournal: analysis.requiresMutationJournal,
+      requiresEvaluatedTracking: analysis.requiresEvaluatedTracking,
       depthGuardState
     };
   }
@@ -1314,7 +2011,9 @@ export class SchemaShield {
       active: false,
       depth: -1,
       depthExceeded: false,
-      defaults: []
+      defaults: [],
+      resources: [],
+      evaluations: []
     };
     const validate = ((data: any) => {
       this.rootSchema = compiledSchema;
@@ -1323,7 +2022,9 @@ export class SchemaShield {
             active: false,
             depth: -1,
             depthExceeded: false,
-            defaults: []
+            defaults: [],
+            resources: [],
+            evaluations: []
           }
         : reusableContext;
       context.active = true;
@@ -1331,6 +2032,9 @@ export class SchemaShield {
       context.depthExceeded = false;
       delete context.depthError;
       context.defaults.length = 0;
+      context.resources.length = 0;
+      context.evaluations.length = 0;
+      delete context.completedEvaluation;
       this.validationContexts.push(context);
       const priorContext = depthGuardState.context;
       depthGuardState.context = context;
@@ -1535,10 +2239,11 @@ export class SchemaShield {
           Object.keys(value).length === 0
         );
       case "propertyNames":
-      case "items":
         return value === true;
+      case "items":
+        return value === true && !this.compilingEvaluatedTracking;
       case "additionalProperties":
-        if (value === true) {
+        if (value === true && !this.compilingEvaluatedTracking) {
           return true;
         }
 
@@ -1548,7 +2253,10 @@ export class SchemaShield {
           Object.keys(schema.patternProperties).length > 0
         );
       case "additionalItems":
-        return value === true || !Array.isArray(schema.items);
+        return (
+          (value === true && !this.compilingEvaluatedTracking) ||
+          !Array.isArray(schema.items)
+        );
       case "allOf": {
         if (!Array.isArray(value)) {
           return false;
@@ -1570,6 +2278,10 @@ export class SchemaShield {
       }
       case "anyOf": {
         if (!Array.isArray(value)) {
+          return false;
+        }
+
+        if (this.compilingEvaluatedTracking) {
           return false;
         }
 
@@ -1633,16 +2345,57 @@ export class SchemaShield {
     return error.getCause().code === "MAX_DEPTH_EXCEEDED";
   }
 
-  private validateSubschema(schema: CompiledSchema, data: any): Result {
+  private validateSubschema(
+    schema: CompiledSchema | boolean,
+    data: any,
+    evaluated?: {
+      property?: string;
+      item?: number;
+      unevaluated?: boolean;
+      discardAnnotations?: boolean;
+    }
+  ): Result {
+    const context = this.validationContexts[this.validationContexts.length - 1];
+    const parentEvaluation = context?.evaluations[context.evaluations.length - 1];
+    if (
+      evaluated?.unevaluated === true &&
+      ((typeof evaluated.property === "string" &&
+        parentEvaluation?.properties?.has(evaluated.property)) ||
+        (typeof evaluated.item === "number" &&
+          parentEvaluation?.items?.has(evaluated.item)))
+    ) {
+      return;
+    }
+    if (schema === true) {
+      this.markEvaluated(parentEvaluation, evaluated);
+      return;
+    }
+    if (schema === false) {
+      return true;
+    }
     if (!schema || typeof schema.$validate !== "function") {
       return;
     }
-    const context = this.validationContexts[this.validationContexts.length - 1];
     const savepoint = context?.defaults.length || 0;
+    if (context) {
+      delete context.completedEvaluation;
+    }
     try {
       const error = schema.$validate(data);
       if (error && context) {
         this.rollbackDefaults(context, savepoint);
+      }
+      if (!error && evaluated?.discardAnnotations !== true) {
+        this.markEvaluated(parentEvaluation, evaluated);
+        if (
+          typeof evaluated?.property !== "string" &&
+          typeof evaluated?.item !== "number"
+        ) {
+          this.mergeCompletedEvaluation(parentEvaluation, data, context);
+        }
+      }
+      if (evaluated?.discardAnnotations === true && context) {
+        delete context.completedEvaluation;
       }
       return error;
     } catch (error) {
@@ -1650,6 +2403,100 @@ export class SchemaShield {
         this.rollbackDefaults(context, savepoint);
       }
       throw error;
+    }
+  }
+
+  private markEvaluated(
+    state: EvaluatedState | undefined,
+    evaluated?: { property?: string; item?: number; unevaluated?: boolean }
+  ) {
+    if (!state || !evaluated) {
+      return;
+    }
+    if (typeof evaluated.property === "string") {
+      if (!state.properties) {
+        state.properties = new Set<string>();
+      }
+      state.properties.add(evaluated.property);
+    }
+    if (typeof evaluated.item === "number") {
+      if (!state.items) {
+        state.items = new Set<number>();
+      }
+      state.items.add(evaluated.item);
+    }
+  }
+
+  private mergeCompletedEvaluation(
+    parent: EvaluatedState | undefined,
+    data: any,
+    context: ValidationContext | undefined
+  ) {
+    const completed = context?.completedEvaluation;
+    if (!parent || !completed || completed === parent || completed.data !== data) {
+      return;
+    }
+    if (completed.properties) {
+      if (!parent.properties) {
+        parent.properties = new Set<string>();
+      }
+      for (const key of completed.properties) {
+        parent.properties.add(key);
+      }
+    }
+    if (completed.items) {
+      if (!parent.items) {
+        parent.items = new Set<number>();
+      }
+      for (const index of completed.items) {
+        parent.items.add(index);
+      }
+    }
+  }
+
+  private mergeReferenceEvaluation(data: any) {
+    const context = this.validationContexts[this.validationContexts.length - 1];
+    const parent = context?.evaluations[context.evaluations.length - 1];
+    this.mergeCompletedEvaluation(parent, data, context);
+  }
+
+  private installEvaluationTracking(roots: CompiledSchema[]) {
+    const stack = roots.slice();
+    const seen = new WeakSet<object>();
+    while (stack.length > 0) {
+      const schema = stack.pop()!;
+      if (!schema || typeof schema !== "object" || seen.has(schema)) {
+        continue;
+      }
+      seen.add(schema);
+      if (typeof schema.$validate === "function") {
+        const directValidate = schema.$validate;
+        schema.$validate = getNamedFunction(directValidate.name, (data: any) => {
+          const context = this.validationContexts[this.validationContexts.length - 1];
+          if (!context) {
+            return directValidate(data);
+          }
+          const state: EvaluatedState = { data };
+          context.evaluations.push(state);
+          try {
+            const error = directValidate(data);
+            if (error) {
+              delete context.completedEvaluation;
+            } else {
+              context.completedEvaluation = state;
+            }
+            return error;
+          } catch (error) {
+            delete context.completedEvaluation;
+            throw error;
+          } finally {
+            context.evaluations.pop();
+          }
+        });
+      }
+      for (const child of this.schemaChildren(schema)) {
+        stack.push(child as CompiledSchema);
+      }
     }
   }
 
@@ -1749,15 +2596,81 @@ export class SchemaShield {
       });
     }
 
-    const validateSubschema = this.compilingRequiresContext
-      ? this.validateSubschema.bind(this)
-      : undefined;
+    const validateSubschema = this.compilingValidateSubschema;
 
     let schemaHasRef = false;
+    const validators: ValidatorItem[] = [];
+    const activeNames: string[] = [];
+    const pendingCombinators: PendingCombinator[] = [];
+    const dialect = sourceSchema
+      ? this.compilingDialects.get(sourceSchema) || "legacy"
+      : "legacy";
+    const environment = sourceSchema
+      ? this.compilingEnvironments.get(sourceSchema) ||
+        this.defaultEnvironment(dialect)
+      : this.defaultEnvironment("legacy");
+    definePropertyOrThrow(compiledSchema, "_dialect", {
+      value: dialect,
+      enumerable: false,
+      configurable: false,
+      writable: false
+    });
+
+    const dynamicKeywords: Array<{
+      keyword: "$recursiveRef" | "$dynamicRef";
+      active: boolean;
+      method: "_resolvedRecursiveRef" | "_resolvedDynamicRef";
+      name: string;
+    }> = [
+      {
+        keyword: "$recursiveRef",
+        active:
+          dialect === "2019-09" && typeof schema.$recursiveRef === "string",
+        method: "_resolvedRecursiveRef",
+        name: "Validate_Recursive_Reference"
+      },
+      {
+        keyword: "$dynamicRef",
+        active: dialect === "2020-12" && typeof schema.$dynamicRef === "string",
+        method: "_resolvedDynamicRef",
+        name: "Validate_Dynamic_Reference"
+      }
+    ];
+    for (const reference of dynamicKeywords) {
+      if (!reference.active) {
+        continue;
+      }
+      schemaHasRef = true;
+      const defineError = getDefinedErrorFunctionForKey(
+        reference.keyword,
+        schema[reference.keyword],
+        this.failFast
+      );
+      validators.push({
+        name: reference.name,
+        validate: getNamedFunction<ValidateFunction>(reference.name, (data) => {
+          const resolved = (compiledSchema as any)[reference.method];
+          if (typeof resolved !== "function") {
+            return defineError(`Missing reference: ${schema[reference.keyword]}`);
+          }
+          const error = resolved(data);
+          if (!error) {
+            this.mergeReferenceEvaluation(data);
+          }
+          return error;
+        })
+      });
+      activeNames.push(reference.name);
+    }
 
     if ("$ref" in schema) {
       schemaHasRef = true;
       const refValidator = this.getKeyword("$ref");
+      const ignoresReferenceSiblings =
+        refValidator === keywords.$ref &&
+        (dialect === "draft4" ||
+          dialect === "draft6" ||
+          dialect === "draft7");
       if (refValidator) {
         const defineError = getDefinedErrorFunctionForKey(
           "$ref",
@@ -1766,47 +2679,65 @@ export class SchemaShield {
         );
 
         const isBuiltinRef = refValidator === keywords.$ref;
-        compiledSchema.$validate = getNamedFunction<ValidateFunction>(
-          isBuiltinRef ? "Validate_Reference" : refValidator.name || "$ref",
-          (data) =>
-            (refValidator as KeywordFunction)(
+        const refName = isBuiltinRef
+          ? "Validate_Reference"
+          : refValidator.name || "$ref";
+        const refValidate = getNamedFunction<ValidateFunction>(
+          refName,
+          (data) => {
+            const error = (refValidator as KeywordFunction)(
               compiledSchema,
               data,
               defineError,
               this,
-               validateSubschema
-            )
+              validateSubschema
+            );
+            if (!error && isBuiltinRef) {
+              this.mergeReferenceEvaluation(data);
+            }
+            return error;
+          }
         );
-        if (!isBuiltinRef) {
-          schemaHasRef = false;
+        if (isBuiltinRef && this.isModernDialect(dialect)) {
+          validators.push({ name: refName, validate: refValidate });
+          activeNames.push(refName);
+        } else {
+          compiledSchema.$validate = refValidate;
+          if (!isBuiltinRef) {
+            schemaHasRef = false;
+          }
         }
       }
 
-      for (const key of ["definitions", "$defs"]) {
-        const definitions = schema[key];
-        if (!definitions || typeof definitions !== "object") {
-          continue;
+      if (validators.length === 0) {
+        if (!ignoresReferenceSiblings) {
+          for (const key of ["definitions", "$defs"]) {
+            if (!this.isKeywordActive(key, environment)) {
+              continue;
+            }
+            const definitions = schema[key];
+            if (!definitions || typeof definitions !== "object") {
+              continue;
+            }
+            const compiledDefinitions: Record<string, any> = {};
+            for (const definitionKey of Object.keys(definitions)) {
+              compiledDefinitions[definitionKey] = this.compileSchema(
+                definitions[definitionKey]
+              );
+            }
+            compiledSchema[key] = compiledDefinitions;
+          }
         }
-        const compiledDefinitions: Record<string, any> = {};
-        for (const definitionKey of Object.keys(definitions)) {
-          compiledDefinitions[definitionKey] = this.compileSchema(
-            definitions[definitionKey]
-          );
+        if (schemaHasRef) {
+          this.markSchemaHasRef(compiledSchema);
         }
-        compiledSchema[key] = compiledDefinitions;
+        return compiledSchema;
       }
-      if (schemaHasRef) {
-        this.markSchemaHasRef(compiledSchema);
-      }
-      return compiledSchema;
     }
-
-    const validators: ValidatorItem[] = [];
-    const activeNames: string[] = [];
-    const pendingCombinators: PendingCombinator[] = [];
 
     if (
       this.useDefaults !== false &&
+      this.isKeywordActive("properties", environment) &&
       this.getKeyword("properties") === keywords.properties &&
       this.hasPropertyDefaults(schema)
     ) {
@@ -1824,7 +2755,7 @@ export class SchemaShield {
       activeNames.push(applyDefaults.name);
     }
 
-    if ("type" in schema) {
+    if ("type" in schema && this.isKeywordActive("type", environment)) {
       const defineTypeError = getDefinedErrorFunctionForKey(
         "type",
         schema,
@@ -1968,12 +2899,32 @@ export class SchemaShield {
       activeNames.push(typeMethodName);
     }
 
-    const { type, $id, $ref, $validate, required, ...otherKeys } = schema; // Exclude handled keys
+    const {
+      type,
+      $id,
+      $ref,
+      $recursiveRef,
+      $dynamicRef,
+      $validate,
+      required,
+      ...otherKeys
+    } = schema; // Exclude handled keys
 
     const otherKeyNames = Object.keys(otherKeys);
-    const keyOrder = required ? ["required", ...otherKeyNames] : otherKeyNames;
+    const unevaluatedKeys = otherKeyNames.filter(
+      (key) => key === "unevaluatedItems" || key === "unevaluatedProperties"
+    );
+    const siblingKeys = otherKeyNames.filter(
+      (key) => key !== "unevaluatedItems" && key !== "unevaluatedProperties"
+    );
+    const keyOrder = required
+      ? ["required", ...siblingKeys, ...unevaluatedKeys]
+      : [...siblingKeys, ...unevaluatedKeys];
 
     for (const key of keyOrder) {
+      if (!this.isKeywordActive(key, environment)) {
+        continue;
+      }
       const keywordFn = this.getKeyword(key);
 
       if (!keywordFn) {
@@ -2032,6 +2983,9 @@ export class SchemaShield {
 
     const literalKeywords = ["enum", "const", "default", "examples"];
     for (const key of keyOrder) {
+      if (!this.isKeywordActive(key, environment)) {
+        continue;
+      }
       if (literalKeywords.includes(key)) {
         continue;
       }
@@ -2041,7 +2995,13 @@ export class SchemaShield {
         typeof schema[key] === "object" &&
         !Array.isArray(schema[key])
       ) {
-        if (key === "properties" || key === "definitions" || key === "$defs") {
+        if (
+          key === "properties" ||
+          key === "patternProperties" ||
+          key === "definitions" ||
+          key === "$defs" ||
+          key === "dependentSchemas"
+        ) {
           for (const subKey of Object.keys(schema[key])) {
             const compiledSubSchema = this.compileSchema(
               schema[key][subKey]
@@ -2079,7 +3039,10 @@ export class SchemaShield {
       }
     }
 
-    if (this.isPlainObject(schema.properties)) {
+    if (
+      this.isKeywordActive("properties", environment) &&
+      this.isPlainObject(schema.properties)
+    ) {
       definePropertyOrThrow(compiledSchema, "_propKeys", {
         value: Object.keys(schema.properties),
         enumerable: false,
@@ -2090,6 +3053,7 @@ export class SchemaShield {
 
     if (
       this.useDefaults !== false &&
+      this.isKeywordActive("properties", environment) &&
       this.isPlainObject(schema.properties) &&
       this.hasPropertyDefaults(schema)
     ) {
@@ -2116,20 +3080,20 @@ export class SchemaShield {
 
     prepareCombinatorEntries(compiledSchema);
 
+    const transactions =
+      (compiledSchema as any)._canApplyDefaults === true
+        ? {
+            savepoint: () => this.#defaultSavepoint(),
+            rollback: (savepoint: number) =>
+              this.#rollbackDefaultSavepoint(savepoint),
+            capture: (savepoint: number) =>
+              this.#captureDefaultSavepoint(savepoint),
+            restore: (mutations: DefaultMutation[]) =>
+              this.#restoreDefaults(mutations)
+          }
+        : undefined;
     for (let index = 0; index < pendingCombinators.length; index++) {
       const pending = pendingCombinators[index];
-      const transactions =
-        (compiledSchema as any)._canApplyDefaults === true
-          ? {
-              savepoint: () => this.#defaultSavepoint(),
-              rollback: (savepoint: number) =>
-                this.#rollbackDefaultSavepoint(savepoint),
-              capture: (savepoint: number) =>
-                this.#captureDefaultSavepoint(savepoint),
-              restore: (mutations: DefaultMutation[]) =>
-                this.#restoreDefaults(mutations)
-            }
-          : undefined;
       pending.item.validate = getNamedFunction(
         pending.item.name,
         createCombinatorValidator(
@@ -2137,7 +3101,8 @@ export class SchemaShield {
           compiledSchema,
           pending.defineError,
           validateSubschema,
-          transactions
+          transactions,
+          this.compilingEvaluatedTracking
         )
       );
     }
@@ -2147,6 +3112,12 @@ export class SchemaShield {
     }
 
     if (validators.length === 0) {
+      if (this.compilingEvaluatedTracking) {
+        compiledSchema.$validate = getNamedFunction<ValidateFunction>(
+          "Validate_Any",
+          () => {}
+        );
+      }
       return compiledSchema;
     }
 
@@ -2210,7 +3181,120 @@ export class SchemaShield {
     return;
   }
 
-  private linkReferences(registry: ReferenceRegistry) {
+  private installEvaluationResourceScopes(
+    registry: ReferenceRegistry
+  ): WeakMap<object, EvaluationResource> {
+    const resources = new Map<
+      Record<string, any>,
+      {
+        compiledRoot: CompiledSchema;
+        dynamicAnchors: Map<string, CompiledSchema>;
+        recursiveAnchor: boolean;
+      }
+    >();
+
+    for (const position of registry.positions) {
+      if (!this.compileCache.has(position.source)) {
+        continue;
+      }
+      if (!resources.has(position.resourceRoot)) {
+        const rootPosition = registry.positionsByNode.get(position.resourceRoot);
+        const compiledRoot = this.compileCache.get(position.resourceRoot);
+        if (!compiledRoot) {
+          continue;
+        }
+        resources.set(position.resourceRoot, {
+          compiledRoot,
+          dynamicAnchors: new Map(),
+          recursiveAnchor:
+            rootPosition?.dialect === "2019-09" &&
+            position.resourceRoot.$recursiveAnchor === true
+        });
+      }
+    }
+
+    for (const position of registry.positions) {
+      const compiled = this.compileCache.get(position.source);
+      const resource = resources.get(position.resourceRoot);
+      if (!compiled || !resource) {
+        continue;
+      }
+      if (typeof compiled.$validate !== "function") {
+        compiled.$validate = getNamedFunction<ValidateFunction>(
+          "Validate_Any",
+          () => {}
+        );
+      }
+      if (
+        position.dialect === "2020-12" &&
+        typeof position.source.$dynamicAnchor === "string"
+      ) {
+        resource.dynamicAnchors.set(position.source.$dynamicAnchor, compiled);
+      }
+    }
+
+    const resourcesByRoot = new WeakMap<object, EvaluationResource>();
+    for (const [root, resource] of resources) {
+      resourcesByRoot.set(root, resource);
+    }
+
+    const wrapped = new WeakSet<object>();
+    for (const position of registry.positions) {
+      const compiled = this.compileCache.get(position.source);
+      const resource = resources.get(position.resourceRoot);
+      if (!compiled || !resource || wrapped.has(compiled)) {
+        continue;
+      }
+      wrapped.add(compiled);
+      const directValidate = compiled.$validate!;
+      compiled.$validate = getNamedFunction(directValidate.name, (data: any) => {
+        const context = this.validationContexts[this.validationContexts.length - 1];
+        if (!context || context.resources[context.resources.length - 1] === resource) {
+          return directValidate(data);
+        }
+        context.resources.push(resource);
+        try {
+          return directValidate(data);
+        } finally {
+          context.resources.pop();
+        }
+      });
+    }
+
+    return resourcesByRoot;
+  }
+
+  private referenceValidator(
+    target: CompiledSchema | boolean,
+    node: CompiledSchema,
+    keyword: "$ref" | "$recursiveRef" | "$dynamicRef"
+  ): ValidateFunction {
+    if (target === true) {
+      return getNamedFunction("Validate_Ref_True", () => {});
+    }
+    if (target === false) {
+      const defineError = getDefinedErrorFunctionForKey(
+        keyword,
+        node,
+        this.failFast
+      );
+      return getNamedFunction("Validate_Ref_False", (data: any) =>
+        defineError("Value is not valid", { data })
+      );
+    }
+    if (typeof target.$validate !== "function") {
+      target.$validate = getNamedFunction<ValidateFunction>(
+        "Validate_Ref_Any",
+        () => {}
+      );
+    }
+    return target.$validate;
+  }
+
+  private linkReferences(
+    registry: ReferenceRegistry,
+    resources: WeakMap<object, EvaluationResource> | null
+  ) {
     for (let index = 0; index < registry.positions.length; index++) {
       const position = registry.positions[index];
       if (
@@ -2238,33 +3322,149 @@ export class SchemaShield {
         throw error;
       }
 
-      let targetValidate: ValidateFunction;
-      if (target === true) {
-        targetValidate = getNamedFunction("Validate_Ref_True", () => {});
-      } else if (target === false) {
-        const defineError = getDefinedErrorFunctionForKey(
-          "$ref",
-          node,
-          this.failFast
-        );
-        targetValidate = getNamedFunction("Validate_Ref_False", (data: any) =>
-          defineError("Value is not valid", { data })
-        );
-      } else {
-        if (typeof target.$validate !== "function") {
-          target.$validate = getNamedFunction<ValidateFunction>(
-            "Validate_Ref_Any",
-            () => {}
-          );
-        }
-        targetValidate = target.$validate;
-      }
       definePropertyOrThrow(node, "_resolvedRef", {
-        value: targetValidate,
+        value: this.referenceValidator(target, node, "$ref"),
         enumerable: false,
         configurable: false,
         writable: false
       });
+    }
+
+    if (!resources) {
+      return;
+    }
+
+    for (let index = 0; index < registry.positions.length; index++) {
+      const position = registry.positions[index];
+      const references = this.builtinReferences(position.source, position);
+      for (const reference of references) {
+        if (reference.keyword === "$ref") {
+          continue;
+        }
+        const node = this.compileCache.get(position.source);
+        if (!node) {
+          continue;
+        }
+        const targetSource = this.resolveReferenceSource(
+          reference.ref,
+          position,
+          registry
+        );
+        if (typeof targetSource === "undefined") {
+          const error = new ValidationError(
+            `Reference not found: ${reference.ref}`
+          );
+          error.code = "REFERENCE_NOT_FOUND";
+          error.keyword = reference.keyword;
+          throw error;
+        }
+        const staticTarget = this.getCompiledReferenceTarget(
+          reference.ref,
+          position,
+          registry
+        );
+        if (typeof staticTarget === "undefined") {
+          const error = new ValidationError(
+            `Reference not found: ${reference.ref}`
+          );
+          error.code = "REFERENCE_NOT_FOUND";
+          error.keyword = reference.keyword;
+          throw error;
+        }
+        const staticValidate = this.referenceValidator(
+          staticTarget,
+          node,
+          reference.keyword
+        );
+        const targetPosition =
+          targetSource && typeof targetSource === "object"
+            ? registry.positionsByNode.get(targetSource)
+            : undefined;
+
+        let targetValidate = staticValidate;
+        if (reference.keyword === "$recursiveRef") {
+          const dynamicEligible =
+            targetPosition?.resourceRoot === targetSource &&
+            targetPosition.resourceRoot.$recursiveAnchor === true;
+          if (dynamicEligible) {
+            targetValidate = (data: any) => {
+              const context =
+                this.validationContexts[this.validationContexts.length - 1];
+              if (context) {
+                for (
+                  let scopeIndex = 0;
+                  scopeIndex < context.resources.length;
+                  scopeIndex++
+                ) {
+                  const resource = context.resources[scopeIndex];
+                  if (!resource.recursiveAnchor) {
+                    continue;
+                  }
+                  if (typeof resource.compiledRoot.$validate === "function") {
+                    return resource.compiledRoot.$validate(data);
+                  }
+                }
+              }
+              return staticValidate(data);
+            };
+          }
+        } else {
+          const resolvedUri = this.resolveUri(
+            reference.ref,
+            position.baseUri,
+            "$ref"
+          );
+          const hashIndex = resolvedUri.indexOf("#");
+          const rawFragment =
+            hashIndex === -1 ? "" : resolvedUri.slice(hashIndex + 1);
+          let anchor = "";
+          if (rawFragment.length > 0 && !rawFragment.startsWith("/")) {
+            try {
+              anchor = decodeURIComponent(rawFragment);
+            } catch {
+              anchor = "";
+            }
+          }
+          const dynamicEligible =
+            anchor.length > 0 &&
+            targetPosition?.dialect === "2020-12" &&
+            targetSource.$dynamicAnchor === anchor;
+          if (dynamicEligible) {
+            targetValidate = (data: any) => {
+              const context =
+                this.validationContexts[this.validationContexts.length - 1];
+              if (context) {
+                for (
+                  let scopeIndex = 0;
+                  scopeIndex < context.resources.length;
+                  scopeIndex++
+                ) {
+                  const target = context.resources[scopeIndex].dynamicAnchors.get(
+                    anchor
+                  );
+                  if (target && typeof target.$validate === "function") {
+                    return target.$validate(data);
+                  }
+                }
+              }
+              return staticValidate(data);
+            };
+          }
+        }
+
+        definePropertyOrThrow(
+          node,
+          reference.keyword === "$recursiveRef"
+            ? "_resolvedRecursiveRef"
+            : "_resolvedDynamicRef",
+          {
+            value: targetValidate,
+            enumerable: false,
+            configurable: false,
+            writable: false
+          }
+        );
+      }
     }
   }
 }

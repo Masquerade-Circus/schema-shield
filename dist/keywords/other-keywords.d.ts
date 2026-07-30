@@ -12,7 +12,7 @@ type TransactionHooks = {
     capture: (savepoint: number) => DefaultMutation[];
     restore: (mutations: DefaultMutation[]) => void;
 };
-export declare function createCombinatorValidator(key: CombinatorKey, schema: any, defineError: DefineErrorFunction, validateSubschema?: ValidateSubschemaFunction, transactions?: TransactionHooks): ValidateFunction;
+export declare function createCombinatorValidator(key: CombinatorKey, schema: any, defineError: DefineErrorFunction, validateSubschema?: ValidateSubschemaFunction, transactions?: TransactionHooks, collectAnnotations?: boolean): ValidateFunction;
 export declare function prepareCombinatorEntries(schema: any): void;
 export declare const OtherKeywords: Record<string, KeywordFunction>;
 export {};

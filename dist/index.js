@@ -190,14 +190,11 @@ var UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
 var DURATION_REGEX = /^P(?!$)((\d+Y)?(\d+M)?(\d+W)?(\d+D)?)(T(?=\d)(\d+H)?(\d+M)?(\d+S)?)?$/;
 var URI_REGEX = /^[a-zA-Z][a-zA-Z0-9+\-.]*:[^\s]*$/;
 var EMAIL_REGEX = /^(?!\.)(?!.*\.$)[a-z0-9!#$%&'*+/=?^_`{|}~-]{1,20}(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]{1,21}){0,2}@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,60}[a-z0-9])?){0,3}$/i;
-var HOSTNAME_REGEX = /^[a-z0-9][a-z0-9-]{0,62}(?:\.[a-z0-9][a-z0-9-]{0,62})*[a-z0-9]$/i;
-var TIME_REGEX = /^([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(\.\d+)?(Z|([+-])([01]\d|2[0-3]):([0-5]\d))$/;
 var URI_REFERENCE_REGEX = /^(([^:/?#]+):)?(\/\/([^/?#]*))?([^?#]*)(\?([^#]*))?(#((?![^#]*\\)[^#]*))?/i;
-var IRI_REGEX = /^[a-zA-Z][a-zA-Z0-9+\-.]*:[^\s]*$/;
-var IRI_REFERENCE_REGEX = /^(([^:/?#]+):)?(\/\/([^/?#]*))?([^?#]*)(\?([^#]*))?(#((?![^#]*\\)[^#]*))?/i;
-var IDN_EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-var IDN_HOSTNAME_REGEX = /^[^\s!@#$%^&*()_+\=\[\]{};':"\\|,<>\/?]+$/;
+var IRI_REGEX = URI_REGEX;
+var IRI_REFERENCE_REGEX = URI_REFERENCE_REGEX;
 var DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+var VIRAMA_END_REGEX = /[\u094d\u09cd\u0a4d\u0acd\u0b4d\u0bcd\u0c4d\u0ccd\u0d4d\u0dca\u0e3a\u0f84\u1039\u1714\u1734\u17d2\u1a60\u1b44\ua806\ua8c4\ua953\ua9c0\uaaf6\uabed]$/u;
 function isDigitCharCode(code) {
   return code >= 48 && code <= 57;
 }
@@ -255,21 +252,150 @@ function isValidIpv4(data) {
 function isHexCharCode(code) {
   return code >= 48 && code <= 57 || code >= 65 && code <= 70 || code >= 97 && code <= 102;
 }
-function hasValidPercentEncoding(data) {
+function hasOnlyUriCharacters(data, allowUnicode) {
   for (let index = 0; index < data.length; index++) {
     const code = data.charCodeAt(index);
-    if (code === 92) {
+    if (code <= 32 || code === 127 || code === 92) {
       return false;
     }
-    if (code !== 37) {
-      continue;
-    }
-    if (index + 2 >= data.length || !isHexCharCode(data.charCodeAt(index + 1)) || !isHexCharCode(data.charCodeAt(index + 2))) {
+    if (!allowUnicode && code > 127) {
       return false;
     }
-    index += 2;
+    if (code === 34 || code === 60 || code === 62 || code === 94 || code === 96 || code === 123 || code === 124 || code === 125) {
+      return false;
+    }
+    if (code === 37) {
+      if (index + 2 >= data.length || !isHexCharCode(data.charCodeAt(index + 1)) || !isHexCharCode(data.charCodeAt(index + 2))) {
+        return false;
+      }
+      index += 2;
+    }
   }
   return true;
+}
+function hasValidAuthority(data, schemeEnd) {
+  if (data.charCodeAt(schemeEnd) !== 47 || data.charCodeAt(schemeEnd + 1) !== 47) {
+    return true;
+  }
+  const authorityStart = schemeEnd + 2;
+  let authorityEnd = data.length;
+  let at = -1;
+  for (let index = authorityStart; index < data.length; index++) {
+    const code = data.charCodeAt(index);
+    if (code === 47 || code === 63 || code === 35) {
+      authorityEnd = index;
+      break;
+    }
+    if (code === 64) {
+      at = index;
+    }
+  }
+  if (at !== -1) {
+    for (let index = authorityStart; index < at; index++) {
+      const code = data.charCodeAt(index);
+      if (code === 91 || code === 93) {
+        return false;
+      }
+    }
+  }
+  const hostStart = at === -1 ? authorityStart : at + 1;
+  if (data.charCodeAt(hostStart) === 91) {
+    let close = -1;
+    for (let index = hostStart + 1; index < authorityEnd; index++) {
+      if (data.charCodeAt(index) === 93) {
+        close = index;
+        break;
+      }
+    }
+    if (close === -1) {
+      return false;
+    }
+    if (close + 1 === authorityEnd) {
+      return true;
+    }
+    if (data.charCodeAt(close + 1) !== 58) {
+      return false;
+    }
+    for (let index = close + 2; index < authorityEnd; index++) {
+      if (!isDigitCharCode(data.charCodeAt(index))) {
+        return false;
+      }
+    }
+    return true;
+  }
+  let colon = -1;
+  for (let index = hostStart; index < authorityEnd; index++) {
+    const code = data.charCodeAt(index);
+    if (code === 91 || code === 93) {
+      return false;
+    }
+    if (code === 58) {
+      if (colon !== -1) {
+        return false;
+      }
+      colon = index;
+    }
+  }
+  for (let index = colon + 1; colon !== -1 && index < authorityEnd; index++) {
+    if (!isDigitCharCode(data.charCodeAt(index))) {
+      return false;
+    }
+  }
+  return true;
+}
+function isValidTime(data) {
+  if (data.length < 9 || data.charCodeAt(2) !== 58 || data.charCodeAt(5) !== 58) {
+    return false;
+  }
+  const hour = parseTwoDigits(data, 0);
+  const minute = parseTwoDigits(data, 3);
+  const second = parseTwoDigits(data, 6);
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59 || second < 0 || second > 60) {
+    return false;
+  }
+  let cursor = 8;
+  if (data.charCodeAt(cursor) === 46) {
+    cursor++;
+    const fractionStart = cursor;
+    while (cursor < data.length && isDigitCharCode(data.charCodeAt(cursor))) {
+      cursor++;
+    }
+    if (cursor === fractionStart) {
+      return false;
+    }
+  }
+  let offsetMinutes = 0;
+  const zone = data.charCodeAt(cursor);
+  if (zone === 90 || zone === 122) {
+    cursor++;
+  } else if (zone === 43 || zone === 45) {
+    if (cursor + 6 !== data.length || data.charCodeAt(cursor + 3) !== 58) {
+      return false;
+    }
+    const offsetHour = parseTwoDigits(data, cursor + 1);
+    const offsetMinute = parseTwoDigits(data, cursor + 4);
+    if (offsetHour < 0 || offsetHour > 23 || offsetMinute < 0 || offsetMinute > 59) {
+      return false;
+    }
+    offsetMinutes = offsetHour * 60 + offsetMinute;
+    if (zone === 43) {
+      offsetMinutes = -offsetMinutes;
+    }
+    cursor += 6;
+  } else {
+    return false;
+  }
+  if (cursor !== data.length) {
+    return false;
+  }
+  if (second !== 60) {
+    return true;
+  }
+  let utcMinutes = (hour * 60 + minute + offsetMinutes) % (24 * 60);
+  if (utcMinutes < 0) {
+    utcMinutes += 24 * 60;
+  }
+  return utcMinutes === 23 * 60 + 59;
 }
 function isValidIpv6(data) {
   const length = data.length;
@@ -429,6 +555,334 @@ function isValidUriTemplate(data) {
   }
   return true;
 }
+function isValidAsciiHostnameSyntax(data) {
+  if (data.length === 0 || data.length > 253 || data.endsWith(".")) {
+    return false;
+  }
+  let labelLength = 0;
+  for (let index = 0; index < data.length; index++) {
+    const code = data.charCodeAt(index);
+    if (code === 46) {
+      if (labelLength === 0 || labelLength > 63 || data.charCodeAt(index - 1) === 45) {
+        return false;
+      }
+      labelLength = 0;
+      continue;
+    }
+    const alphanumeric = code >= 48 && code <= 57 || code >= 65 && code <= 90 || code >= 97 && code <= 122;
+    if (!alphanumeric && code !== 45) {
+      return false;
+    }
+    if (labelLength === 0 && code === 45) {
+      return false;
+    }
+    labelLength++;
+  }
+  return labelLength > 0 && labelLength <= 63 && data.charCodeAt(data.length - 1) !== 45;
+}
+function decodePunycodeDigit(code) {
+  if (code >= 48 && code <= 57) {
+    return code - 22;
+  }
+  if (code >= 65 && code <= 90) {
+    return code - 65;
+  }
+  if (code >= 97 && code <= 122) {
+    return code - 97;
+  }
+  return -1;
+}
+function adaptPunycodeBias(delta, points, first) {
+  delta = first ? Math.floor(delta / 700) : delta >> 1;
+  delta += Math.floor(delta / points);
+  let k = 0;
+  while (delta > 455) {
+    delta = Math.floor(delta / 35);
+    k += 36;
+  }
+  return k + Math.floor(36 * delta / (delta + 38));
+}
+function decodePunycode(label) {
+  const input = label.slice(4).toLowerCase();
+  const output = [];
+  const delimiter = input.lastIndexOf("-");
+  let cursor = 0;
+  if (delimiter !== -1) {
+    for (let index = 0; index < delimiter; index++) {
+      const code = input.charCodeAt(index);
+      if (code > 127) {
+        return null;
+      }
+      output.push(code);
+    }
+    cursor = delimiter + 1;
+  }
+  let codePoint = 128;
+  let insertion = 0;
+  let bias = 72;
+  while (cursor < input.length) {
+    const previousInsertion = insertion;
+    let weight = 1;
+    for (let k = 36; ; k += 36) {
+      if (cursor >= input.length) {
+        return null;
+      }
+      const digit = decodePunycodeDigit(input.charCodeAt(cursor++));
+      if (digit < 0 || digit > Math.floor((2147483647 - insertion) / weight)) {
+        return null;
+      }
+      insertion += digit * weight;
+      const threshold = k <= bias ? 1 : k >= bias + 26 ? 26 : k - bias;
+      if (digit < threshold) {
+        break;
+      }
+      const multiplier = 36 - threshold;
+      if (weight > Math.floor(2147483647 / multiplier)) {
+        return null;
+      }
+      weight *= multiplier;
+    }
+    const pointCount = output.length + 1;
+    bias = adaptPunycodeBias(
+      insertion - previousInsertion,
+      pointCount,
+      previousInsertion === 0
+    );
+    const increment = Math.floor(insertion / pointCount);
+    if (increment > 1114111 - codePoint) {
+      return null;
+    }
+    codePoint += increment;
+    insertion %= pointCount;
+    if (codePoint >= 55296 && codePoint <= 57343) {
+      return null;
+    }
+    output.splice(insertion, 0, codePoint);
+    insertion++;
+  }
+  try {
+    return String.fromCodePoint(...output);
+  } catch (_error) {
+    return null;
+  }
+}
+function hasValidIdnaContext(label) {
+  if (/^[\p{M}]/u.test(label)) {
+    return false;
+  }
+  if (/[\u0640\u07fa\u302e\u302f\u3031-\u3035\u303b]/u.test(label)) {
+    return false;
+  }
+  if (!/^[\p{L}\p{M}\p{Nd}\-\u00b7\u0375\u05f3\u05f4\u06fd\u06fe\u0f0b\u200c\u200d\u3007\u30fb]+$/u.test(
+    label
+  )) {
+    return false;
+  }
+  for (let index = 0; index < label.length; index++) {
+    const character = label[index];
+    if (character === "\xB7" && (label[index - 1] !== "l" || label[index + 1] !== "l")) {
+      return false;
+    }
+    if (character === "\u0375" && !/^\p{Script=Greek}$/u.test(label[index + 1] || "")) {
+      return false;
+    }
+    if ((character === "\u05F3" || character === "\u05F4") && !/^\p{Script=Hebrew}$/u.test(label[index - 1] || "")) {
+      return false;
+    }
+    if (character === "\u30FB" && !/[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]/u.test(
+      label
+    )) {
+      return false;
+    }
+    if (character === "\u200D" && !VIRAMA_END_REGEX.test(label.slice(0, index))) {
+      return false;
+    }
+    if (character === "\u200C" && !VIRAMA_END_REGEX.test(label.slice(0, index)) && !/^\p{Script=Arabic}$/u.test(label[index - 1] || "") && !/^\p{Script=Arabic}$/u.test(label[index + 1] || "")) {
+      return false;
+    }
+  }
+  return !(/[\u0660-\u0669]/u.test(label) && /[\u06f0-\u06f9]/u.test(label));
+}
+function toAsciiHostname(data) {
+  try {
+    return new URL(`http://${data}/`).hostname.toLowerCase();
+  } catch (_error) {
+    return null;
+  }
+}
+function decodeIdnaLabel(label) {
+  const normalized = label.normalize("NFC");
+  if (!/^xn--/i.test(normalized)) {
+    return normalized;
+  }
+  const decoded = decodePunycode(normalized);
+  if (decoded === null || !/[^\x00-\x7f]/u.test(decoded) || toAsciiHostname(decoded) !== normalized.toLowerCase()) {
+    return null;
+  }
+  return decoded.normalize("NFC");
+}
+function hasRtlCharacter(label) {
+  return [...label].some(isRtlCharacter);
+}
+function isRtlCharacter(character) {
+  return /^[\p{Script=Arabic}\p{Script=Hebrew}]$/u.test(character) && !/^[\p{Nd}\p{M}]$/u.test(character);
+}
+function hasValidIdnaBidi(labels) {
+  if (!labels.some(hasRtlCharacter)) {
+    return true;
+  }
+  for (const label of labels) {
+    const characters = [...label];
+    const significant = characters.filter(
+      (character) => !/^\p{M}$/u.test(character)
+    );
+    const first = significant[0] || "";
+    const last = significant[significant.length - 1] || "";
+    if (hasRtlCharacter(label)) {
+      if (!isRtlCharacter(first) || characters.some(
+        (character) => /^\p{L}$/u.test(character) && !isRtlCharacter(character)
+      ) || !(isRtlCharacter(last) || /^[0-9\u0660-\u06f9]$/u.test(last)) || /[0-9]/u.test(label) && /[\u0660-\u0669]/u.test(label)) {
+        return false;
+      }
+    } else if (!/^\p{L}$/u.test(first) || !(/^\p{L}$/u.test(last) || /^[0-9\u06f0-\u06f9]$/u.test(last))) {
+      return false;
+    }
+  }
+  return true;
+}
+function validatedIdnaLabels(labels) {
+  const decoded = [];
+  for (const label of labels) {
+    const value = decodeIdnaLabel(label);
+    if (value === null || value.startsWith("-") || value.endsWith("-") || /[^\x00-\x7f]/u.test(value) && value[2] === "-" && value[3] === "-" || !hasValidIdnaContext(value.toLowerCase())) {
+      return null;
+    }
+    decoded.push(value);
+  }
+  return hasValidIdnaBidi(decoded) ? decoded : null;
+}
+function isValidHostname(data) {
+  if (!isValidAsciiHostnameSyntax(data)) {
+    return false;
+  }
+  if (!/xn--/i.test(data)) {
+    return true;
+  }
+  return validatedIdnaLabels(data.split(".")) !== null;
+}
+function isValidIdnHostname(data) {
+  if (data.length === 0 || /[.\u3002\uff0e\uff61]$/u.test(data)) {
+    return false;
+  }
+  const labels = data.split(/[.\u3002\uff0e\uff61]/u);
+  if (labels.some((label) => label.length === 0)) {
+    return false;
+  }
+  if (validatedIdnaLabels(labels) === null) {
+    return false;
+  }
+  const ascii = toAsciiHostname(data);
+  if (ascii === null || !isValidAsciiHostnameSyntax(ascii)) {
+    return false;
+  }
+  const asciiLabels = (ascii.endsWith(".") ? ascii.slice(0, -1) : ascii).split(".");
+  for (let index = 0; index < labels.length; index++) {
+    if (/^xn--/i.test(labels[index]) && asciiLabels[index] !== labels[index].toLowerCase()) {
+      return false;
+    }
+  }
+  return true;
+}
+function utf8ByteLength(data) {
+  let bytes = 0;
+  for (let index = 0; index < data.length; index++) {
+    const code = data.charCodeAt(index);
+    if (code <= 127) {
+      bytes++;
+    } else if (code <= 2047) {
+      bytes += 2;
+    } else if (code >= 55296 && code <= 56319) {
+      const next = data.charCodeAt(index + 1);
+      if (next < 56320 || next > 57343) {
+        return -1;
+      }
+      bytes += 4;
+      index++;
+    } else if (code >= 56320 && code <= 57343) {
+      return -1;
+    } else {
+      bytes += 3;
+    }
+  }
+  return bytes;
+}
+function isValidInternationalLocalPart(local) {
+  const byteLength = utf8ByteLength(local);
+  if (byteLength < 1 || byteLength > 64) {
+    return false;
+  }
+  if (local.startsWith('"') || local.endsWith('"')) {
+    if (!(local.startsWith('"') && local.endsWith('"')) || local.length < 2) {
+      return false;
+    }
+    for (let index = 1; index < local.length - 1; index++) {
+      const character = local[index];
+      const code = local.charCodeAt(index);
+      if (character === "\\") {
+        index++;
+        if (index >= local.length - 1) {
+          return false;
+        }
+        const escapedCode = local.charCodeAt(index);
+        if (escapedCode < 32 || escapedCode > 126) {
+          return false;
+        }
+        continue;
+      }
+      if (character === '"' || code < 32 || code === 127 || code > 127 && /[\p{C}\p{Z}]/u.test(character)) {
+        return false;
+      }
+    }
+    return true;
+  }
+  const atoms = local.split(".");
+  if (atoms.some((atom) => atom.length === 0)) {
+    return false;
+  }
+  for (const atom of atoms) {
+    for (const character of atom) {
+      if (/^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]$/.test(character)) {
+        continue;
+      }
+      if (character.charCodeAt(0) <= 127 || /[\p{C}\p{Z}]/u.test(character)) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+function isValidIdnEmail(data) {
+  if (utf8ByteLength(data) > 254) {
+    return false;
+  }
+  const at = data.lastIndexOf("@");
+  if (at < 1 || at === data.length - 1) {
+    return false;
+  }
+  const local = data.slice(0, at);
+  const domain = data.slice(at + 1);
+  if (!isValidInternationalLocalPart(local)) {
+    return false;
+  }
+  if (!local.startsWith('"') && local.includes("@")) {
+    return false;
+  }
+  if (domain.startsWith("[") && domain.endsWith("]")) {
+    const literal = domain.slice(1, -1);
+    return literal.startsWith("IPv6:") ? isValidIpv6(literal.slice(5)) : isValidIpv4(literal);
+  }
+  return isValidIdnHostname(domain);
+}
 var Formats = {
   ["date-time"](data) {
     const length = data.length;
@@ -517,10 +971,31 @@ var Formats = {
     return true;
   },
   uri(data) {
-    return URI_REGEX.test(data) && hasValidPercentEncoding(data);
+    const scheme = data.indexOf(":") + 1;
+    return URI_REGEX.test(data) && hasOnlyUriCharacters(data, false) && hasValidAuthority(data, scheme);
   },
   email(data) {
-    return EMAIL_REGEX.test(data);
+    if (EMAIL_REGEX.test(data)) {
+      return true;
+    }
+    const at = data.lastIndexOf("@");
+    if (at < 1 || at === data.length - 1) {
+      return false;
+    }
+    const local = data.slice(0, at);
+    const domain = data.slice(at + 1);
+    const quotedLocal = local.length >= 2 && local.startsWith('"') && local.endsWith('"') && !/[\r\n]/.test(local.slice(1, -1));
+    if (!quotedLocal && !EMAIL_REGEX.test(`${local}@example.com`)) {
+      return false;
+    }
+    if (quotedLocal && EMAIL_REGEX.test(`x@${domain}`)) {
+      return true;
+    }
+    if (!domain.startsWith("[") || !domain.endsWith("]")) {
+      return false;
+    }
+    const literal = domain.slice(1, -1);
+    return literal.startsWith("IPv6:") ? isValidIpv6(literal.slice(5)) : isValidIpv4(literal);
   },
   ipv4(data) {
     return isValidIpv4(data);
@@ -529,7 +1004,7 @@ var Formats = {
     return isValidIpv6(data);
   },
   hostname(data) {
-    return HOSTNAME_REGEX.test(data);
+    return isValidHostname(data);
   },
   date(data) {
     if (data.length !== 10 || data.charCodeAt(4) !== 45 || data.charCodeAt(7) !== 45) {
@@ -549,7 +1024,7 @@ var Formats = {
   },
   regex(data) {
     try {
-      new RegExp(data);
+      new RegExp(data, "u");
       return true;
     } catch (e) {
       return false;
@@ -562,39 +1037,58 @@ var Formats = {
     return isValidRelativeJsonPointer(data);
   },
   time(data) {
-    return TIME_REGEX.test(data);
+    return isValidTime(data);
   },
   "uri-reference"(data) {
-    if (data.includes("\\")) {
+    if (!hasOnlyUriCharacters(data, false)) {
       return false;
     }
-    return URI_REFERENCE_REGEX.test(data);
+    const colon = data.indexOf(":");
+    const schemeEnd = colon !== -1 && /^[A-Za-z][A-Za-z0-9+.-]*$/.test(data.slice(0, colon)) ? colon + 1 : 0;
+    return URI_REFERENCE_REGEX.test(data) && hasValidAuthority(data, schemeEnd);
   },
   "uri-template"(data) {
     return isValidUriTemplate(data);
   },
   duration(data) {
-    return DURATION_REGEX.test(data);
+    if (!DURATION_REGEX.test(data)) {
+      return false;
+    }
+    const timeStart = data.indexOf("T");
+    const datePart = timeStart === -1 ? data : data.slice(0, timeStart);
+    const timePart = timeStart === -1 ? "" : data.slice(timeStart + 1);
+    if (data.includes("W")) {
+      return /^P\d+W$/.test(data);
+    }
+    if (datePart.includes("Y") && datePart.includes("D") && !datePart.includes("M")) {
+      return false;
+    }
+    if (timePart.includes("H") && timePart.includes("S") && !timePart.includes("M")) {
+      return false;
+    }
+    return true;
   },
   uuid(data) {
     return UUID_REGEX.test(data);
   },
   // IRI is like URI but allows Unicode. We reuse a permissive logic.
   iri(data) {
-    return IRI_REGEX.test(data);
+    const scheme = data.indexOf(":") + 1;
+    return IRI_REGEX.test(data) && hasOnlyUriCharacters(data, true) && hasValidAuthority(data, scheme);
   },
   "iri-reference"(data) {
-    if (data.includes("\\")) {
+    if (!hasOnlyUriCharacters(data, true)) {
       return false;
     }
-    return IRI_REFERENCE_REGEX.test(data);
+    const colon = data.indexOf(":");
+    const schemeEnd = colon !== -1 && /^[A-Za-z][A-Za-z0-9+.-]*$/.test(data.slice(0, colon)) ? colon + 1 : 0;
+    return IRI_REFERENCE_REGEX.test(data) && hasValidAuthority(data, schemeEnd);
   },
-  // Best-effort structural validation for IDN (no punycode/tables)
   "idn-email"(data) {
-    return IDN_EMAIL_REGEX.test(data);
+    return isValidIdnEmail(data);
   },
   "idn-hostname"(data) {
-    return IDN_HOSTNAME_REGEX.test(data);
+    return isValidIdnHostname(data);
   }
 };
 
@@ -744,23 +1238,43 @@ function getPrimitiveArraySignature(value) {
 }
 var ArrayKeywords = {
   // lib/keywords/array-keywords.ts
-  items(schema, data, defineError) {
+  items(schema, data, defineError, _instance, validateSubschema) {
     if (!Array.isArray(data)) {
       return;
     }
     const schemaItems = schema.items;
     const dataLength = data.length;
+    const startIndex = schema._dialect === "2020-12" && Array.isArray(schema.prefixItems) ? schema.prefixItems.length : 0;
     if (typeof schemaItems === "boolean") {
-      if (schemaItems === false && dataLength > 0) {
+      if (schemaItems === false && dataLength > startIndex) {
         return defineError("Array items are not allowed", { data });
+      }
+      if (validateSubschema) {
+        for (let i = startIndex; i < dataLength; i++) {
+          validateSubschema(true, data[i], { item: i });
+        }
       }
       return;
     }
     if (Array.isArray(schemaItems)) {
+      if (schema._dialect === "2020-12") {
+        return;
+      }
       const schemaItemsLength = schemaItems.length;
       const itemsLength = schemaItemsLength < dataLength ? schemaItemsLength : dataLength;
       for (let i = 0; i < itemsLength; i++) {
         const schemaItem = schemaItems[i];
+        if (validateSubschema) {
+          const error = validateSubschema(schemaItem, data[i], { item: i });
+          if (error) {
+            return defineError("Array item is invalid", {
+              item: i,
+              cause: error,
+              data: data[i]
+            });
+          }
+          continue;
+        }
         if (typeof schemaItem === "boolean") {
           if (schemaItem === false && data[i] !== void 0) {
             return defineError("Array item is not allowed", {
@@ -788,8 +1302,8 @@ var ArrayKeywords = {
     if (typeof validate !== "function") {
       return;
     }
-    for (let i = 0; i < dataLength; i++) {
-      const error = validate(data[i]);
+    for (let i = startIndex; i < dataLength; i++) {
+      const error = validateSubschema ? validateSubschema(schemaItems, data[i], { item: i }) : validate(data[i]);
       if (error) {
         return defineError("Array item is invalid", {
           item: i,
@@ -831,7 +1345,7 @@ var ArrayKeywords = {
     }
     return defineError("Array is too long", { data });
   },
-  additionalItems(schema, data, defineError) {
+  additionalItems(schema, data, defineError, _instance, validateSubschema) {
     if (!Array.isArray(data) || !Array.isArray(schema.items)) {
       return;
     }
@@ -851,6 +1365,21 @@ var ArrayKeywords = {
     if (schema.additionalItems === false) {
       return defineError("Array is too long", { data });
     }
+    if (validateSubschema) {
+      for (let i = tupleLength; i < data.length; i++) {
+        const error = validateSubschema(schema.additionalItems, data[i], {
+          item: i
+        });
+        if (error) {
+          return defineError("Array item is invalid", {
+            item: i,
+            cause: error,
+            data: data[i]
+          });
+        }
+      }
+      return;
+    }
     if (schema.additionalItems && typeof schema.additionalItems === "object" && !Array.isArray(schema.additionalItems)) {
       if (isCompiledSchema(schema.additionalItems)) {
         for (let i = tupleLength; i < data.length; i++) {
@@ -868,6 +1397,45 @@ var ArrayKeywords = {
       return;
     }
     return;
+  },
+  prefixItems(schema, data, defineError, _instance, validateSubschema) {
+    if (!Array.isArray(data) || !Array.isArray(schema.prefixItems)) {
+      return;
+    }
+    const limit = Math.min(data.length, schema.prefixItems.length);
+    for (let index = 0; index < limit; index++) {
+      const prefixSchema = schema.prefixItems[index];
+      if (validateSubschema) {
+        const error2 = validateSubschema(prefixSchema, data[index], {
+          item: index
+        });
+        if (error2) {
+          return defineError("Array item is invalid", {
+            item: index,
+            cause: error2,
+            data: data[index]
+          });
+        }
+        continue;
+      }
+      if (prefixSchema === false) {
+        return defineError("Array item is not allowed", {
+          item: index,
+          data: data[index]
+        });
+      }
+      if (!isCompiledSchema(prefixSchema)) {
+        continue;
+      }
+      const error = prefixSchema.$validate(data[index]);
+      if (error) {
+        return defineError("Array item is invalid", {
+          item: index,
+          cause: error,
+          data: data[index]
+        });
+      }
+    }
   },
   uniqueItems(schema, data, defineError) {
     if (!Array.isArray(data) || !schema.uniqueItems) {
@@ -967,163 +1535,81 @@ var ArrayKeywords = {
       candidates.push(item);
     }
   },
-  contains(schema, data, defineError) {
+  contains(schema, data, defineError, _instance, validateSubschema) {
     if (!Array.isArray(data)) {
       return;
     }
-    if (typeof schema.contains === "boolean") {
-      if (schema.contains) {
-        if (data.length === 0) {
-          return defineError("Array must contain at least one item", { data });
+    const modern = schema._dialect === "2019-09" || schema._dialect === "2020-12";
+    const configuredMinimum = schema.minContains;
+    const configuredMaximum = schema.maxContains;
+    const minimum = modern && Number.isInteger(configuredMinimum) && configuredMinimum >= 0 ? configuredMinimum : 1;
+    const maximum = modern && Number.isInteger(configuredMaximum) && configuredMaximum >= 0 ? configuredMaximum : Number.POSITIVE_INFINITY;
+    let matches = 0;
+    const savepoint = validateSubschema?.savepoint?.();
+    try {
+      if (typeof schema.contains === "boolean") {
+        matches = schema.contains ? data.length : 0;
+        if (schema.contains && validateSubschema) {
+          for (let i = 0; i < data.length; i++) {
+            validateSubschema(true, data[i], { item: i });
+          }
         }
+      } else if (isCompiledSchema(schema.contains)) {
+        for (let i = 0; i < data.length; i++) {
+          const error = validateSubschema ? validateSubschema(schema.contains, data[i], { item: i }) : schema.contains.$validate(data[i]);
+          if (!error) {
+            matches++;
+            if (matches > maximum) {
+              break;
+            }
+          }
+        }
+      }
+      if (matches >= minimum && matches <= maximum) {
         return;
       }
-      return defineError("Array must not contain any items", { data });
-    }
-    const containsValidate = schema.contains.$validate;
-    for (let i = 0; i < data.length; i++) {
-      const error = containsValidate(data[i]);
-      if (!error) {
-        return;
+      if (typeof savepoint === "number") {
+        validateSubschema?.rollback?.(savepoint);
       }
-      continue;
+      return defineError("Array contains an invalid number of matching items", {
+        data
+      });
+    } catch (error) {
+      if (typeof savepoint === "number") {
+        validateSubschema?.rollback?.(savepoint);
+      }
+      throw error;
     }
-    return defineError("Array must contain at least one item", { data });
+  },
+  minContains() {
+    return;
+  },
+  maxContains() {
+    return;
+  },
+  unevaluatedItems(schema, data, defineError, _instance, validateSubschema) {
+    if (!Array.isArray(data) || !validateSubschema) {
+      return;
+    }
+    for (let index = 0; index < data.length; index++) {
+      const error = validateSubschema(schema.unevaluatedItems, data[index], {
+        item: index,
+        unevaluated: true
+      });
+      if (error) {
+        return defineError("Unevaluated array item is invalid", {
+          item: index,
+          cause: error,
+          data: data[index]
+        });
+      }
+    }
   }
 };
 
 // lib/utils/deep-freeze.ts
-function isPlainObject(value) {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-  const proto = Reflect.getPrototypeOf(value);
-  return proto === Object.prototype || proto === null;
-}
-function canUseStructuredClone(value) {
-  if (typeof structuredClone !== "function") {
-    return false;
-  }
-  if (typeof Buffer !== "undefined" && value instanceof Buffer) {
-    return false;
-  }
-  return Array.isArray(value) || isPlainObject(value) || value instanceof Date || value instanceof RegExp || value instanceof Map || value instanceof Set || value instanceof ArrayBuffer || ArrayBuffer.isView(value);
-}
-function deepCloneUnfreeze(obj, cloneClassInstances = false, seen = /* @__PURE__ */ new WeakMap()) {
-  if (typeof obj === "undefined" || obj === null || typeof obj !== "object") {
-    return obj;
-  }
-  const source = obj;
-  if (seen.has(source)) {
-    return seen.get(source);
-  }
-  if (canUseStructuredClone(source)) {
-    const cloned = structuredClone(source);
-    seen.set(source, cloned);
-    return cloned;
-  }
-  let clone;
-  switch (true) {
-    case Array.isArray(source): {
-      clone = [];
-      seen.set(source, clone);
-      for (let i = 0, l = source.length; i < l; i++) {
-        clone[i] = deepCloneUnfreeze(source[i], cloneClassInstances, seen);
-      }
-      return clone;
-    }
-    case source instanceof Date: {
-      clone = new Date(source.getTime());
-      seen.set(source, clone);
-      return clone;
-    }
-    case source instanceof RegExp: {
-      clone = new RegExp(source.source, source.flags);
-      seen.set(source, clone);
-      return clone;
-    }
-    case source instanceof Map: {
-      clone = /* @__PURE__ */ new Map();
-      seen.set(source, clone);
-      for (const [key, value] of source.entries()) {
-        clone.set(
-          deepCloneUnfreeze(key, cloneClassInstances, seen),
-          deepCloneUnfreeze(value, cloneClassInstances, seen)
-        );
-      }
-      return clone;
-    }
-    case source instanceof Set: {
-      clone = /* @__PURE__ */ new Set();
-      seen.set(source, clone);
-      for (const value of source.values()) {
-        clone.add(deepCloneUnfreeze(value, cloneClassInstances, seen));
-      }
-      return clone;
-    }
-    case source instanceof ArrayBuffer: {
-      clone = source.slice(0);
-      seen.set(source, clone);
-      return clone;
-    }
-    case ArrayBuffer.isView(source): {
-      clone = new source.constructor(source.buffer.slice(0));
-      seen.set(source, clone);
-      return clone;
-    }
-    case (typeof Buffer !== "undefined" && source instanceof Buffer): {
-      clone = Buffer.from(source);
-      seen.set(source, clone);
-      return clone;
-    }
-    case source instanceof Error: {
-      clone = new source.constructor(source.message);
-      seen.set(source, clone);
-      break;
-    }
-    case (source instanceof Promise || source instanceof WeakMap || source instanceof WeakSet): {
-      clone = source;
-      seen.set(source, clone);
-      return clone;
-    }
-    case (source.constructor && source.constructor !== Object): {
-      if (!cloneClassInstances) {
-        clone = source;
-        seen.set(source, clone);
-        return clone;
-      }
-      clone = Object.create(Reflect.getPrototypeOf(source));
-      seen.set(source, clone);
-      break;
-    }
-    default: {
-      clone = {};
-      seen.set(source, clone);
-      const keys = Reflect.ownKeys(source);
-      for (let i = 0, l = keys.length; i < l; i++) {
-        const key = keys[i];
-        clone[key] = deepCloneUnfreeze(
-          source[key],
-          cloneClassInstances,
-          seen
-        );
-      }
-      return clone;
-    }
-  }
-  const descriptors = Object.getOwnPropertyDescriptors(source);
-  for (const key of Reflect.ownKeys(descriptors)) {
-    const descriptor = descriptors[key];
-    if ("value" in descriptor) {
-      descriptor.value = deepCloneUnfreeze(
-        descriptor.value,
-        cloneClassInstances,
-        seen
-      );
-    }
-    definePropertyOrThrow(clone, key, descriptor);
-  }
-  return clone;
+function deepCloneUnfreeze(obj) {
+  return structuredClone(obj);
 }
 
 // lib/keywords/number-keywords.ts
@@ -1135,13 +1621,17 @@ var NumberKeywords = {
     if (!Number.isFinite(data)) {
       return defineError("Value must be finite", { data });
     }
-    let min = schema.minimum;
-    if (typeof schema.exclusiveMinimum === "number") {
-      min = schema.exclusiveMinimum + 1e-15;
+    if (schema._dialect !== "draft4" && typeof schema.exclusiveMinimum === "number") {
+      if (data <= schema.exclusiveMinimum) {
+        return defineError("Value is less than or equal to the exclusiveMinimum", {
+          data
+        });
+      }
     } else if (schema.exclusiveMinimum === true) {
-      min += 1e-15;
-    }
-    if (data < min) {
+      if (data <= schema.minimum) {
+        return defineError("Value is less than or equal to the minimum", { data });
+      }
+    } else if (data < schema.minimum) {
       return defineError("Value is less than the minimum", { data });
     }
     return;
@@ -1153,13 +1643,20 @@ var NumberKeywords = {
     if (!Number.isFinite(data)) {
       return defineError("Value must be finite", { data });
     }
-    let max = schema.maximum;
-    if (typeof schema.exclusiveMaximum === "number") {
-      max = schema.exclusiveMaximum - 1e-15;
+    if (schema._dialect !== "draft4" && typeof schema.exclusiveMaximum === "number") {
+      if (data >= schema.exclusiveMaximum) {
+        return defineError(
+          "Value is greater than or equal to the exclusiveMaximum",
+          { data }
+        );
+      }
     } else if (schema.exclusiveMaximum === true) {
-      max -= 1e-15;
-    }
-    if (data > max) {
+      if (data >= schema.maximum) {
+        return defineError("Value is greater than or equal to the maximum", {
+          data
+        });
+      }
+    } else if (data > schema.maximum) {
       return defineError("Value is greater than the maximum", { data });
     }
     return;
@@ -1181,16 +1678,16 @@ var NumberKeywords = {
     return;
   },
   exclusiveMinimum(schema, data, defineError, instance) {
-    if (typeof data !== "number" || typeof schema.exclusiveMinimum !== "number" || "minimum" in schema) {
+    if (typeof data !== "number" || schema._dialect === "draft4" || typeof schema.exclusiveMinimum !== "number" || "minimum" in schema) {
       return;
     }
-    if (data <= schema.exclusiveMinimum + 1e-15) {
+    if (data <= schema.exclusiveMinimum) {
       return defineError("Value is less than or equal to the exclusiveMinimum");
     }
     return;
   },
   exclusiveMaximum(schema, data, defineError, instance) {
-    if (typeof data !== "number" || typeof schema.exclusiveMaximum !== "number" || "maximum" in schema) {
+    if (typeof data !== "number" || schema._dialect === "draft4" || typeof schema.exclusiveMaximum !== "number" || "maximum" in schema) {
       return;
     }
     if (data >= schema.exclusiveMaximum) {
@@ -1341,6 +1838,36 @@ function getPatternKeyMatchIndexes(schema, key, entries) {
   }
   return indexes;
 }
+function decodeBase64(data) {
+  if (data.length % 4 !== 0 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(
+    data
+  )) {
+    return null;
+  }
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const bytes = [];
+  for (let index = 0; index < data.length; index += 4) {
+    const first = alphabet.indexOf(data[index]);
+    const second = alphabet.indexOf(data[index + 1]);
+    const third = data[index + 2] === "=" ? 0 : alphabet.indexOf(data[index + 2]);
+    const fourth = data[index + 3] === "=" ? 0 : alphabet.indexOf(data[index + 3]);
+    const value = first << 18 | second << 12 | third << 6 | fourth;
+    bytes.push(value >> 16 & 255);
+    if (data[index + 2] !== "=") {
+      bytes.push(value >> 8 & 255);
+    }
+    if (data[index + 3] !== "=") {
+      bytes.push(value & 255);
+    }
+  }
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(
+      new Uint8Array(bytes)
+    );
+  } catch {
+    return null;
+  }
+}
 var ObjectKeywords = {
   required(schema, data, defineError) {
     if (!data || typeof data !== "object" || Array.isArray(data)) {
@@ -1357,7 +1884,7 @@ var ObjectKeywords = {
     }
     return;
   },
-  properties(schema, data, defineError, instance) {
+  properties(schema, data, defineError, _instance, validateSubschema) {
     if (!data || typeof data !== "object" || Array.isArray(data)) {
       return;
     }
@@ -1366,6 +1893,17 @@ var ObjectKeywords = {
       const key = propKeys[i];
       const schemaProp = schema.properties[key];
       if (!hasOwn(data, key)) {
+        continue;
+      }
+      if (validateSubschema) {
+        const error = validateSubschema(schemaProp, data[key], { property: key });
+        if (error) {
+          return defineError("Property is invalid", {
+            item: key,
+            cause: error,
+            data: data[key]
+          });
+        }
         continue;
       }
       if (typeof schemaProp === "boolean") {
@@ -1445,7 +1983,7 @@ var ObjectKeywords = {
     }
     return defineError("Too few properties", { data });
   },
-  additionalProperties(schema, data, defineError) {
+  additionalProperties(schema, data, defineError, _instance, validateSubschema) {
     if (!data || typeof data !== "object" || Array.isArray(data)) {
       return;
     }
@@ -1478,6 +2016,19 @@ var ObjectKeywords = {
           data: data[key]
         });
       }
+      if (validateSubschema) {
+        const error = validateSubschema(schema.additionalProperties, data[key], {
+          property: key
+        });
+        if (error) {
+          return defineError("Additional properties are invalid", {
+            item: key,
+            cause: error,
+            data: data[key]
+          });
+        }
+        continue;
+      }
       if (apValidate) {
         const error = apValidate(data[key]);
         if (error) {
@@ -1491,7 +2042,7 @@ var ObjectKeywords = {
     }
     return;
   },
-  patternProperties(schema, data, defineError) {
+  patternProperties(schema, data, defineError, _instance, validateSubschema) {
     if (!data || typeof data !== "object" || Array.isArray(data)) {
       return;
     }
@@ -1515,6 +2066,17 @@ var ObjectKeywords = {
       }
       for (let j = 0; j < matchingIndexes.length; j++) {
         const schemaProp = patternEntries[matchingIndexes[j]].schemaProp;
+        if (validateSubschema) {
+          const error = validateSubschema(schemaProp, data[key], { property: key });
+          if (error) {
+            return defineError("Property is invalid", {
+              item: key,
+              cause: error,
+              data: data[key]
+            });
+          }
+          continue;
+        }
         if (typeof schemaProp === "boolean") {
           if (schemaProp === false) {
             return defineError("Property is not allowed", {
@@ -1571,7 +2133,7 @@ var ObjectKeywords = {
       }
     }
   },
-  dependencies(schema, data, defineError) {
+  dependencies(schema, data, defineError, _instance, validateSubschema) {
     if (!data || typeof data !== "object" || Array.isArray(data)) {
       return;
     }
@@ -1603,7 +2165,7 @@ var ObjectKeywords = {
         }
         return defineError("Dependency is not satisfied", { data: dependency });
       }
-      const error = dependency.$validate(data);
+      const error = validateSubschema ? validateSubschema(dependency, data) : dependency.$validate(data);
       if (error) {
         return defineError("Dependency is not satisfied", {
           cause: error,
@@ -1612,6 +2174,97 @@ var ObjectKeywords = {
       }
     }
     return;
+  },
+  dependentRequired(schema, data, defineError) {
+    if (!data || typeof data !== "object" || Array.isArray(data) || !schema.dependentRequired || typeof schema.dependentRequired !== "object" || Array.isArray(schema.dependentRequired)) {
+      return;
+    }
+    for (const key of Object.keys(schema.dependentRequired)) {
+      if (!hasOwn(data, key)) {
+        continue;
+      }
+      const required = schema.dependentRequired[key];
+      if (!Array.isArray(required)) {
+        continue;
+      }
+      for (let index = 0; index < required.length; index++) {
+        if (typeof required[index] !== "string" || hasOwn(data, required[index])) {
+          continue;
+        }
+        return defineError("Dependent property is missing", {
+          item: required[index],
+          data
+        });
+      }
+    }
+  },
+  dependentSchemas(schema, data, defineError, _instance, validateSubschema) {
+    if (!data || typeof data !== "object" || Array.isArray(data) || !schema.dependentSchemas || typeof schema.dependentSchemas !== "object" || Array.isArray(schema.dependentSchemas)) {
+      return;
+    }
+    for (const key of Object.keys(schema.dependentSchemas)) {
+      if (!hasOwn(data, key)) {
+        continue;
+      }
+      const dependentSchema = schema.dependentSchemas[key];
+      if (dependentSchema === false) {
+        return defineError("Dependent schema is not satisfied", { data });
+      }
+      if (!isCompiledSchema(dependentSchema)) {
+        continue;
+      }
+      const error = validateSubschema ? validateSubschema(dependentSchema, data) : dependentSchema.$validate(data);
+      if (error) {
+        return defineError("Dependent schema is not satisfied", {
+          cause: error,
+          data
+        });
+      }
+    }
+  },
+  contentEncoding(schema, data, defineError) {
+    if (typeof data !== "string" || schema.contentEncoding !== "base64") {
+      return;
+    }
+    if (decodeBase64(data) !== null) {
+      return;
+    }
+    return defineError("String content encoding is invalid", { data });
+  },
+  contentMediaType(schema, data, defineError) {
+    if (typeof data !== "string" || schema.contentMediaType !== "application/json") {
+      return;
+    }
+    const content = schema.contentEncoding === "base64" ? decodeBase64(data) : data;
+    if (content === null) {
+      return defineError("String content encoding is invalid", { data });
+    }
+    try {
+      JSON.parse(content);
+      return;
+    } catch {
+      return defineError("String content does not match its media type", {
+        data
+      });
+    }
+  },
+  unevaluatedProperties(schema, data, defineError, _instance, validateSubschema) {
+    if (!data || typeof data !== "object" || Array.isArray(data) || !validateSubschema) {
+      return;
+    }
+    for (const key of Object.keys(data)) {
+      const error = validateSubschema(schema.unevaluatedProperties, data[key], {
+        property: key,
+        unevaluated: true
+      });
+      if (error) {
+        return defineError("Unevaluated property is invalid", {
+          item: key,
+          cause: error,
+          data: data[key]
+        });
+      }
+    }
   },
   // Required by other keywords but not used as a function itself
   then: false,
@@ -1626,8 +2279,7 @@ var ObjectKeywords = {
   description: false,
   $comment: false,
   examples: false,
-  contentMediaType: false,
-  contentEncoding: false,
+  contentSchema: false,
   // Not supported Open API keywords
   discriminator: false,
   nullable: false
@@ -1683,26 +2335,39 @@ function evaluateAllOf(branches, data, defineError) {
     }
   }
 }
-function evaluateAnyOf(branches, data, defineError) {
+function evaluateAnyOf(branches, data, defineError, collectAll = false) {
+  let matched = false;
   for (let i = 0; i < branches.length; i++) {
     const branch = branches[i];
     if (branch.kind === "validate") {
       if (!branch.validate(data)) {
-        return;
+        matched = true;
+        if (!collectAll) {
+          return;
+        }
       }
       continue;
     }
     if (branch.kind === "alwaysValid") {
-      return;
+      matched = true;
+      if (!collectAll) {
+        return;
+      }
+      continue;
     }
     if (branch.kind === "literal" && data === branch.value) {
-      return;
+      matched = true;
+      if (!collectAll) {
+        return;
+      }
     }
+  }
+  if (matched) {
+    return;
   }
   return defineError("Value is not valid", { data });
 }
-function evaluateOneOf(branches, data, defineError) {
-  let validCount = 0;
+function evaluateOneOf(branches, data) {
   let winnerIndex = -1;
   for (let i = 0; i < branches.length; i++) {
     const branch = branches[i];
@@ -1715,22 +2380,15 @@ function evaluateOneOf(branches, data, defineError) {
       isValid = data === branch.value;
     }
     if (isValid) {
-      validCount++;
-      winnerIndex = i;
-      if (validCount > 1) {
-        return {
-          error: defineError("Value is not valid", { data }),
-          winnerIndex: -1
-        };
+      if (winnerIndex !== -1) {
+        return -1;
       }
+      winnerIndex = i;
     }
   }
-  return {
-    error: validCount === 1 ? void 0 : defineError("Value is not valid", { data }),
-    winnerIndex: validCount === 1 ? winnerIndex : -1
-  };
+  return winnerIndex;
 }
-function createCombinatorValidator(key, schema, defineError, validateSubschema, transactions) {
+function createCombinatorValidator(key, schema, defineError, validateSubschema, transactions, collectAnnotations = false) {
   const sourceBranches = getBranchEntries(schema, key);
   const branches = validateSubschema ? sourceBranches.map(
     (branch, index) => branch.kind === "validate" ? {
@@ -1743,9 +2401,13 @@ function createCombinatorValidator(key, schema, defineError, validateSubschema, 
       return (data) => evaluateAllOf(branches, data, defineError);
     }
     if (key === "anyOf") {
-      return (data) => evaluateAnyOf(branches, data, defineError);
+      return (data) => evaluateAnyOf(branches, data, defineError, collectAnnotations);
     }
-    return (data) => evaluateOneOf(branches, data, defineError).error;
+    return (data) => {
+      if (evaluateOneOf(branches, data) === -1) {
+        return defineError("Value is not valid", { data });
+      }
+    };
   }
   if (key === "allOf") {
     return (data) => {
@@ -1763,31 +2425,39 @@ function createCombinatorValidator(key, schema, defineError, validateSubschema, 
     };
   }
   if (key === "anyOf") {
-    return (data) => evaluateAnyOf(branches, data, defineError);
+    return (data) => evaluateAnyOf(branches, data, defineError, collectAnnotations);
   }
   return (data) => {
     const savepoint = transactions.savepoint();
-    const defaultsByBranch = [];
-    const isolatedBranches = branches.map(
-      (branch, index) => branch.kind === "validate" ? {
-        kind: "validate",
-        validate: (value) => {
-          const branchSavepoint = transactions.savepoint();
-          const error = branch.validate(value);
-          if (!error) {
-            defaultsByBranch[index] = transactions.capture(branchSavepoint);
-          }
-          return error;
-        }
-      } : branch
-    );
+    let winnerIndex = -1;
+    let winnerDefaults = [];
     try {
-      const result = evaluateOneOf(isolatedBranches, data, defineError);
-      if (result.error) {
-        transactions.rollback(savepoint);
-        return result.error;
+      for (let index = 0; index < branches.length; index++) {
+        const branch = branches[index];
+        const branchSavepoint = transactions.savepoint();
+        let isValid = false;
+        if (branch.kind === "validate") {
+          isValid = !branch.validate(data);
+        } else if (branch.kind === "alwaysValid") {
+          isValid = true;
+        } else if (branch.kind === "literal") {
+          isValid = data === branch.value;
+        }
+        if (!isValid) {
+          continue;
+        }
+        if (winnerIndex !== -1) {
+          transactions.rollback(savepoint);
+          return defineError("Value is not valid", { data });
+        }
+        winnerIndex = index;
+        winnerDefaults = transactions.capture(branchSavepoint);
       }
-      transactions.restore(defaultsByBranch[result.winnerIndex] || []);
+      if (winnerIndex === -1) {
+        transactions.rollback(savepoint);
+        return defineError("Value is not valid", { data });
+      }
+      transactions.restore(winnerDefaults);
       return;
     } catch (error) {
       transactions.rollback(savepoint);
@@ -1859,37 +2529,51 @@ var OtherKeywords = {
     }
     return defineError("Value is not valid", { data });
   },
-  if(schema, data) {
-    if ("then" in schema === false && "else" in schema === false) {
+  if(schema, data, defineError, _instance, validateSubschema) {
+    if ("then" in schema === false && "else" in schema === false && !validateSubschema?.tracksEvaluated) {
       return;
     }
     if (typeof schema.if === "boolean") {
       if (schema.if) {
-        if (isCompiledSchema(schema.then)) {
-          return schema.then.$validate(data);
+        if (schema.then === false) {
+          return defineError("Value is not valid", { data });
         }
-      } else if (isCompiledSchema(schema.else)) {
-        return schema.else.$validate(data);
+        if (isCompiledSchema(schema.then)) {
+          return validateSubschema ? validateSubschema(schema.then, data) : schema.then.$validate(data);
+        }
+      } else {
+        if (schema.else === false) {
+          return defineError("Value is not valid", { data });
+        }
+        if (isCompiledSchema(schema.else)) {
+          return validateSubschema ? validateSubschema(schema.else, data) : schema.else.$validate(data);
+        }
       }
       return;
     }
     if (!isCompiledSchema(schema.if)) {
       return;
     }
-    const error = schema.if.$validate(data);
+    const error = validateSubschema ? validateSubschema(schema.if, data) : schema.if.$validate(data);
     if (!error) {
+      if (schema.then === false) {
+        return defineError("Value is not valid", { data });
+      }
       if (isCompiledSchema(schema.then)) {
-        return schema.then.$validate(data);
+        return validateSubschema ? validateSubschema(schema.then, data) : schema.then.$validate(data);
       }
       return;
     } else {
+      if (schema.else === false) {
+        return defineError("Value is not valid", { data });
+      }
       if (isCompiledSchema(schema.else)) {
-        return schema.else.$validate(data);
+        return validateSubschema ? validateSubschema(schema.else, data) : schema.else.$validate(data);
       }
       return;
     }
   },
-  not(schema, data, defineError) {
+  not(schema, data, defineError, _instance, validateSubschema) {
     if (typeof schema.not === "boolean") {
       if (schema.not) {
         return defineError("Value is not valid", { data });
@@ -1898,11 +2582,18 @@ var OtherKeywords = {
     }
     if (schema.not && typeof schema.not === "object" && !Array.isArray(schema.not)) {
       if ("$validate" in schema.not) {
-        const error = schema.not.$validate(data);
-        if (!error) {
-          return defineError("Value is not valid", { data });
+        const savepoint = validateSubschema?.savepoint?.();
+        try {
+          const error = validateSubschema ? validateSubschema(schema.not, data, { discardAnnotations: true }) : schema.not.$validate(data);
+          if (!error) {
+            return defineError("Value is not valid", { data });
+          }
+          return;
+        } finally {
+          if (typeof savepoint === "number") {
+            validateSubschema?.rollback?.(savepoint);
+          }
         }
-        return;
       }
       return defineError("Value is not valid", { data });
     }
@@ -2115,7 +2806,12 @@ var SchemaShield = class {
   validationContexts = [];
   compileCache = /* @__PURE__ */ new WeakMap();
   compilingRequiresContext = false;
+  compilingEvaluatedTracking = false;
+  compilingValidateSubschema;
   compilingMutableSchemas = /* @__PURE__ */ new WeakSet();
+  compilingDialects = /* @__PURE__ */ new WeakMap();
+  compilingEnvironments = /* @__PURE__ */ new WeakMap();
+  compilingSchemaChildren = /* @__PURE__ */ new WeakMap();
   registeredSchemas = [];
   registeredSchemaIds = /* @__PURE__ */ new Map();
   constructor({
@@ -2187,10 +2883,14 @@ var SchemaShield = class {
     if (!context || context.defaults.length === savepoint) {
       return [];
     }
-    const mutations = context.defaults.slice(savepoint).map((entry) => ({
-      ...entry,
-      value: entry.target[entry.key]
-    }));
+    const mutations = [];
+    for (let index = savepoint; index < context.defaults.length; index++) {
+      const entry = context.defaults[index];
+      mutations.push({
+        ...entry,
+        value: entry.target[entry.key]
+      });
+    }
     this.rollbackDefaults(context, savepoint);
     return mutations;
   }
@@ -2253,22 +2953,26 @@ var SchemaShield = class {
         "uri"
       );
     }
+    const rootDialect = schema === true || schema === false ? "legacy" : this.effectiveDialect(schema, "legacy");
+    const rootIdIsActive = schema !== true && schema !== false && (rootDialect !== "draft4" && rootDialect !== "draft6" && rootDialect !== "draft7" || !("$ref" in schema));
+    const rootIdKeyword = rootDialect === "draft4" ? "id" : "$id";
     let resolvedRootId = null;
-    if (schema !== true && schema !== false && hasOwn(schema, "$id")) {
-      if (typeof schema.$id !== "string") {
+    if (rootIdIsActive && hasOwn(schema, rootIdKeyword)) {
+      const rootId = schema[rootIdKeyword];
+      if (typeof rootId !== "string") {
         throw this.schemaRegistrationError(
-          "Root $id must be a string",
+          `Root ${rootIdKeyword} must be a string`,
           "INVALID_SCHEMA_ID",
-          "$id"
+          rootIdKeyword
         );
       }
-      resolvedRootId = retrievalUri ? this.resourceIdentityFromReference(schema.$id, retrievalUri, "$id") : this.absoluteResourceUri(schema.$id, "INVALID_SCHEMA_ID", "$id");
+      resolvedRootId = retrievalUri ? this.resourceIdentityFromReference(rootId, retrievalUri, rootIdKeyword) : this.absoluteResourceUri(rootId, "INVALID_SCHEMA_ID", rootIdKeyword);
     }
     if (retrievalUri === null && resolvedRootId === null) {
       throw this.schemaRegistrationError(
-        "Schema requires an absolute root $id or an explicit uri",
+        `Schema requires an absolute root ${rootIdKeyword} or an explicit uri`,
         "INVALID_SCHEMA_ID",
-        "$id"
+        rootIdKeyword
       );
     }
     const aliases = hasOwn(options, "aliases") ? options.aliases : [];
@@ -2302,13 +3006,32 @@ var SchemaShield = class {
     }
     const snapshot = deepCloneUnfreeze(schema);
     const baseUri = retrievalUri || resolvedRootId;
+    const nestedIdentities = new Set(
+      this.collectRegisteredNestedIdentities(
+        snapshot,
+        baseUri,
+        rootDialect,
+        rootIdIsActive
+      )
+    );
+    if (rootDialect === "legacy") {
+      for (const dialect of ["2019-09", "2020-12"]) {
+        for (const identity of this.collectRegisteredNestedIdentities(
+          snapshot,
+          baseUri,
+          dialect,
+          rootIdIsActive
+        )) {
+          nestedIdentities.add(identity);
+        }
+      }
+    }
     const registration = Object.freeze({
       schema: snapshot,
       identities: Object.freeze(Array.from(identities)),
-      nestedIdentities: Object.freeze(
-        this.collectRegisteredNestedIdentities(snapshot, baseUri)
-      ),
-      baseUri
+      nestedIdentities: Object.freeze(Array.from(nestedIdentities)),
+      baseUri,
+      rootIdBesideRef: rootIdIsActive
     });
     this.registeredSchemas.push(registration);
     for (const identity of identities) {
@@ -2401,14 +3124,14 @@ var SchemaShield = class {
     const prototype = Reflect.getPrototypeOf(value);
     return prototype === Object.prototype || prototype === null;
   }
-  collectRegisteredNestedIdentities(schema, baseUri) {
+  collectRegisteredNestedIdentities(schema, baseUri, inheritedDialect, rootIdBesideRef) {
     if (schema === true || schema === false) {
       return [];
     }
     const identities = /* @__PURE__ */ new Set();
     const visited = /* @__PURE__ */ new WeakSet();
     const stack = [
-      { node: schema, baseUri }
+      { node: schema, baseUri, dialect: inheritedDialect, root: true }
     ];
     while (stack.length > 0) {
       const entry = stack.pop();
@@ -2416,10 +3139,14 @@ var SchemaShield = class {
         continue;
       }
       visited.add(entry.node);
+      const dialect = this.effectiveDialect(entry.node, entry.dialect);
       let childBase = entry.baseUri;
-      if (typeof entry.node.$id === "string") {
+      if (typeof entry.node[dialect === "draft4" ? "id" : "$id"] === "string" && (this.isModernDialect(dialect) || !("$ref" in entry.node) || entry.root && rootIdBesideRef)) {
         try {
-          childBase = new URL(entry.node.$id, entry.baseUri).href;
+          childBase = new URL(
+            entry.node[dialect === "draft4" ? "id" : "$id"],
+            entry.baseUri
+          ).href;
           identities.add(childBase);
           if (childBase.indexOf("#") === -1 || childBase.endsWith("#")) {
             identities.add(this.resourceUri(childBase));
@@ -2428,13 +3155,15 @@ var SchemaShield = class {
           childBase = entry.baseUri;
         }
       }
-      const children = this.registrySubschemaEntries(entry.node);
+      const children = this.registrySubschemaEntries(entry.node, dialect);
       for (let index = children.length - 1; index >= 0; index--) {
         const child = children[index];
         if (!Array.isArray(child.value)) {
           stack.push({
             node: child.value,
-            baseUri: childBase
+            baseUri: childBase,
+            dialect,
+            root: false
           });
         }
       }
@@ -2459,7 +3188,7 @@ var SchemaShield = class {
         continue;
       }
       seen.add(node);
-      if (node.$id === id) {
+      if (node.$id === id || node.id === id) {
         return node;
       }
       const children = this.schemaChildren(node);
@@ -2478,72 +3207,31 @@ var SchemaShield = class {
     error.keyword = "maxDepth";
     return error;
   }
-  schemaChildEntries(schema) {
-    const children = [];
-    const mapKeys = [
-      "properties",
-      "patternProperties",
-      "definitions",
-      "$defs",
-      "dependencies"
-    ];
-    const arrayKeys = ["allOf", "anyOf", "oneOf", "items"];
-    const singleKeys = [
-      "items",
-      "additionalItems",
-      "additionalProperties",
-      "contains",
-      "propertyNames",
-      "values",
-      "elements",
-      "not",
-      "if",
-      "then",
-      "else"
-    ];
-    for (const key of mapKeys) {
-      const value = schema[key];
-      if (!value || typeof value !== "object" || Array.isArray(value)) {
-        continue;
-      }
-      for (const childKey of Object.keys(value)) {
-        const child = value[childKey];
-        if (child && typeof child === "object") {
-          children.push({
-            value: child,
-            pointer: `/${this.escapePointerToken(key)}/${this.escapePointerToken(
-              childKey
-            )}`
-          });
-        }
-      }
+  schemaChildEntries(schema, knownDialect, knownEnvironment) {
+    const dialect = knownDialect || schema._dialect || this.compilingDialects.get(schema) || "legacy";
+    const environment = knownEnvironment || this.compilingEnvironments.get(schema) || this.defaultEnvironment(dialect);
+    if ((dialect === "draft4" || dialect === "draft6" || dialect === "draft7") && typeof schema.$ref === "string" && this.getKeyword("$ref") === keywords.$ref) {
+      return [];
     }
-    for (const key of arrayKeys) {
-      const value = schema[key];
-      if (!Array.isArray(value)) {
-        continue;
-      }
-      for (let index = 0; index < value.length; index++) {
-        const child = value[index];
-        if (child && typeof child === "object") {
-          children.push({
-            value: child,
-            pointer: `/${this.escapePointerToken(key)}/${index}`
-          });
-        }
-      }
-    }
-    for (const key of singleKeys) {
+    const children = this.registrySubschemaEntries(
+      schema,
+      dialect,
+      environment
+    );
+    for (const key of ["values", "elements"]) {
       const value = schema[key];
       if (value && typeof value === "object" && !Array.isArray(value)) {
         children.push({
           value,
-          pointer: `/${this.escapePointerToken(key)}`
+          pointer: `/${key}`
         });
       }
     }
     for (const key of Object.keys(schema)) {
-      if (key === "enum" || key === "const" || key === "default" || key === "examples" || mapKeys.includes(key) || arrayKeys.includes(key) || singleKeys.includes(key)) {
+      if (key === "enum" || key === "const" || key === "default" || key === "examples" || children.some((child) => {
+        const keyPointer = `/${this.escapePointerToken(key)}`;
+        return child.pointer === keyPointer || child.pointer.startsWith(`${keyPointer}/`);
+      })) {
         continue;
       }
       const keyword = this.getKeyword(key);
@@ -2557,13 +3245,55 @@ var SchemaShield = class {
     }
     return children;
   }
-  schemaChildren(schema) {
-    return this.schemaChildEntries(schema).map((entry) => entry.value);
-  }
-  registrySubschemaEntries(schema) {
+  schemaChildren(schema, knownDialect, knownEnvironment) {
+    const cached = this.compilingSchemaChildren.get(schema);
+    if (cached) {
+      return cached;
+    }
+    const entries = this.schemaChildEntries(
+      schema,
+      knownDialect,
+      knownEnvironment
+    );
     const children = [];
-    const mapKeys = ["properties", "patternProperties", "definitions", "$defs"];
-    const arrayKeys = ["allOf", "anyOf", "oneOf", "items"];
+    for (let index = 0; index < entries.length; index++) {
+      children.push(entries[index].value);
+    }
+    this.compilingSchemaChildren.set(schema, children);
+    return children;
+  }
+  registrySubschemaEntries(schema, dialect, environment = this.defaultEnvironment(dialect)) {
+    const children = [];
+    if ((dialect === "draft4" || dialect === "draft6" || dialect === "draft7") && typeof schema.$ref === "string" && this.getKeyword("$ref") === keywords.$ref) {
+      return children;
+    }
+    const mapKeys = [];
+    if (this.isKeywordActive("definitions", environment)) {
+      mapKeys.push("definitions");
+    }
+    if (this.isKeywordActive("properties", environment)) {
+      mapKeys.push("properties", "patternProperties");
+    }
+    if (this.isModernDialect(dialect)) {
+      mapKeys.push("$defs");
+      if (this.isKeywordActive("dependentSchemas", environment)) {
+        mapKeys.push("dependentSchemas");
+      }
+      if (this.isKeywordActive("dependencies", environment)) {
+        mapKeys.push("dependencies");
+      }
+    } else if (this.isKeywordActive("dependencies", environment)) {
+      mapKeys.push("dependencies");
+    }
+    const arrayKeys = ["allOf", "anyOf", "oneOf"].filter(
+      (key) => this.isKeywordActive(key, environment)
+    );
+    if (dialect !== "2020-12" && this.isKeywordActive("items", environment)) {
+      arrayKeys.push("items");
+    }
+    if (dialect === "2020-12" && this.isKeywordActive("prefixItems", environment)) {
+      arrayKeys.push("prefixItems");
+    }
     const singleKeys = [
       "items",
       "additionalItems",
@@ -2573,8 +3303,22 @@ var SchemaShield = class {
       "not",
       "if",
       "then",
-      "else"
-    ];
+      "else",
+      "unevaluatedItems",
+      "unevaluatedProperties",
+      "contentSchema"
+    ].filter((key) => {
+      if (key === "additionalItems" && dialect === "2020-12") {
+        return false;
+      }
+      if ((key === "if" || key === "then" || key === "else") && (dialect === "draft4" || dialect === "draft6")) {
+        return false;
+      }
+      if ((key === "unevaluatedItems" || key === "unevaluatedProperties" || key === "contentSchema") && !this.isModernDialect(dialect)) {
+        return false;
+      }
+      return this.isKeywordActive(key, environment);
+    });
     for (const key of mapKeys) {
       const value = schema[key];
       if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -2588,18 +3332,6 @@ var SchemaShield = class {
             pointer: `/${this.escapePointerToken(key)}/${this.escapePointerToken(
               childKey
             )}`
-          });
-        }
-      }
-    }
-    const dependencies = schema.dependencies;
-    if (dependencies && typeof dependencies === "object" && !Array.isArray(dependencies)) {
-      for (const dependencyKey of Object.keys(dependencies)) {
-        const child = dependencies[dependencyKey];
-        if (child && typeof child === "object" && !Array.isArray(child)) {
-          children.push({
-            value: child,
-            pointer: `/dependencies/${this.escapePointerToken(dependencyKey)}`
           });
         }
       }
@@ -2630,6 +3362,236 @@ var SchemaShield = class {
     }
     return children;
   }
+  effectiveDialect(schema, inherited) {
+    if (typeof schema.$schema !== "string") {
+      return inherited;
+    }
+    if (schema.$schema.includes("draft-04/")) {
+      return "draft4";
+    }
+    if (schema.$schema.includes("draft/2019-09/")) {
+      return "2019-09";
+    }
+    if (schema.$schema.includes("draft/2020-12/")) {
+      return "2020-12";
+    }
+    if (schema.$schema.includes("draft-06/")) {
+      return "draft6";
+    }
+    if (schema.$schema.includes("draft-07/")) {
+      return "draft7";
+    }
+    return inherited;
+  }
+  defaultEnvironment(dialect) {
+    return {
+      dialect,
+      vocabularies: null,
+      dependenciesCompatibility: !this.isModernDialect(dialect),
+      definitionsCompatibility: !this.isModernDialect(dialect)
+    };
+  }
+  vocabularyCategory(uri) {
+    if (uri.endsWith("/vocab/core")) {
+      return "core";
+    }
+    if (uri.endsWith("/vocab/applicator")) {
+      return "applicator";
+    }
+    if (uri.endsWith("/vocab/validation")) {
+      return "validation";
+    }
+    if (uri.endsWith("/vocab/unevaluated")) {
+      return "unevaluated";
+    }
+    if (uri.endsWith("/vocab/format") || uri.endsWith("/vocab/format-annotation") || uri.endsWith("/vocab/format-assertion")) {
+      return "format";
+    }
+    if (uri.endsWith("/vocab/content")) {
+      return "content";
+    }
+    if (uri.endsWith("/vocab/meta-data")) {
+      return "metadata";
+    }
+    return null;
+  }
+  metaschemaDefinesKeyword(schema, keyword) {
+    if (schema === true || schema === false) {
+      return false;
+    }
+    const seen = /* @__PURE__ */ new WeakSet();
+    const stack = [schema];
+    while (stack.length > 0) {
+      const current = stack.pop();
+      if (seen.has(current)) {
+        continue;
+      }
+      seen.add(current);
+      if (this.isJsonObject(current.properties) && hasOwn(current.properties, keyword)) {
+        return true;
+      }
+      for (const value of Object.values(current)) {
+        if (this.isJsonObject(value)) {
+          stack.push(value);
+        } else if (Array.isArray(value)) {
+          for (const item of value) {
+            if (this.isJsonObject(item)) {
+              stack.push(item);
+            }
+          }
+        }
+      }
+    }
+    return false;
+  }
+  schemaEnvironment(schema, inherited) {
+    if (typeof schema.$schema !== "string") {
+      return inherited;
+    }
+    const dialect = this.effectiveDialect(schema, inherited.dialect);
+    if (dialect !== inherited.dialect || this.isModernDialect(dialect)) {
+      if (schema.$schema.includes("draft-04/") || schema.$schema.includes("draft/2019-09/") || schema.$schema.includes("draft/2020-12/") || schema.$schema.includes("draft-06/") || schema.$schema.includes("draft-07/")) {
+        return {
+          ...this.defaultEnvironment(dialect),
+          dependenciesCompatibility: true,
+          definitionsCompatibility: !this.isModernDialect(dialect)
+        };
+      }
+    }
+    let metaschemaUri;
+    try {
+      metaschemaUri = new URL(schema.$schema).href;
+    } catch {
+      return inherited;
+    }
+    const registration = this.registeredSchemaIds.get(
+      this.resourceUri(metaschemaUri)
+    );
+    const metaschema = registration?.schema;
+    if (!metaschema || metaschema === true) {
+      return inherited;
+    }
+    const metaschemaDialect = this.effectiveDialect(
+      metaschema,
+      inherited.dialect
+    );
+    const declared = metaschema.$vocabulary;
+    if (!this.isJsonObject(declared)) {
+      return {
+        ...this.defaultEnvironment(metaschemaDialect),
+        dependenciesCompatibility: this.metaschemaDefinesKeyword(
+          metaschema,
+          "dependencies"
+        ),
+        definitionsCompatibility: this.metaschemaDefinesKeyword(
+          metaschema,
+          "definitions"
+        )
+      };
+    }
+    const vocabularies = /* @__PURE__ */ new Set();
+    for (const [uri, required] of Object.entries(declared)) {
+      const category = this.vocabularyCategory(uri);
+      if (category !== null) {
+        vocabularies.add(category);
+        continue;
+      }
+      if (required === true) {
+        const error = new ValidationError(
+          `Unknown required vocabulary: ${uri}`
+        );
+        error.code = "UNKNOWN_REQUIRED_VOCABULARY";
+        error.keyword = "$vocabulary";
+        throw error;
+      }
+    }
+    return {
+      dialect: metaschemaDialect,
+      vocabularies,
+      dependenciesCompatibility: this.metaschemaDefinesKeyword(
+        metaschema,
+        "dependencies"
+      ),
+      definitionsCompatibility: this.metaschemaDefinesKeyword(
+        metaschema,
+        "definitions"
+      )
+    };
+  }
+  isModernDialect(dialect) {
+    return dialect === "2019-09" || dialect === "2020-12";
+  }
+  keywordVocabulary(key) {
+    if (key === "type" || key === "enum" || key === "const" || key === "multipleOf" || key === "maximum" || key === "exclusiveMaximum" || key === "minimum" || key === "exclusiveMinimum" || key === "maxLength" || key === "minLength" || key === "pattern" || key === "maxItems" || key === "minItems" || key === "uniqueItems" || key === "maxContains" || key === "minContains" || key === "maxProperties" || key === "minProperties" || key === "required" || key === "dependentRequired") {
+      return "validation";
+    }
+    if (key === "unevaluatedItems" || key === "unevaluatedProperties") {
+      return "unevaluated";
+    }
+    if (key === "format") {
+      return "format";
+    }
+    if (key === "contentEncoding" || key === "contentMediaType" || key === "contentSchema") {
+      return "content";
+    }
+    if (key === "allOf" || key === "anyOf" || key === "oneOf" || key === "not" || key === "if" || key === "then" || key === "else" || key === "dependentSchemas" || key === "prefixItems" || key === "items" || key === "contains" || key === "additionalItems" || key === "properties" || key === "patternProperties" || key === "additionalProperties" || key === "propertyNames") {
+      return "applicator";
+    }
+    return null;
+  }
+  isKeywordActive(key, environment) {
+    const dialect = environment.dialect;
+    if (key === "dependencies") {
+      return environment.dependenciesCompatibility;
+    }
+    if (key === "definitions") {
+      return environment.definitionsCompatibility;
+    }
+    const vocabulary = this.keywordVocabulary(key);
+    if (vocabulary !== null && environment.vocabularies !== null && !environment.vocabularies.has(vocabulary)) {
+      return false;
+    }
+    if (key === "$defs") {
+      return this.isModernDialect(dialect);
+    }
+    if (dialect === "draft4" && (key === "const" || key === "contains" || key === "propertyNames")) {
+      return false;
+    }
+    if (key === "dependentRequired" || key === "dependentSchemas") {
+      return this.isModernDialect(dialect);
+    }
+    if (key === "minContains" || key === "maxContains") {
+      return this.isModernDialect(dialect);
+    }
+    if (key === "prefixItems") {
+      return dialect === "2020-12";
+    }
+    if (key === "unevaluatedItems" || key === "unevaluatedProperties") {
+      return this.isModernDialect(dialect);
+    }
+    if (key === "additionalItems") {
+      return dialect !== "2020-12";
+    }
+    if (key === "if" || key === "then" || key === "else") {
+      return dialect !== "draft4" && dialect !== "draft6";
+    }
+    if (key === "contentMediaType" || key === "contentEncoding") {
+      return dialect === "legacy" || dialect === "draft7";
+    }
+    return true;
+  }
+  validateAnchor(value, dialect, keyword) {
+    const pattern = dialect === "2019-09" ? /^[A-Za-z][-A-Za-z0-9.:_]*$/ : /^[A-Za-z_][-A-Za-z0-9._]*$/;
+    if (typeof value !== "string" || !pattern.test(value)) {
+      const error = new ValidationError(
+        `Invalid ${keyword}: ${String(value)}`
+      );
+      error.code = "INVALID_ANCHOR";
+      error.keyword = keyword;
+      throw error;
+    }
+    return value;
+  }
   escapePointerToken(value) {
     return value.replace(/~/g, "~0").replace(/\//g, "~1");
   }
@@ -2638,7 +3600,7 @@ var SchemaShield = class {
       return new URL(reference, baseUri).href;
     } catch {
       const error = new ValidationError(`Invalid ${keyword} URI: ${reference}`);
-      error.code = keyword === "$id" ? "INVALID_SCHEMA_ID" : "REFERENCE_NOT_FOUND";
+      error.code = keyword === "$ref" ? "REFERENCE_NOT_FOUND" : "INVALID_SCHEMA_ID";
       error.keyword = keyword;
       throw error;
     }
@@ -2658,15 +3620,17 @@ var SchemaShield = class {
         positionsByNode,
         ensureIndexed: () => {
         },
+        ensurePointerPosition: () => {
+        },
         resolveRegisteredIdentity: () => {
         }
       });
     }
-    const register = (uri, node) => {
+    const register = (uri, node, code = "DUPLICATE_SCHEMA_ID", keyword = "$id") => {
       if (aliases.has(uri) && aliases.get(uri) !== node) {
         const error = new ValidationError(`Duplicate schema identity: ${uri}`);
-        error.code = "DUPLICATE_SCHEMA_ID";
-        error.keyword = "$id";
+        error.code = code;
+        error.keyword = keyword;
         throw error;
       }
       aliases.set(uri, node);
@@ -2693,7 +3657,7 @@ var SchemaShield = class {
       }
     }
     const indexed = /* @__PURE__ */ new WeakSet();
-    const indexResource = (root, inheritedBase, idsBesideRefs) => {
+    const indexResource = (root, inheritedBase, inheritedEnvironment, rootIdBesideRef = false, containingResourceRoot = root, rootPointer = "#") => {
       if (indexed.has(root)) {
         return;
       }
@@ -2702,8 +3666,10 @@ var SchemaShield = class {
         {
           node: root,
           inheritedBase,
-          resourceRoot: root,
-          pointer: "#"
+          resourceRoot: containingResourceRoot,
+          pointer: rootPointer,
+          environment: inheritedEnvironment,
+          root: true
         }
       ];
       while (stack.length > 0) {
@@ -2712,25 +3678,78 @@ var SchemaShield = class {
           continue;
         }
         visited.add(entry.node);
+        const environment = this.schemaEnvironment(
+          entry.node,
+          entry.environment
+        );
+        const dialect = environment.dialect;
         let baseUri = entry.inheritedBase;
         let resourceRoot = entry.resourceRoot;
-        if (typeof entry.node.$id === "string" && (idsBesideRefs || !("$ref" in entry.node))) {
-          baseUri = this.resolveUri(entry.node.$id, entry.inheritedBase, "$id");
+        const idKeyword = dialect === "draft4" ? "id" : "$id";
+        const schemaId = entry.node[idKeyword];
+        if (typeof schemaId === "string" && (this.isModernDialect(dialect) || !("$ref" in entry.node) || entry.root && rootIdBesideRef)) {
+          baseUri = this.resolveUri(schemaId, entry.inheritedBase, idKeyword);
+          if (this.isModernDialect(dialect) && schemaId.includes("#")) {
+            const error = new ValidationError(
+              `Invalid $id URI for ${dialect}: ${schemaId}`
+            );
+            error.code = "INVALID_SCHEMA_ID";
+            error.keyword = idKeyword;
+            throw error;
+          }
           register(baseUri, entry.node);
           if (baseUri.indexOf("#") === -1 || baseUri.endsWith("#")) {
             resourceRoot = entry.node;
             register(this.resourceUri(baseUri), entry.node);
           }
         }
+        const registerAnchor = (anchor, keyword) => {
+          const resourceIdentities = /* @__PURE__ */ new Set([this.resourceUri(baseUri)]);
+          for (const [identity, target] of aliases) {
+            if (target === resourceRoot && !identity.includes("#")) {
+              resourceIdentities.add(identity);
+            }
+          }
+          for (const identity of resourceIdentities) {
+            register(
+              `${identity}#${anchor}`,
+              entry.node,
+              "DUPLICATE_ANCHOR",
+              keyword
+            );
+          }
+        };
+        if ((dialect === "2019-09" || dialect === "2020-12") && hasOwn(entry.node, "$anchor")) {
+          registerAnchor(
+            this.validateAnchor(entry.node.$anchor, dialect, "$anchor"),
+            "$anchor"
+          );
+        }
+        if (dialect === "2020-12" && hasOwn(entry.node, "$dynamicAnchor")) {
+          registerAnchor(
+            this.validateAnchor(
+              entry.node.$dynamicAnchor,
+              dialect,
+              "$dynamicAnchor"
+            ),
+            "$dynamicAnchor"
+          );
+        }
         const position = {
           source: entry.node,
           baseUri,
           resourceRoot,
-          pointer: entry.pointer
+          pointer: entry.pointer,
+          dialect,
+          environment
         };
         positions.push(position);
         positionsByNode.set(entry.node, position);
-        const children = this.registrySubschemaEntries(entry.node);
+        const children = this.registrySubschemaEntries(
+          entry.node,
+          dialect,
+          environment
+        );
         for (let index = children.length - 1; index >= 0; index--) {
           const child = children[index];
           if (Array.isArray(child.value)) {
@@ -2740,55 +3759,83 @@ var SchemaShield = class {
             node: child.value,
             inheritedBase: baseUri,
             resourceRoot,
-            pointer: `${entry.pointer}${child.pointer}`
+            pointer: `${entry.pointer}${child.pointer}`,
+            environment,
+            root: false
           });
         }
       }
       indexed.add(root);
     };
-    indexResource(schema, LOCAL_SCHEMA_BASE, false);
-    const ensureIndexed = (target) => {
+    indexResource(schema, LOCAL_SCHEMA_BASE, this.defaultEnvironment("legacy"));
+    const ensureIndexed = (target, environment) => {
       if (target === true || target === false) {
         return;
       }
       const registration = registrationsByRoot.get(target);
       if (registration) {
-        indexResource(target, registration.baseUri, true);
+        indexResource(
+          target,
+          registration.baseUri,
+          environment,
+          registration.rootIdBesideRef
+        );
       }
     };
-    const resolveRegisteredIdentity = (uri) => {
+    const resolveRegisteredIdentity = (uri, environment) => {
       const candidates = registrationsByNestedIdentity.get(uri) || [];
       for (const registration of candidates) {
-        ensureIndexed(registration.schema);
+        ensureIndexed(registration.schema, environment);
       }
+    };
+    const ensurePointerPosition = (target, resourceRoot, pointer) => {
+      if (target === true || target === false || Array.isArray(target) || positionsByNode.has(target)) {
+        return;
+      }
+      const resourcePosition = positionsByNode.get(resourceRoot);
+      if (!resourcePosition) {
+        return;
+      }
+      indexResource(
+        target,
+        resourcePosition.baseUri,
+        resourcePosition.environment,
+        false,
+        resourceRoot,
+        pointer
+      );
     };
     return Object.freeze({
       aliases,
       positions,
       positionsByNode,
       ensureIndexed,
+      ensurePointerPosition,
       resolveRegisteredIdentity
     });
   }
   resolveReferenceSource(ref, position, registry) {
     const resolvedUri = this.resolveUri(ref, position.baseUri, "$ref");
     if (!registry.aliases.has(resolvedUri)) {
-      registry.resolveRegisteredIdentity(resolvedUri);
+      registry.resolveRegisteredIdentity(resolvedUri, position.environment);
     }
     if (registry.aliases.has(resolvedUri)) {
       const target = registry.aliases.get(resolvedUri);
-      registry.ensureIndexed(target);
+      registry.ensureIndexed(target, position.environment);
       return target;
     }
     const resourceIdentity = this.resourceUri(resolvedUri);
     if (!registry.aliases.has(resourceIdentity)) {
-      registry.resolveRegisteredIdentity(resourceIdentity);
+      registry.resolveRegisteredIdentity(resourceIdentity, position.environment);
     }
     if (!registry.aliases.has(resourceIdentity)) {
       return;
     }
     const resourceRoot = registry.aliases.get(resourceIdentity);
-    registry.ensureIndexed(resourceRoot);
+    registry.ensureIndexed(resourceRoot, position.environment);
+    if (registry.aliases.has(resolvedUri)) {
+      return registry.aliases.get(resolvedUri);
+    }
     const hashIndex = resolvedUri.indexOf("#");
     const fragment = hashIndex === -1 ? "" : resolvedUri.slice(hashIndex + 1);
     if (fragment.length === 0) {
@@ -2796,7 +3843,9 @@ var SchemaShield = class {
     }
     if (fragment.startsWith("/") && resourceRoot !== true && resourceRoot !== false) {
       try {
-        return resolvePath(resourceRoot, `#${fragment}`);
+        const target = resolvePath(resourceRoot, `#${fragment}`);
+        registry.ensurePointerPosition(target, resourceRoot, `#${fragment}`);
+        return target;
       } catch {
         const error = new ValidationError(`Reference not found: ${ref}`);
         error.code = "REFERENCE_NOT_FOUND";
@@ -2806,110 +3855,136 @@ var SchemaShield = class {
     }
     return;
   }
-  collectReachableSchemas(schema, registry) {
-    const reachable = [];
-    const seen = /* @__PURE__ */ new WeakSet();
-    const stack = [schema];
-    const resolveBuiltinRefs = this.getKeyword("$ref") === keywords.$ref;
-    while (stack.length > 0) {
-      const current = stack.pop();
-      if (current === true || current === false) {
-        reachable.push(current);
-        continue;
-      }
-      if (!current || typeof current !== "object" || Array.isArray(current)) {
-        continue;
-      }
-      if (seen.has(current)) {
-        continue;
-      }
-      seen.add(current);
-      reachable.push(current);
-      const children = this.schemaChildren(current);
-      for (let index = children.length - 1; index >= 0; index--) {
-        stack.push(children[index]);
-      }
-      if (resolveBuiltinRefs && typeof current.$ref === "string") {
-        const position = registry.positionsByNode.get(current);
-        const target = position ? this.resolveReferenceSource(current.$ref, position, registry) : null;
-        if (target === null || typeof target === "undefined") {
-          const error = new ValidationError(
-            `Reference not found: ${current.$ref}`
-          );
-          error.code = "REFERENCE_NOT_FOUND";
-          error.keyword = "$ref";
-          throw error;
-        }
-        stack.push(target);
-      }
+  builtinReferences(schema, position) {
+    const references = [];
+    if (typeof schema.$ref === "string" && this.getKeyword("$ref") === keywords.$ref) {
+      references.push({ keyword: "$ref", ref: schema.$ref });
     }
-    return reachable;
+    if (position.dialect === "2019-09" && typeof schema.$recursiveRef === "string") {
+      references.push({ keyword: "$recursiveRef", ref: schema.$recursiveRef });
+    }
+    if (position.dialect === "2020-12" && typeof schema.$dynamicRef === "string") {
+      references.push({ keyword: "$dynamicRef", ref: schema.$dynamicRef });
+    }
+    return references;
   }
-  analyzeSchema(schema, registry, reachable) {
-    if (!schema || typeof schema !== "object") {
+  analyzeSchema(schema, registry) {
+    if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
       return {
         requiresDepthGuard: false,
         requiresMutationJournal: false,
-        mutableSchemas: /* @__PURE__ */ new WeakSet()
+        requiresDynamicScope: false,
+        requiresEvaluatedTracking: false,
+        mutableSchemas: /* @__PURE__ */ new WeakSet(),
+        reachableSchemas: [schema]
       };
     }
     const visiting = /* @__PURE__ */ new WeakSet();
     const visited = /* @__PURE__ */ new WeakSet();
-    const stack = [];
-    for (let index = reachable.length - 1; index >= 0; index--) {
-      const value = reachable[index];
-      if (value !== true && value !== false) {
-        stack.push({ value, depth: 0, exit: false });
-      }
-    }
+    const queuedRoots = /* @__PURE__ */ new WeakSet();
+    const roots = [schema];
+    queuedRoots.add(schema);
+    const reachableSchemas = [];
     let requiresDepthGuard = false;
     let requiresMutationJournal = false;
+    let requiresDynamicScope = false;
+    let requiresEvaluatedTracking = false;
     const allNodes = [];
-    while (stack.length > 0) {
-      const entry = stack.pop();
-      if (entry.exit) {
-        visiting.delete(entry.value);
-        visited.add(entry.value);
+    for (let rootIndex = 0; rootIndex < roots.length; rootIndex++) {
+      const root = roots[rootIndex];
+      if (root === true || root === false) {
+        reachableSchemas.push(root);
         continue;
       }
-      if (visited.has(entry.value)) {
+      if (!root || typeof root !== "object" || visited.has(root)) {
         continue;
       }
-      if (visiting.has(entry.value)) {
-        const error = new ValidationError("Cyclic schema graph is not supported");
-        error.code = "CYCLIC_SCHEMA_GRAPH";
-        error.keyword = "compile";
-        throw error;
-      }
-      if (entry.depth > MAX_COMPILE_DEPTH) {
-        const error = new ValidationError("Maximum compile depth exceeded");
-        error.code = "MAX_COMPILE_DEPTH_EXCEEDED";
-        error.keyword = "compile";
-        throw error;
-      }
-      if (entry.depth > this.maxDepth) {
-        requiresDepthGuard = true;
-      }
-      visiting.add(entry.value);
-      allNodes.push(entry.value);
-      stack.push({ ...entry, exit: true });
-      if (this.useDefaults !== false && this.hasPropertyDefaults(entry.value)) {
-        requiresMutationJournal = true;
-      }
-      for (const key of Object.keys(entry.value)) {
-        const keyword = this.getKeyword(key);
-        if (keyword && keyword !== keywords[key]) {
+      const stack = [{ value: root, depth: 0, exit: false }];
+      while (stack.length > 0) {
+        const entry = stack.pop();
+        if (entry.exit) {
+          visiting.delete(entry.value);
+          visited.add(entry.value);
+          continue;
+        }
+        if (visited.has(entry.value)) {
+          continue;
+        }
+        if (visiting.has(entry.value)) {
+          const error = new ValidationError(
+            "Cyclic schema graph is not supported"
+          );
+          error.code = "CYCLIC_SCHEMA_GRAPH";
+          error.keyword = "compile";
+          throw error;
+        }
+        if (entry.depth > MAX_COMPILE_DEPTH) {
+          const error = new ValidationError("Maximum compile depth exceeded");
+          error.code = "MAX_COMPILE_DEPTH_EXCEEDED";
+          error.keyword = "compile";
+          throw error;
+        }
+        if (entry.depth > this.maxDepth) {
           requiresDepthGuard = true;
+        }
+        visiting.add(entry.value);
+        reachableSchemas.push(entry.value);
+        allNodes.push(entry.value);
+        stack.push({ ...entry, exit: true });
+        const position = registry.positionsByNode.get(entry.value);
+        const environment = position?.environment || this.defaultEnvironment("legacy");
+        if (this.useDefaults !== false && this.isKeywordActive("properties", environment) && this.hasPropertyDefaults(entry.value)) {
           requiresMutationJournal = true;
         }
-      }
-      const children = this.schemaChildren(entry.value);
-      for (let index = children.length - 1; index >= 0; index--) {
-        stack.push({
-          value: children[index],
-          depth: entry.depth + 1,
-          exit: false
-        });
+        if (position && this.isModernDialect(position.dialect) && (hasOwn(entry.value, "unevaluatedItems") && this.isKeywordActive("unevaluatedItems", environment) || hasOwn(entry.value, "unevaluatedProperties") && this.isKeywordActive("unevaluatedProperties", environment))) {
+          requiresEvaluatedTracking = true;
+        }
+        if (position?.dialect === "2019-09" && typeof entry.value.$recursiveRef === "string" || position?.dialect === "2020-12" && typeof entry.value.$dynamicRef === "string") {
+          requiresDepthGuard = true;
+          requiresDynamicScope = true;
+        }
+        for (const key of Object.keys(entry.value)) {
+          const keyword = this.getKeyword(key);
+          if (keyword && keyword !== keywords[key]) {
+            requiresDepthGuard = true;
+            requiresMutationJournal = true;
+          }
+        }
+        const children = this.schemaChildren(
+          entry.value,
+          position?.dialect,
+          position?.environment
+        );
+        for (let index = children.length - 1; index >= 0; index--) {
+          stack.push({
+            value: children[index],
+            depth: entry.depth + 1,
+            exit: false
+          });
+        }
+        if (position) {
+          for (const reference of this.builtinReferences(entry.value, position)) {
+            const target = this.resolveReferenceSource(
+              reference.ref,
+              position,
+              registry
+            );
+            if (typeof target === "undefined") {
+              const error = new ValidationError(
+                `Reference not found: ${reference.ref}`
+              );
+              error.code = "REFERENCE_NOT_FOUND";
+              error.keyword = reference.keyword;
+              throw error;
+            }
+            if (target === true || target === false) {
+              roots.push(target);
+            } else if (!queuedRoots.has(target)) {
+              queuedRoots.add(target);
+              roots.push(target);
+            }
+          }
+        }
       }
     }
     const semanticState = /* @__PURE__ */ new WeakMap();
@@ -2930,12 +4005,22 @@ var SchemaShield = class {
       }
       semanticState.set(entry.value, 1);
       semanticStack.push({ value: entry.value, exit: true });
-      const children = this.schemaChildren(entry.value);
-      if (typeof entry.value.$ref === "string" && this.getKeyword("$ref") === keywords.$ref) {
-        const position = registry.positionsByNode.get(entry.value);
-        const target = position ? this.resolveReferenceSource(entry.value.$ref, position, registry) : void 0;
-        if (target && typeof target === "object") {
-          children.push(target);
+      const position = registry.positionsByNode.get(entry.value);
+      const children = this.schemaChildren(
+        entry.value,
+        position?.dialect,
+        position?.environment
+      );
+      if (position) {
+        for (const reference of this.builtinReferences(entry.value, position)) {
+          const target = this.resolveReferenceSource(
+            reference.ref,
+            position,
+            registry
+          );
+          if (target && typeof target === "object") {
+            children.push(target);
+          }
         }
       }
       for (let index = children.length - 1; index >= 0; index--) {
@@ -2951,12 +4036,19 @@ var SchemaShield = class {
         mutableSchemas.add(node);
       }
     }
-    return { requiresDepthGuard, requiresMutationJournal, mutableSchemas };
+    return {
+      requiresDepthGuard,
+      requiresMutationJournal,
+      requiresDynamicScope,
+      requiresEvaluatedTracking,
+      mutableSchemas,
+      reachableSchemas
+    };
   }
   compile(schema) {
     const prepared = this.prepareSchema(schema);
     const compiledSchema = prepared.compiledSchema;
-    if (!prepared.requiresDepthGuard && !prepared.requiresMutationJournal) {
+    if (!prepared.requiresDepthGuard && !prepared.requiresMutationJournal && !prepared.requiresEvaluatedTracking) {
       const directValidate = compiledSchema.$validate;
       const validate = this.immutable ? (data) => {
         const clonedData = deepCloneUnfreeze(data);
@@ -2972,19 +4064,26 @@ var SchemaShield = class {
     return this.createGuardedValidator(compiledSchema, prepared.depthGuardState);
   }
   prepareSchema(schema) {
+    this.compilingSchemaChildren = /* @__PURE__ */ new WeakMap();
     const referenceRegistry = this.buildReferenceRegistry(schema);
-    const reachableSchemas = this.collectReachableSchemas(
-      schema,
-      referenceRegistry
-    );
-    const analysis = this.analyzeSchema(
-      schema,
-      referenceRegistry,
-      reachableSchemas
-    );
+    const analysis = this.analyzeSchema(schema, referenceRegistry);
+    const reachableSchemas = analysis.reachableSchemas;
     this.compileCache = /* @__PURE__ */ new WeakMap();
-    this.compilingRequiresContext = analysis.requiresDepthGuard || analysis.requiresMutationJournal;
+    this.compilingRequiresContext = analysis.requiresDepthGuard || analysis.requiresMutationJournal || analysis.requiresDynamicScope || analysis.requiresEvaluatedTracking;
+    this.compilingValidateSubschema = this.compilingRequiresContext ? this.validateSubschema.bind(this) : void 0;
+    if (this.compilingValidateSubschema) {
+      this.compilingValidateSubschema.savepoint = () => this.#defaultSavepoint();
+      this.compilingValidateSubschema.rollback = (savepoint) => this.#rollbackDefaultSavepoint(savepoint);
+      this.compilingValidateSubschema.tracksEvaluated = analysis.requiresEvaluatedTracking;
+    }
     this.compilingMutableSchemas = analysis.mutableSchemas;
+    this.compilingEvaluatedTracking = analysis.requiresEvaluatedTracking;
+    this.compilingDialects = /* @__PURE__ */ new WeakMap();
+    this.compilingEnvironments = /* @__PURE__ */ new WeakMap();
+    for (const position of referenceRegistry.positions) {
+      this.compilingDialects.set(position.source, position.dialect);
+      this.compilingEnvironments.set(position.source, position.environment);
+    }
     const compiledSchema = this.compileSchema(schema);
     for (const reachableSchema of reachableSchemas) {
       if (reachableSchema !== schema) {
@@ -2992,30 +4091,6 @@ var SchemaShield = class {
       }
     }
     this.rootSchema = compiledSchema;
-    let depthGuardState = null;
-    if (analysis.requiresDepthGuard) {
-      const compiledRoots = [compiledSchema];
-      for (const reachableSchema of reachableSchemas) {
-        if (reachableSchema !== true && reachableSchema !== false && reachableSchema !== schema) {
-          const compiledReachable = this.compileCache.get(reachableSchema);
-          if (compiledReachable) {
-            compiledRoots.push(compiledReachable);
-          }
-        }
-      }
-      depthGuardState = this.installDepthGuards(compiledRoots);
-      definePropertyOrThrow(compiledSchema, "_requiresDepthGuard", {
-        value: true,
-        enumerable: false,
-        configurable: false,
-        writable: false
-      });
-    } else if (analysis.requiresMutationJournal) {
-      depthGuardState = { context: null };
-    }
-    if (compiledSchema._hasRef === true) {
-      this.linkReferences(referenceRegistry);
-    }
     if (!compiledSchema.$validate) {
       if (schema === false) {
         const defineError = getDefinedErrorFunctionForKey(
@@ -3043,10 +4118,41 @@ var SchemaShield = class {
         );
       }
     }
+    const evaluationResources = analysis.requiresDynamicScope ? this.installEvaluationResourceScopes(referenceRegistry) : null;
+    const compiledRoots = [compiledSchema];
+    if (analysis.requiresDepthGuard || analysis.requiresEvaluatedTracking) {
+      for (const reachableSchema of reachableSchemas) {
+        if (reachableSchema !== true && reachableSchema !== false && reachableSchema !== schema) {
+          const compiledReachable = this.compileCache.get(reachableSchema);
+          if (compiledReachable) {
+            compiledRoots.push(compiledReachable);
+          }
+        }
+      }
+    }
+    if (analysis.requiresEvaluatedTracking) {
+      this.installEvaluationTracking(compiledRoots);
+    }
+    let depthGuardState = null;
+    if (analysis.requiresDepthGuard) {
+      depthGuardState = this.installDepthGuards(compiledRoots);
+      definePropertyOrThrow(compiledSchema, "_requiresDepthGuard", {
+        value: true,
+        enumerable: false,
+        configurable: false,
+        writable: false
+      });
+    } else if (analysis.requiresMutationJournal || analysis.requiresEvaluatedTracking) {
+      depthGuardState = { context: null };
+    }
+    if (compiledSchema._hasRef === true) {
+      this.linkReferences(referenceRegistry, evaluationResources);
+    }
     return {
       compiledSchema,
       requiresDepthGuard: analysis.requiresDepthGuard,
       requiresMutationJournal: analysis.requiresMutationJournal,
+      requiresEvaluatedTracking: analysis.requiresEvaluatedTracking,
       depthGuardState
     };
   }
@@ -3055,7 +4161,9 @@ var SchemaShield = class {
       active: false,
       depth: -1,
       depthExceeded: false,
-      defaults: []
+      defaults: [],
+      resources: [],
+      evaluations: []
     };
     const validate = (data) => {
       this.rootSchema = compiledSchema;
@@ -3063,13 +4171,18 @@ var SchemaShield = class {
         active: false,
         depth: -1,
         depthExceeded: false,
-        defaults: []
+        defaults: [],
+        resources: [],
+        evaluations: []
       } : reusableContext;
       context.active = true;
       context.depth = -1;
       context.depthExceeded = false;
       delete context.depthError;
       context.defaults.length = 0;
+      context.resources.length = 0;
+      context.evaluations.length = 0;
+      delete context.completedEvaluation;
       this.validationContexts.push(context);
       const priorContext = depthGuardState.context;
       depthGuardState.context = context;
@@ -3211,15 +4324,16 @@ var SchemaShield = class {
       case "dependencies":
         return this.isPlainObject(value) && Object.keys(value).length === 0;
       case "propertyNames":
-      case "items":
         return value === true;
+      case "items":
+        return value === true && !this.compilingEvaluatedTracking;
       case "additionalProperties":
-        if (value === true) {
+        if (value === true && !this.compilingEvaluatedTracking) {
           return true;
         }
         return value === false && this.isPlainObject(schema.patternProperties) && Object.keys(schema.patternProperties).length > 0;
       case "additionalItems":
-        return value === true || !Array.isArray(schema.items);
+        return value === true && !this.compilingEvaluatedTracking || !Array.isArray(schema.items);
       case "allOf": {
         if (!Array.isArray(value)) {
           return false;
@@ -3237,6 +4351,9 @@ var SchemaShield = class {
       }
       case "anyOf": {
         if (!Array.isArray(value)) {
+          return false;
+        }
+        if (this.compilingEvaluatedTracking) {
           return false;
         }
         for (let i = 0; i < value.length; i++) {
@@ -3288,16 +4405,39 @@ var SchemaShield = class {
     }
     return error.getCause().code === "MAX_DEPTH_EXCEEDED";
   }
-  validateSubschema(schema, data) {
+  validateSubschema(schema, data, evaluated) {
+    const context = this.validationContexts[this.validationContexts.length - 1];
+    const parentEvaluation = context?.evaluations[context.evaluations.length - 1];
+    if (evaluated?.unevaluated === true && (typeof evaluated.property === "string" && parentEvaluation?.properties?.has(evaluated.property) || typeof evaluated.item === "number" && parentEvaluation?.items?.has(evaluated.item))) {
+      return;
+    }
+    if (schema === true) {
+      this.markEvaluated(parentEvaluation, evaluated);
+      return;
+    }
+    if (schema === false) {
+      return true;
+    }
     if (!schema || typeof schema.$validate !== "function") {
       return;
     }
-    const context = this.validationContexts[this.validationContexts.length - 1];
     const savepoint = context?.defaults.length || 0;
+    if (context) {
+      delete context.completedEvaluation;
+    }
     try {
       const error = schema.$validate(data);
       if (error && context) {
         this.rollbackDefaults(context, savepoint);
+      }
+      if (!error && evaluated?.discardAnnotations !== true) {
+        this.markEvaluated(parentEvaluation, evaluated);
+        if (typeof evaluated?.property !== "string" && typeof evaluated?.item !== "number") {
+          this.mergeCompletedEvaluation(parentEvaluation, data, context);
+        }
+      }
+      if (evaluated?.discardAnnotations === true && context) {
+        delete context.completedEvaluation;
       }
       return error;
     } catch (error) {
@@ -3305,6 +4445,89 @@ var SchemaShield = class {
         this.rollbackDefaults(context, savepoint);
       }
       throw error;
+    }
+  }
+  markEvaluated(state, evaluated) {
+    if (!state || !evaluated) {
+      return;
+    }
+    if (typeof evaluated.property === "string") {
+      if (!state.properties) {
+        state.properties = /* @__PURE__ */ new Set();
+      }
+      state.properties.add(evaluated.property);
+    }
+    if (typeof evaluated.item === "number") {
+      if (!state.items) {
+        state.items = /* @__PURE__ */ new Set();
+      }
+      state.items.add(evaluated.item);
+    }
+  }
+  mergeCompletedEvaluation(parent, data, context) {
+    const completed = context?.completedEvaluation;
+    if (!parent || !completed || completed === parent || completed.data !== data) {
+      return;
+    }
+    if (completed.properties) {
+      if (!parent.properties) {
+        parent.properties = /* @__PURE__ */ new Set();
+      }
+      for (const key of completed.properties) {
+        parent.properties.add(key);
+      }
+    }
+    if (completed.items) {
+      if (!parent.items) {
+        parent.items = /* @__PURE__ */ new Set();
+      }
+      for (const index of completed.items) {
+        parent.items.add(index);
+      }
+    }
+  }
+  mergeReferenceEvaluation(data) {
+    const context = this.validationContexts[this.validationContexts.length - 1];
+    const parent = context?.evaluations[context.evaluations.length - 1];
+    this.mergeCompletedEvaluation(parent, data, context);
+  }
+  installEvaluationTracking(roots) {
+    const stack = roots.slice();
+    const seen = /* @__PURE__ */ new WeakSet();
+    while (stack.length > 0) {
+      const schema = stack.pop();
+      if (!schema || typeof schema !== "object" || seen.has(schema)) {
+        continue;
+      }
+      seen.add(schema);
+      if (typeof schema.$validate === "function") {
+        const directValidate = schema.$validate;
+        schema.$validate = getNamedFunction(directValidate.name, (data) => {
+          const context = this.validationContexts[this.validationContexts.length - 1];
+          if (!context) {
+            return directValidate(data);
+          }
+          const state = { data };
+          context.evaluations.push(state);
+          try {
+            const error = directValidate(data);
+            if (error) {
+              delete context.completedEvaluation;
+            } else {
+              context.completedEvaluation = state;
+            }
+            return error;
+          } catch (error) {
+            delete context.completedEvaluation;
+            throw error;
+          } finally {
+            context.evaluations.pop();
+          }
+        });
+      }
+      for (const child of this.schemaChildren(schema)) {
+        stack.push(child);
+      }
     }
   }
   installDepthGuards(roots) {
@@ -3393,11 +4616,63 @@ var SchemaShield = class {
         writable: false
       });
     }
-    const validateSubschema = this.compilingRequiresContext ? this.validateSubschema.bind(this) : void 0;
+    const validateSubschema = this.compilingValidateSubschema;
     let schemaHasRef = false;
+    const validators = [];
+    const activeNames = [];
+    const pendingCombinators = [];
+    const dialect = sourceSchema ? this.compilingDialects.get(sourceSchema) || "legacy" : "legacy";
+    const environment = sourceSchema ? this.compilingEnvironments.get(sourceSchema) || this.defaultEnvironment(dialect) : this.defaultEnvironment("legacy");
+    definePropertyOrThrow(compiledSchema, "_dialect", {
+      value: dialect,
+      enumerable: false,
+      configurable: false,
+      writable: false
+    });
+    const dynamicKeywords = [
+      {
+        keyword: "$recursiveRef",
+        active: dialect === "2019-09" && typeof schema.$recursiveRef === "string",
+        method: "_resolvedRecursiveRef",
+        name: "Validate_Recursive_Reference"
+      },
+      {
+        keyword: "$dynamicRef",
+        active: dialect === "2020-12" && typeof schema.$dynamicRef === "string",
+        method: "_resolvedDynamicRef",
+        name: "Validate_Dynamic_Reference"
+      }
+    ];
+    for (const reference of dynamicKeywords) {
+      if (!reference.active) {
+        continue;
+      }
+      schemaHasRef = true;
+      const defineError = getDefinedErrorFunctionForKey(
+        reference.keyword,
+        schema[reference.keyword],
+        this.failFast
+      );
+      validators.push({
+        name: reference.name,
+        validate: getNamedFunction(reference.name, (data) => {
+          const resolved = compiledSchema[reference.method];
+          if (typeof resolved !== "function") {
+            return defineError(`Missing reference: ${schema[reference.keyword]}`);
+          }
+          const error = resolved(data);
+          if (!error) {
+            this.mergeReferenceEvaluation(data);
+          }
+          return error;
+        })
+      });
+      activeNames.push(reference.name);
+    }
     if ("$ref" in schema) {
       schemaHasRef = true;
       const refValidator = this.getKeyword("$ref");
+      const ignoresReferenceSiblings = refValidator === keywords.$ref && (dialect === "draft4" || dialect === "draft6" || dialect === "draft7");
       if (refValidator) {
         const defineError = getDefinedErrorFunctionForKey(
           "$ref",
@@ -3405,42 +4680,59 @@ var SchemaShield = class {
           this.failFast
         );
         const isBuiltinRef = refValidator === keywords.$ref;
-        compiledSchema.$validate = getNamedFunction(
-          isBuiltinRef ? "Validate_Reference" : refValidator.name || "$ref",
-          (data) => refValidator(
-            compiledSchema,
-            data,
-            defineError,
-            this,
-            validateSubschema
-          )
+        const refName = isBuiltinRef ? "Validate_Reference" : refValidator.name || "$ref";
+        const refValidate = getNamedFunction(
+          refName,
+          (data) => {
+            const error = refValidator(
+              compiledSchema,
+              data,
+              defineError,
+              this,
+              validateSubschema
+            );
+            if (!error && isBuiltinRef) {
+              this.mergeReferenceEvaluation(data);
+            }
+            return error;
+          }
         );
-        if (!isBuiltinRef) {
-          schemaHasRef = false;
+        if (isBuiltinRef && this.isModernDialect(dialect)) {
+          validators.push({ name: refName, validate: refValidate });
+          activeNames.push(refName);
+        } else {
+          compiledSchema.$validate = refValidate;
+          if (!isBuiltinRef) {
+            schemaHasRef = false;
+          }
         }
       }
-      for (const key of ["definitions", "$defs"]) {
-        const definitions = schema[key];
-        if (!definitions || typeof definitions !== "object") {
-          continue;
+      if (validators.length === 0) {
+        if (!ignoresReferenceSiblings) {
+          for (const key of ["definitions", "$defs"]) {
+            if (!this.isKeywordActive(key, environment)) {
+              continue;
+            }
+            const definitions = schema[key];
+            if (!definitions || typeof definitions !== "object") {
+              continue;
+            }
+            const compiledDefinitions = {};
+            for (const definitionKey of Object.keys(definitions)) {
+              compiledDefinitions[definitionKey] = this.compileSchema(
+                definitions[definitionKey]
+              );
+            }
+            compiledSchema[key] = compiledDefinitions;
+          }
         }
-        const compiledDefinitions = {};
-        for (const definitionKey of Object.keys(definitions)) {
-          compiledDefinitions[definitionKey] = this.compileSchema(
-            definitions[definitionKey]
-          );
+        if (schemaHasRef) {
+          this.markSchemaHasRef(compiledSchema);
         }
-        compiledSchema[key] = compiledDefinitions;
+        return compiledSchema;
       }
-      if (schemaHasRef) {
-        this.markSchemaHasRef(compiledSchema);
-      }
-      return compiledSchema;
     }
-    const validators = [];
-    const activeNames = [];
-    const pendingCombinators = [];
-    if (this.useDefaults !== false && this.getKeyword("properties") === keywords.properties && this.hasPropertyDefaults(schema)) {
+    if (this.useDefaults !== false && this.isKeywordActive("properties", environment) && this.getKeyword("properties") === keywords.properties && this.hasPropertyDefaults(schema)) {
       const applyDefaults = this.useDefaults === "empty" ? applyEmptyPropertyDefaults : applyPropertyDefaults;
       validators.push({
         name: applyDefaults.name,
@@ -3451,7 +4743,7 @@ var SchemaShield = class {
       });
       activeNames.push(applyDefaults.name);
     }
-    if ("type" in schema) {
+    if ("type" in schema && this.isKeywordActive("type", environment)) {
       const defineTypeError = getDefinedErrorFunctionForKey(
         "type",
         schema,
@@ -3568,10 +4860,28 @@ var SchemaShield = class {
       });
       activeNames.push(typeMethodName);
     }
-    const { type, $id, $ref, $validate, required, ...otherKeys } = schema;
+    const {
+      type,
+      $id,
+      $ref,
+      $recursiveRef,
+      $dynamicRef,
+      $validate,
+      required,
+      ...otherKeys
+    } = schema;
     const otherKeyNames = Object.keys(otherKeys);
-    const keyOrder = required ? ["required", ...otherKeyNames] : otherKeyNames;
+    const unevaluatedKeys = otherKeyNames.filter(
+      (key) => key === "unevaluatedItems" || key === "unevaluatedProperties"
+    );
+    const siblingKeys = otherKeyNames.filter(
+      (key) => key !== "unevaluatedItems" && key !== "unevaluatedProperties"
+    );
+    const keyOrder = required ? ["required", ...siblingKeys, ...unevaluatedKeys] : [...siblingKeys, ...unevaluatedKeys];
     for (const key of keyOrder) {
+      if (!this.isKeywordActive(key, environment)) {
+        continue;
+      }
       const keywordFn = this.getKeyword(key);
       if (!keywordFn) {
         continue;
@@ -3617,11 +4927,14 @@ var SchemaShield = class {
     }
     const literalKeywords = ["enum", "const", "default", "examples"];
     for (const key of keyOrder) {
+      if (!this.isKeywordActive(key, environment)) {
+        continue;
+      }
       if (literalKeywords.includes(key)) {
         continue;
       }
       if (schema[key] && typeof schema[key] === "object" && !Array.isArray(schema[key])) {
-        if (key === "properties" || key === "definitions" || key === "$defs") {
+        if (key === "properties" || key === "patternProperties" || key === "definitions" || key === "$defs" || key === "dependentSchemas") {
           for (const subKey of Object.keys(schema[key])) {
             const compiledSubSchema2 = this.compileSchema(
               schema[key][subKey]
@@ -3653,7 +4966,7 @@ var SchemaShield = class {
         continue;
       }
     }
-    if (this.isPlainObject(schema.properties)) {
+    if (this.isKeywordActive("properties", environment) && this.isPlainObject(schema.properties)) {
       definePropertyOrThrow(compiledSchema, "_propKeys", {
         value: Object.keys(schema.properties),
         enumerable: false,
@@ -3661,7 +4974,7 @@ var SchemaShield = class {
         writable: false
       });
     }
-    if (this.useDefaults !== false && this.isPlainObject(schema.properties) && this.hasPropertyDefaults(schema)) {
+    if (this.useDefaults !== false && this.isKeywordActive("properties", environment) && this.isPlainObject(schema.properties) && this.hasPropertyDefaults(schema)) {
       const defaultKeys = Object.keys(schema.properties).filter(
         (key) => {
           const property = schema.properties[key];
@@ -3678,14 +4991,14 @@ var SchemaShield = class {
       }
     }
     prepareCombinatorEntries(compiledSchema);
+    const transactions = compiledSchema._canApplyDefaults === true ? {
+      savepoint: () => this.#defaultSavepoint(),
+      rollback: (savepoint) => this.#rollbackDefaultSavepoint(savepoint),
+      capture: (savepoint) => this.#captureDefaultSavepoint(savepoint),
+      restore: (mutations) => this.#restoreDefaults(mutations)
+    } : void 0;
     for (let index = 0; index < pendingCombinators.length; index++) {
       const pending = pendingCombinators[index];
-      const transactions = compiledSchema._canApplyDefaults === true ? {
-        savepoint: () => this.#defaultSavepoint(),
-        rollback: (savepoint) => this.#rollbackDefaultSavepoint(savepoint),
-        capture: (savepoint) => this.#captureDefaultSavepoint(savepoint),
-        restore: (mutations) => this.#restoreDefaults(mutations)
-      } : void 0;
       pending.item.validate = getNamedFunction(
         pending.item.name,
         createCombinatorValidator(
@@ -3693,7 +5006,8 @@ var SchemaShield = class {
           compiledSchema,
           pending.defineError,
           validateSubschema,
-          transactions
+          transactions,
+          this.compilingEvaluatedTracking
         )
       );
     }
@@ -3701,6 +5015,13 @@ var SchemaShield = class {
       this.markSchemaHasRef(compiledSchema);
     }
     if (validators.length === 0) {
+      if (this.compilingEvaluatedTracking) {
+        compiledSchema.$validate = getNamedFunction(
+          "Validate_Any",
+          () => {
+          }
+        );
+      }
       return compiledSchema;
     }
     if (validators.length === 1) {
@@ -3748,7 +5069,96 @@ var SchemaShield = class {
     }
     return;
   }
-  linkReferences(registry) {
+  installEvaluationResourceScopes(registry) {
+    const resources = /* @__PURE__ */ new Map();
+    for (const position of registry.positions) {
+      if (!this.compileCache.has(position.source)) {
+        continue;
+      }
+      if (!resources.has(position.resourceRoot)) {
+        const rootPosition = registry.positionsByNode.get(position.resourceRoot);
+        const compiledRoot = this.compileCache.get(position.resourceRoot);
+        if (!compiledRoot) {
+          continue;
+        }
+        resources.set(position.resourceRoot, {
+          compiledRoot,
+          dynamicAnchors: /* @__PURE__ */ new Map(),
+          recursiveAnchor: rootPosition?.dialect === "2019-09" && position.resourceRoot.$recursiveAnchor === true
+        });
+      }
+    }
+    for (const position of registry.positions) {
+      const compiled = this.compileCache.get(position.source);
+      const resource = resources.get(position.resourceRoot);
+      if (!compiled || !resource) {
+        continue;
+      }
+      if (typeof compiled.$validate !== "function") {
+        compiled.$validate = getNamedFunction(
+          "Validate_Any",
+          () => {
+          }
+        );
+      }
+      if (position.dialect === "2020-12" && typeof position.source.$dynamicAnchor === "string") {
+        resource.dynamicAnchors.set(position.source.$dynamicAnchor, compiled);
+      }
+    }
+    const resourcesByRoot = /* @__PURE__ */ new WeakMap();
+    for (const [root, resource] of resources) {
+      resourcesByRoot.set(root, resource);
+    }
+    const wrapped = /* @__PURE__ */ new WeakSet();
+    for (const position of registry.positions) {
+      const compiled = this.compileCache.get(position.source);
+      const resource = resources.get(position.resourceRoot);
+      if (!compiled || !resource || wrapped.has(compiled)) {
+        continue;
+      }
+      wrapped.add(compiled);
+      const directValidate = compiled.$validate;
+      compiled.$validate = getNamedFunction(directValidate.name, (data) => {
+        const context = this.validationContexts[this.validationContexts.length - 1];
+        if (!context || context.resources[context.resources.length - 1] === resource) {
+          return directValidate(data);
+        }
+        context.resources.push(resource);
+        try {
+          return directValidate(data);
+        } finally {
+          context.resources.pop();
+        }
+      });
+    }
+    return resourcesByRoot;
+  }
+  referenceValidator(target, node, keyword) {
+    if (target === true) {
+      return getNamedFunction("Validate_Ref_True", () => {
+      });
+    }
+    if (target === false) {
+      const defineError = getDefinedErrorFunctionForKey(
+        keyword,
+        node,
+        this.failFast
+      );
+      return getNamedFunction(
+        "Validate_Ref_False",
+        (data) => defineError("Value is not valid", { data })
+      );
+    }
+    if (typeof target.$validate !== "function") {
+      target.$validate = getNamedFunction(
+        "Validate_Ref_Any",
+        () => {
+        }
+      );
+    }
+    return target.$validate;
+  }
+  linkReferences(registry, resources) {
     for (let index = 0; index < registry.positions.length; index++) {
       const position = registry.positions[index];
       if (typeof position.source.$ref !== "string" || this.getKeyword("$ref") !== keywords.$ref) {
@@ -3771,36 +5181,124 @@ var SchemaShield = class {
         error.keyword = "$ref";
         throw error;
       }
-      let targetValidate;
-      if (target === true) {
-        targetValidate = getNamedFunction("Validate_Ref_True", () => {
-        });
-      } else if (target === false) {
-        const defineError = getDefinedErrorFunctionForKey(
-          "$ref",
-          node,
-          this.failFast
-        );
-        targetValidate = getNamedFunction(
-          "Validate_Ref_False",
-          (data) => defineError("Value is not valid", { data })
-        );
-      } else {
-        if (typeof target.$validate !== "function") {
-          target.$validate = getNamedFunction(
-            "Validate_Ref_Any",
-            () => {
-            }
-          );
-        }
-        targetValidate = target.$validate;
-      }
       definePropertyOrThrow(node, "_resolvedRef", {
-        value: targetValidate,
+        value: this.referenceValidator(target, node, "$ref"),
         enumerable: false,
         configurable: false,
         writable: false
       });
+    }
+    if (!resources) {
+      return;
+    }
+    for (let index = 0; index < registry.positions.length; index++) {
+      const position = registry.positions[index];
+      const references = this.builtinReferences(position.source, position);
+      for (const reference of references) {
+        if (reference.keyword === "$ref") {
+          continue;
+        }
+        const node = this.compileCache.get(position.source);
+        if (!node) {
+          continue;
+        }
+        const targetSource = this.resolveReferenceSource(
+          reference.ref,
+          position,
+          registry
+        );
+        if (typeof targetSource === "undefined") {
+          const error = new ValidationError(
+            `Reference not found: ${reference.ref}`
+          );
+          error.code = "REFERENCE_NOT_FOUND";
+          error.keyword = reference.keyword;
+          throw error;
+        }
+        const staticTarget = this.getCompiledReferenceTarget(
+          reference.ref,
+          position,
+          registry
+        );
+        if (typeof staticTarget === "undefined") {
+          const error = new ValidationError(
+            `Reference not found: ${reference.ref}`
+          );
+          error.code = "REFERENCE_NOT_FOUND";
+          error.keyword = reference.keyword;
+          throw error;
+        }
+        const staticValidate = this.referenceValidator(
+          staticTarget,
+          node,
+          reference.keyword
+        );
+        const targetPosition = targetSource && typeof targetSource === "object" ? registry.positionsByNode.get(targetSource) : void 0;
+        let targetValidate = staticValidate;
+        if (reference.keyword === "$recursiveRef") {
+          const dynamicEligible = targetPosition?.resourceRoot === targetSource && targetPosition.resourceRoot.$recursiveAnchor === true;
+          if (dynamicEligible) {
+            targetValidate = (data) => {
+              const context = this.validationContexts[this.validationContexts.length - 1];
+              if (context) {
+                for (let scopeIndex = 0; scopeIndex < context.resources.length; scopeIndex++) {
+                  const resource = context.resources[scopeIndex];
+                  if (!resource.recursiveAnchor) {
+                    continue;
+                  }
+                  if (typeof resource.compiledRoot.$validate === "function") {
+                    return resource.compiledRoot.$validate(data);
+                  }
+                }
+              }
+              return staticValidate(data);
+            };
+          }
+        } else {
+          const resolvedUri = this.resolveUri(
+            reference.ref,
+            position.baseUri,
+            "$ref"
+          );
+          const hashIndex = resolvedUri.indexOf("#");
+          const rawFragment = hashIndex === -1 ? "" : resolvedUri.slice(hashIndex + 1);
+          let anchor = "";
+          if (rawFragment.length > 0 && !rawFragment.startsWith("/")) {
+            try {
+              anchor = decodeURIComponent(rawFragment);
+            } catch {
+              anchor = "";
+            }
+          }
+          const dynamicEligible = anchor.length > 0 && targetPosition?.dialect === "2020-12" && targetSource.$dynamicAnchor === anchor;
+          if (dynamicEligible) {
+            targetValidate = (data) => {
+              const context = this.validationContexts[this.validationContexts.length - 1];
+              if (context) {
+                for (let scopeIndex = 0; scopeIndex < context.resources.length; scopeIndex++) {
+                  const target = context.resources[scopeIndex].dynamicAnchors.get(
+                    anchor
+                  );
+                  if (target && typeof target.$validate === "function") {
+                    return target.$validate(data);
+                  }
+                }
+              }
+              return staticValidate(data);
+            };
+          }
+        }
+        definePropertyOrThrow(
+          node,
+          reference.keyword === "$recursiveRef" ? "_resolvedRecursiveRef" : "_resolvedDynamicRef",
+          {
+            value: targetValidate,
+            enumerable: false,
+            configurable: false,
+            writable: false
+          }
+        );
+      }
     }
   }
 };

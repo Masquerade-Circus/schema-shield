@@ -9,7 +9,15 @@ export interface AddSchemaOptions {
     aliases?: readonly string[];
 }
 export interface ValidateSubschemaFunction {
-    (schema: CompiledSchema, data: any): Result;
+    (schema: CompiledSchema | boolean, data: any, evaluated?: {
+        property?: string;
+        item?: number;
+        unevaluated?: boolean;
+        discardAnnotations?: boolean;
+    }): Result;
+    savepoint?(): number;
+    rollback?(savepoint: number): void;
+    tracksEvaluated?: boolean;
 }
 export interface KeywordFunction {
     (schema: CompiledSchema, data: any, defineError: DefineErrorFunction, instance: SchemaShield, validateSubschema?: ValidateSubschemaFunction): Result;
@@ -48,7 +56,12 @@ export declare class SchemaShield {
     private validationContexts;
     private compileCache;
     private compilingRequiresContext;
+    private compilingEvaluatedTracking;
+    private compilingValidateSubschema?;
     private compilingMutableSchemas;
+    private compilingDialects;
+    private compilingEnvironments;
+    private compilingSchemaChildren;
     private registeredSchemas;
     private registeredSchemaIds;
     constructor({ immutable, failFast, maxDepth, useDefaults }?: {
@@ -78,12 +91,21 @@ export declare class SchemaShield {
     private schemaChildEntries;
     private schemaChildren;
     private registrySubschemaEntries;
+    private effectiveDialect;
+    private defaultEnvironment;
+    private vocabularyCategory;
+    private metaschemaDefinesKeyword;
+    private schemaEnvironment;
+    private isModernDialect;
+    private keywordVocabulary;
+    private isKeywordActive;
+    private validateAnchor;
     private escapePointerToken;
     private resolveUri;
     private resourceUri;
     private buildReferenceRegistry;
     private resolveReferenceSource;
-    private collectReachableSchemas;
+    private builtinReferences;
     private analyzeSchema;
     compile(schema: any): Validator;
     private prepareSchema;
@@ -101,10 +123,16 @@ export declare class SchemaShield {
     private rollbackDefaults;
     private isDepthError;
     private validateSubschema;
+    private markEvaluated;
+    private mergeCompletedEvaluation;
+    private mergeReferenceEvaluation;
+    private installEvaluationTracking;
     private installDepthGuards;
     private compileSchema;
     isSchemaLike(subSchema: any): boolean;
     private getCompiledReferenceTarget;
+    private installEvaluationResourceScopes;
+    private referenceValidator;
     private linkReferences;
 }
 //# sourceMappingURL=index.d.ts.map
