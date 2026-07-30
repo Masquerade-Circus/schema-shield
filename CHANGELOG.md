@@ -1,5 +1,18 @@
 
 
+## [1.2.0](https://github.com/Masquerade-Circus/schema-shield/compare/1.1.0...1.2.0) (2026-07-30)
+
+
+### Features
+
+* add static schema registry ([6f9c0c5](https://github.com/Masquerade-Circus/schema-shield/commit/6f9c0c5e1dd99e6693af5217fc2866f98c69d301))
+* expand JSON Schema draft support ([95899a3](https://github.com/Masquerade-Circus/schema-shield/commit/95899a3f4d9f4685870d33f2aeb05e15969c67d5))
+
+
+### Tests
+
+* consolidate compile limit regression ([23a32ee](https://github.com/Masquerade-Circus/schema-shield/commit/23a32ee4015ffc6ae84f3927de7f1002ef2658a2))
+
 ## [1.1.0](https://github.com/Masquerade-Circus/schema-shield/compare/1.0.5...1.1.0) (2026-07-26)
 
 
