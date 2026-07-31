@@ -1,17 +1,19 @@
-import type { KeywordFunction } from "../index";
-type BranchEntry = {
-    kind: "validate";
-    validate: (data: any) => any;
-} | {
-    kind: "alwaysValid";
-} | {
-    kind: "alwaysInvalid";
-} | {
-    kind: "literal";
+import type { KeywordFunction, ValidateFunction, ValidateSubschemaFunction } from "../index";
+import type { DefineErrorFunction } from "../utils/main-utils";
+type CombinatorKey = "allOf" | "anyOf" | "oneOf";
+type DefaultMutation = {
+    target: Record<string, any>;
+    key: string;
     value: any;
 };
-export declare function getCombinatorBranchEntries(schema: any, key: "allOf" | "anyOf" | "oneOf", rebuild?: boolean): BranchEntry[];
-export declare function prepareCombinatorKeywordCaches(schema: any): void;
+type TransactionHooks = {
+    savepoint: () => number;
+    rollback: (savepoint: number) => void;
+    capture: (savepoint: number) => DefaultMutation[];
+    restore: (mutations: DefaultMutation[]) => void;
+};
+export declare function createCombinatorValidator(key: CombinatorKey, schema: any, defineError: DefineErrorFunction, validateSubschema?: ValidateSubschemaFunction, transactions?: TransactionHooks, collectAnnotations?: boolean): ValidateFunction;
+export declare function prepareCombinatorEntries(schema: any): void;
 export declare const OtherKeywords: Record<string, KeywordFunction>;
 export {};
 //# sourceMappingURL=other-keywords.d.ts.map

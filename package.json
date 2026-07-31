@@ -1,6 +1,6 @@
 {
   "name": "schema-shield",
-  "version": "1.0.5",
+  "version": "1.2.0",
   "description": "A fast library that protects your JSON schema from invalid data.",
   "repository": "git@github.com:Masquerade-Circus/schema-shield.git",
   "author": "Masquerade <christian@masquerade-circus.net>",
@@ -19,11 +19,17 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
       "require": "./dist/index.js"
+    },
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "import": "./dist/*/index.mjs",
+      "require": "./dist/*/index.js"
     }
   },
   "files": [
     "dist",
     "lib",
+    "package-lock.json",
     "LICENSE",
     "tsconfig.json"
   ],
@@ -60,14 +66,13 @@
     "User friendly"
   ],
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=18"
   },
   "scripts": {
-    "test": "mocha --bail --recursive --no-timeouts --forbid-only --exit --require ts-node/register --enable-source-maps --ignore tests/scratchpad.test.ts tests/**/*.test.ts",
-    "test:scratchpad": "mocha --no-timeouts --forbid-only --exit --require ts-node/register --enable-source-maps tests/scratchpad.test.ts",
-    "benchmark:short": "node --require ts-node/register performance/short-gate.cjs",
-    "dev:test": "nodemon -e ts,js -w ./tests -w ./lib --exec mocha --bail --recursive --no-timeouts --exit --require ts-node/register --enable-source-maps --ignore tests/scratchpad.test.ts tests/**/*.test.ts",
-    "build": "bun source.js",
+    "test": "mocha --bail --recursive --no-timeouts  --forbid-only --exit --require ts-node/register --enable-source-maps tests/**/*.test.ts",
+    "dev:test": "nodemon -e ts,js -w ./tests -w ./lib --exec mocha --bail --recursive --no-timeouts --exit --require ts-node/register --enable-source-maps tests/**/*.test.ts",
+    "dev:source": "NODE_ENV=development nodemon --enable-source-maps -e tsx,ts,json,css -w ./lib -w ./www source.js",
+    "build": "node source.js",
     "coverage": "nyc report --reporter=lcov",
     "commit": "git add . && git-cz && git push",
     "release": "release-it --verbose",
@@ -81,6 +86,7 @@
     "@typescript-eslint/parser": "^5.56.0",
     "ajv": "^8.12.0",
     "cz-conventional-changelog": "^3.3.0",
+    "esbuild": "^0.17.12",
     "eslint": "^8.36.0",
     "eslint-plugin-sonarjs": "^0.19.0",
     "expect": "^29.5.0",
@@ -89,7 +95,10 @@
     "nodemon": "^2.0.22",
     "nyc": "^15.1.0",
     "release-it": "^15.9.3",
+    "terser": "^5.16.6",
     "ts-node": "^10.9.1",
+    "tsc-prog": "^2.2.1",
+    "tslib": "^2.5.0",
     "typescript": "^5.0.2"
   },
   "nyc": {

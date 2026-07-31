@@ -3,8 +3,24 @@ import { DefineErrorFunction, ValidationError } from "./utils/main-utils";
 export { ValidationError } from "./utils/main-utils";
 export { deepCloneUnfreeze as deepClone } from "./utils/deep-freeze";
 export type Result = void | ValidationError | true;
+export type JSONSchema = boolean | Record<string, any>;
+export interface AddSchemaOptions {
+    uri?: string;
+    aliases?: readonly string[];
+}
+export interface ValidateSubschemaFunction {
+    (schema: CompiledSchema | boolean, data: any, evaluated?: {
+        property?: string;
+        item?: number;
+        unevaluated?: boolean;
+        discardAnnotations?: boolean;
+    }): Result;
+    savepoint?(): number;
+    rollback?(savepoint: number): void;
+    tracksEvaluated?: boolean;
+}
 export interface KeywordFunction {
-    (schema: CompiledSchema, data: any, defineError: DefineErrorFunction, instance: SchemaShield): Result;
+    (schema: CompiledSchema, data: any, defineError: DefineErrorFunction, instance: SchemaShield, validateSubschema?: ValidateSubschemaFunction): Result;
 }
 export interface TypeFunction {
     (data: any): boolean;
@@ -28,24 +44,33 @@ export interface Validator {
     compiledSchema: CompiledSchema;
 }
 export declare class SchemaShield {
+    #private;
     private types;
     private formats;
     private keywords;
     private immutable;
+    private useDefaults;
     private rootSchema;
-    private idRegistry;
-    private schemaLocations;
     private failFast;
     private maxDepth;
-    private guardedValidationDepth;
-    private depthErrorCount;
-    private iterativeWorkspaces;
-    private activeIterativeWorkspaces;
-    constructor({ immutable, failFast, maxDepth }?: {
+    private validationContexts;
+    private compileCache;
+    private compilingRequiresContext;
+    private compilingEvaluatedTracking;
+    private compilingValidateSubschema?;
+    private compilingMutableSchemas;
+    private compilingDialects;
+    private compilingEnvironments;
+    private compilingSchemaChildren;
+    private registeredSchemas;
+    private registeredSchemaIds;
+    constructor({ immutable, failFast, maxDepth, useDefaults }?: {
         immutable?: boolean;
         failFast?: boolean;
         maxDepth?: number;
+        useDefaults?: boolean | "empty";
     });
+    setDefault(target: Record<string, any>, key: string, value: any): void;
     addType(name: string, validator: TypeFunction, overwrite?: boolean): void;
     getType(type: string): TypeFunction | false;
     addFormat(name: string, validator: FormatFunction, overwrite?: boolean): void;
@@ -53,27 +78,61 @@ export declare class SchemaShield {
     isDefaultFormatValidator(format: string, validator: FormatFunction): boolean;
     addKeyword(name: string, validator: KeywordFunction, overwrite?: boolean): void;
     getKeyword(keyword: string): KeywordFunction | false;
+    addSchema(schema: JSONSchema, options?: AddSchemaOptions): void;
+    private schemaRegistrationError;
+    private absoluteResourceUri;
+    private resourceIdentityFromReference;
+    private isJsonSchema;
+    private isJsonObject;
+    private collectRegisteredNestedIdentities;
     getSchemaRef(path: string): CompiledSchema | undefined;
     getSchemaById(id: string): CompiledSchema | undefined;
+    private depthError;
+    private schemaChildEntries;
+    private schemaChildren;
+    private registrySubschemaEntries;
+    private effectiveDialect;
+    private defaultEnvironment;
+    private vocabularyCategory;
+    private metaschemaDefinesKeyword;
+    private schemaEnvironment;
+    private isModernDialect;
+    private keywordVocabulary;
+    private isKeywordActive;
+    private validateAnchor;
+    private escapePointerToken;
+    private resolveUri;
+    private resourceUri;
+    private buildReferenceRegistry;
+    private resolveReferenceSource;
+    private builtinReferences;
+    private analyzeSchema;
     compile(schema: any): Validator;
-    private createDepthError;
-    private guardCompiledValidators;
-    private requiresIterativeValidation;
-    private wrapIterativeError;
-    private validateIterative;
-    private runIterativeValidation;
+    private prepareSchema;
+    private createGuardedValidator;
     private isPlainObject;
     private isTrivialAlwaysValidSubschema;
     private shallowArrayEquals;
     private flattenAssociativeBranches;
     private flattenSingleWrapperOneOf;
     private normalizeSchemaForCompile;
-    private defineHiddenValue;
+    private markSchemaHasRef;
     private shouldSkipKeyword;
-    private hasRequiredDefaults;
+    private hasPropertyDefaults;
+    private isDefaultTypeValidator;
+    private rollbackDefaults;
+    private isDepthError;
+    private validateSubschema;
+    private markEvaluated;
+    private mergeCompletedEvaluation;
+    private mergeReferenceEvaluation;
+    private installEvaluationTracking;
+    private installDepthGuards;
     private compileSchema;
-    private compileSchemaNode;
     isSchemaLike(subSchema: any): boolean;
+    private getCompiledReferenceTarget;
+    private installEvaluationResourceScopes;
+    private referenceValidator;
     private linkReferences;
 }
 //# sourceMappingURL=index.d.ts.map

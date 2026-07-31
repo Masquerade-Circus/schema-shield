@@ -1,1344 +1,1069 @@
 # SchemaShield 🛡️
 
-**Validation for Modern Architectures: Secure, Stack-Safe, and Domain-Aware.**
+**Predictable JSON Schema validation for JavaScript, without runtime code generation or hidden network access.**
 
-SchemaShield is a secure interpreter for JSON Schema engineered for strict environments and complex domain logic. It prioritizes **architectural stability** and **developer experience** over raw synthetic throughput.
+SchemaShield is a synchronous, high-performance JSON Schema interpreter for applications that need secure, local, explicit validations and easy to inspect validation errors.
 
-> 🏆 **Fastest JSON Schema Validator on Bun** — 2.5x faster than ajv, 4x faster than schemasafe
->
-> 📊 **#3 fastest on Node.js** — 70% ajv speed, 50x faster than others
+Compile reusable validators for JSON data or live JavaScript objects, extend them with domain rules, and receive the validated value together with a clear success or failure result.
+
+- Interpreted execution without `eval()` or `new Function()`
+- No implicit fetches, file reads, DNS lookups, or other I/O
+- JSON Schema draft-04, draft-06, draft-07, 2019-09, and 2020-12
+- Validation of JSON data, class instances, Dates, and other live values
+- Custom types, formats, and keywords
+- Structured errors with schema paths, instance paths, and causal chains
+- Zero runtime dependencies
+- Support for ESM, CommonJS, and TypeScript
 
 ## Quick Start
 
+```bash
+npm install schema-shield
+```
+
 ```javascript
 import { SchemaShield } from "schema-shield";
 
-const validator = new SchemaShield().compile({
+const validateUser = new SchemaShield({ failFast: false }).compile({
   type: "object",
   properties: {
-    name: { type: "string" },
-    age: { type: "number" }
-  }
+    name: { type: "string", minLength: 1 },
+    age: { type: "integer", minimum: 18 }
+  },
+  required: ["name", "age"],
+  additionalProperties: false
 });
 
-validator({ name: "John", age: 30 });
-// { valid: true, data: { name: "John", age: 30 } }
+const result = validateUser({ name: "Ada", age: 37 });
 
-validator({ name: "John", age: "30" });
-// { valid: false, error: ValidationError }
+if (result.valid) {
+  console.log(result.data);
+} else {
+  console.error(result.error.getPath());
+}
 ```
 
-## Table of Contents
+Every validator returns the same shape:
 
-- [Quick Start](#quick-start)
-- [Why SchemaShield?](#why-schemashield)
-  - [Comparison with Other Approaches](#comparison-with-other-approaches)
-- [Usage](#usage)
-- [Performance](#performance)
-  - [Understanding Performance Context](#understanding-performance-context)
-  - [1. Standard Runtimes (Node.js)](#1-standard-runtimes-nodejs)
-  - [2. Modern Runtimes (Bun)](#2-modern-runtimes-bun)
-- [Edge \& Serverless Ready](#edge--serverless-ready)
-- [Features](#features)
-- [Security Philosophy: Hermetic Validation](#security-philosophy-hermetic-validation)
-  - [Why No Remote References?](#why-no-remote-references)
-- [No Code Generation](#no-code-generation)
-- [Error Handling](#error-handling)
-- [Adding Custom Types](#adding-custom-types)
-  - [Method Signature](#method-signature)
-  - [Example: Adding a Custom Type](#example-adding-a-custom-type)
-- [Adding Custom Formats](#adding-custom-formats)
-  - [Method Signature](#method-signature-1)
-  - [Example: Adding a Custom Format](#example-adding-a-custom-format)
-- [Adding Custom Keywords](#adding-custom-keywords)
-  - [Method Signature](#method-signature-2)
-  - [Example: Adding a Custom Keyword](#example-adding-a-custom-keyword)
-  - [Complex example: Adding a Custom Keyword that uses the instance](#complex-example-adding-a-custom-keyword-that-uses-the-instance)
-- [Supported Formats](#supported-formats)
-- [Validating Runtime Objects](#validating-runtime-objects)
-- [More on Error Handling](#more-on-error-handling)
-  - [ValidationError Properties](#validationerror-properties)
-  - [Get the path to the error location](#get-the-path-to-the-error-location)
-  - [Get the full error chain as a tree](#get-the-full-error-chain-as-a-tree)
-  - [Get the cause of the error](#get-the-cause-of-the-error)
-- [Immutable Mode](#immutable-mode)
-- [TypeScript Support](#typescript-support)
-- [Known Limitations](#known-limitations)
-  - [1. Dynamic ID Scope Resolution (Scope Alteration)](#1-dynamic-id-scope-resolution-scope-alteration)
-  - [2. Unicode Length Validation](#2-unicode-length-validation)
-  - [3. Conservative Equality Path (Performance Trade-off)](#3-conservative-equality-path-performance-trade-off)
-- [Testing](#testing)
-- [Contribute](#contribute)
-- [Legal](#legal)
+```typescript
+{
+  data: any;
+  error: ValidationError | null | true;
+  valid: boolean;
+}
+```
 
-## Why SchemaShield?
+`failFast` defaults `error` to `true`. Use `failFast: false` when you need a `ValidationError` with diagnostic context.
 
-Most validators optimize for "operations per second" in synthetic benchmarks, often sacrificing security, stability, or maintainability. SchemaShield optimizes for the **Total Cost of Ownership** of your software.
+## Contents
 
-| Feature              | JIT Compilers                                                        | SchemaShield                                               | Why it matters                                                                          |
-| :------------------- | :------------------------------------------------------------------- | :--------------------------------------------------------- | :-------------------------------------------------------------------------------------- |
-| **Security Model**   | **Reactive**<br>(Requires config to prevent Prototype Pollution/DoS) | **Preventive**<br>(Hermetic & Immutable by design)         | "Secure by default" prevents human error and vulnerabilities in production.             |
-| **Debug Experience** | **Black Box**<br>(Debugs opaque generated strings/code)              | **White Box**<br>(Standard JS stack traces)                | Drastically reduces time-to-fix when validation fails in complex logic.                 |
-| **Stability**        | **Recursive**<br>(Risk of Stack Overflow on deep data)               | **Flat Loop**<br>(Constant memory usage)                   | Protects your server availability against malicious deep-payload attacks.               |
-| **Domain Logic**     | **Disconnected**<br>(Hard to validate Class Instances/State)         | **Integrated**<br>(Native `instanceof` & state validation) | Unifies DTO validation and Business Rules, eliminating "spaghetti code" in controllers. |
-| **Ecosystem**        | **Fragmented**<br>(Requires plugins for errors/formats)              | **Cohesive**<br>(Advanced error trees & formats built-in)  | Reduces dependency fatigue and maintenance burden.                                      |
+- [Why SchemaShield](#why-schemashield)
+- [Installation and package formats](#installation-and-package-formats)
+- [Core concepts](#core-concepts)
+  - [Compile once, validate many times](#compile-once-validate-many-times)
+  - [Choose an error mode](#choose-an-error-mode)
+  - [Apply defaults](#apply-defaults)
+  - [Preserve the original input](#preserve-the-original-input)
+  - [Validate live JavaScript objects](#validate-live-javascript-objects)
+- [Working with schema resources](#working-with-schema-resources)
+  - [Register external schemas](#register-external-schemas)
+  - [Use local references and JSON Pointers](#use-local-references-and-json-pointers)
+  - [Use anchors and recursive references](#use-anchors-and-recursive-references)
+- [Extend SchemaShield](#extend-schemashield)
+  - [Custom types](#custom-types)
+  - [Custom formats](#custom-formats)
+  - [Custom keywords](#custom-keywords)
+- [API reference](#api-reference)
+  - [Root exports](#root-exports)
+  - [Public TypeScript types](#public-typescript-types)
+  - [SchemaShield constructor](#schemashield-constructor)
+  - [SchemaShield methods](#schemashield-methods)
+  - [Validator](#validator)
+  - [ValidationError](#validationerror)
+  - [deepClone](#deepclone)
+- [JSON Schema compatibility](#json-schema-compatibility)
+  - [Dialects](#dialects)
+  - [Built-in formats](#built-in-formats)
+  - [Non-standard extensions](#non-standard-extensions)
+  - [Compatibility notes](#compatibility-notes)
+- [Execution model and limits](#execution-model-and-limits)
+- [Error codes](#error-codes)
+- [Development](#development)
+- [Contributing](#contributing)
+- [Acknowledgments](#acknowledgments)
+- [License](#license)
 
-> **The Trade-off:** While JIT compilers can be faster in raw throughput on V8 (Node.js), SchemaShield offers a balanced architecture where validation is never the bottleneck in real-world I/O bound applications (Database/Network APIs).
+## Why SchemaShield
 
-### Comparison with Other Approaches
+### Keep validation predictable
 
-| Feature                       | SchemaShield                                        | JIT Compilers                    | Classic Interpreters  |
-| :---------------------------- | :-------------------------------------------------- | :------------------------------- | :-------------------- |
-| **Architecture**              | **Secure Flat Interpreter**                         | JIT Compiler (eval/new Function) | Recursive Interpreter |
-| **Relative Speed**            | **High (~70%)**                                     | Reference (100%)                 | Low (1% - 20%)        |
-| **CSP Compliance**            | **Native (100% Safe)**                              | Requires Build Config            | Variable              |
-| **Edge Ready**                | **Native**                                          | Complex Setup                    | Variable              |
-| **Stack Safety**              | **Minimized stack usage (non-recursive core loop)** | Risk of Overflow                 | Risk of Overflow      |
-| **Class Instance Validation** | **Native**                                          | No                               | No                    |
-| **Debug Experience**          | **Clean Stack Trace**                               | Opaque Generated Code            | Variable              |
+SchemaShield interprets schemas with ordinary JavaScript functions. It does not generate executable source at runtime, and it does not call `eval()` or `new Function()`. Validation remains compatible with environments that restrict runtime code generation.
 
-> **Note:** Stack Safety refers to the risk of stack overflow errors when validating deeply nested data structures. SchemaShield's flat interpreter design minimizes this risk in its core validation loop. Keep in mind that custom keywords can still introduce recursion if not implemented carefully.
+### Keep resources under application control
 
-## Usage
+SchemaShield never downloads a referenced schema. Register reviewed resources with `addSchema()` and ship them with your application. An `http:` or `https:` URI is an identifier inside the local registry, not permission to access the network.
 
-**1. Install the package**
+### Use one validation boundary for transport and domain values
+
+Built-in JSON Schema types cover JSON-compatible data. Custom types and keywords can also inspect class instances, Dates, application state, and other live JavaScript values without serializing them first.
+
+### Inspect the failure that matters
+
+SchemaShield stops at the first failing path. With detailed errors enabled, that failure retains its keyword, data, schema context, nested cause, and JSON Pointer paths.
+
+## Installation and package formats
+
+Install with npm:
 
 ```bash
 npm install schema-shield
-# or
+```
+
+Or with Bun:
+
+```bash
 bun add schema-shield
 ```
 
-**2. Import the SchemaShield class**
+Use the package root with ESM:
 
 ```javascript
-import { SchemaShield } from "schema-shield";
-// or
-const { SchemaShield } = require("schema-shield");
+import { SchemaShield, ValidationError, deepClone } from "schema-shield";
 ```
 
-For direct browser usage without a bundler, load the minified browser artifact and use the global namespace:
-
-```html
-<script src="https://unpkg.com/schema-shield/dist/index.min.js"></script>
-<script>
-  const validator = new self.SchemaShield.SchemaShield().compile({
-    type: "object",
-    properties: {
-      name: { type: "string" }
-    },
-    required: ["name"]
-  });
-
-  console.log(validator({ name: "Ada" }));
-</script>
-```
-
-**3. Instantiate the SchemaShield class**
+Use the package root with CommonJS:
 
 ```javascript
-const schemaShield = new SchemaShield();
+const { SchemaShield, ValidationError, deepClone } = require("schema-shield");
 ```
 
-- **`immutable`** (optional): Set to `true` to ensure that input data remains unmodified during validation. Default is `false` for better performance.
-- **`failFast`** (optional): Set to `false` to receive detailed error objects on validation failure. Default is `true` for lightweight failure indication.
-- **`maxDepth`** (optional): Maximum structural validation depth. It must be a positive integer and defaults to `10,000`. Inputs that exceed it fail with the normal fail-fast sentinel or a detailed `ValidationError` whose `code` is `MAX_DEPTH_EXCEEDED`.
+There is no default export. TypeScript declarations are included. The package metadata also provides a browser bundle for browser-aware tooling.
 
-**3.5. Add custom types, keywords, and formats (optional)**
+SchemaShield requires Node.js 18 or later when used through its Node.js package entry points.
 
-```javascript
-schemaShield.addType("customType", (data) => {
-  // Custom type validation logic
-});
+## Core concepts
 
-schemaShield.addFormat("customFormat", (data) => {
-  // Custom format validation logic
-});
+### Compile once, validate many times
 
-schemaShield.addKeyword(
-  "customKeyword",
-  (schema, data, defineError, instance) => {
-    // Custom keyword validation logic
-  }
-);
-```
-
-**4. Compile a schema**
-
-```javascript
-const schema = {
-  type: "object",
-  properties: {
-    name: { type: "string" },
-    age: { type: "number" }
-  }
-};
-
-const validator = schemaShield.compile(schema);
-```
-
-**5. Validate some data**
-
-```javascript
-const data = {
-  name: "John Doe",
-  age: 30
-};
-
-const validationResult = validator(data);
-
-if (validationResult.valid) {
-  console.log("Data is valid:", validationResult.data);
-} else {
-  console.error("Validation error:", validationResult.error);
-}
-```
-
-**`validationResult`**: Contains the following properties:
-
-- `data`: The validated (and potentially modified) data.
-- `error`: A `ValidationError` instance if validation failed (when `failFast: false`), `true` if validation failed in fail-fast mode, otherwise `null`.
-- `valid`: true if validation was successful, otherwise false.
-
-> Note: When SchemaShield is instantiated with `{ failFast: false }`, `validationResult.error` will contain a detailed `ValidationError` instance if validation fails. In `failFast: true` mode, `error` is just `true` as a lightweight sentinel.
-
-**6. Intelligent Defaults**
-
-SchemaShield applies `default` values only when necessary to fulfill the schema contract. A `default` value is injected if and only if:
-
-1. The property is missing in the input data.
-2. The property is marked as `required` in the schema.
-
-## Performance
-
-SchemaShield is engineered with a **Flat Loop Interpreter** architecture. This design choice implies zero compilation overhead, making it exceptionally stable and significantly faster in modern runtimes.
-
-### Understanding Performance Context
-
-In real-world applications, validation latency is often negligible compared to Network I/O (~20-100ms) or Database queries (~5-50ms).
-
-SchemaShield is engineered to be **"Elite Fast" (Sufficiently Fast)**:
-
-- **Zero Compilation Overhead:** Ideal for Serverless/Edge cold-starts.
-- **Predictable Throughput:** Consistent performance regardless of schema complexity.
-
-While JIT compilers may show higher numbers in micro-benchmarks on V8, SchemaShield processes thousands of requests per second—more than enough for high-traffic APIs—without the architectural risks of code generation.
-
-### 1. Standard Runtimes (Node.js)
-
-In V8-based environments (Node.js), SchemaShield maintains elite performance for a secure interpreter, being roughly **70x faster** than legacy libraries.
-
-| Validator          | Relative Speed | Context             |
-| :----------------- | :------------- | :------------------ |
-| ajv                | 100%           | Reference (JIT)     |
-| @exodus/schemasafe | ~74%           | Interpreter         |
-| **SchemaShield**   | **~70%**       | **Secure Standard** |
-| jsonschema         | ~1%            | Legacy              |
-
-**Key Takeaway:** SchemaShield delivers consistent high performance in Node.js without the security risks, memory leaks, or "cold start" latency associated with code generation.
-
-### 2. Modern Runtimes (Bun)
-
-In runtimes using JavaScriptCore, SchemaShield outperforms JIT compilers because it avoids the heavy cost of runtime code generation and optimization overhead.
-
-| Validator          | Relative Speed | Context      |
-| :----------------- | :------------- | :----------- |
-| **SchemaShield**   | **100%**       | **Fastest**  |
-| ajv                | ~40%           | JIT Compiler |
-| @exodus/schemasafe | ~24%           | Interpreter  |
-| jsonschema         | ~2%            | Legacy       |
-
-## Edge & Serverless Ready
-
-SchemaShield is designed to run seamlessly in restrictive environments like **Cloudflare Workers**, **Vercel Edge Functions**, **Deno Deploy**, and **Bun**.
-
-- **Zero Runtime Dependencies:** Install and run without pulling additional runtime packages.
-- **CSP Compliant:** Works in environments where `eval()` and `new Function()` are banned for security.
-- **Instant Startup:** No compilation overhead, minimizing "cold start" latency in Serverless functions.
-
-### Serverless Example
-
-```javascript
-// Compile at module level - runs once at cold start
-const validateRequest = new SchemaShield().compile({
-  type: "object",
-  properties: {
-    name: { type: "string" },
-    email: { type: "string", format: "email" }
-  },
-  required: ["name", "email"]
-});
-
-// Vercel Edge / Cloudflare Worker handler
-export default function handler(request) {
-  const result = validateRequest(request.body);
-
-  if (!result.valid) {
-    return new Response(JSON.stringify({ error: result.error.message }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" }
-    });
-  }
-
-  return new Response(JSON.stringify(result.data), { status: 200 });
-}
-```
-
-### Sharing Compiled Validators
-
-Compiled validators are safe to share across requests:
-
-```javascript
-// Compile once at startup
-const validateUser = new SchemaShield().compile(userSchema);
-
-// Reuse across requests - no mutable state
-app.get("/user/:id", (req) => {
-  const result = validateUser(req.body);
-  // ...
-});
-```
-
-## Interpreter Architecture
-
-Unlike JIT compilers that generate code at runtime, SchemaShield uses a flat-loop interpreter:
-
-1. **Compilation:** Schema is compiled into a tree of validator functions at compile-time
-2. **Reference Resolution:** $ref links are resolved once during compilation
-3. **Validation:** Data flows through the validator tree in a flat loop (no recursion)
-
-### Performance Characteristics
-
-| Schema Type               | Performance | Notes                         |
-| ------------------------- | ----------- | ----------------------------- |
-| Simple (type, properties) | Very fast   | ~same as JIT                  |
-| allOf/anyOf/oneOf         | ~70% JIT    | Sequential branch evaluation  |
-| Deep nesting              | Stack-safe  | Constant memory, no recursion |
-| Many $refs                | Fast        | Resolved at compile-time      |
-
-### Performance Optimization Tips
-
-```javascript
-// Best: Flat structure
-const fastSchema = {
-  type: "object",
-  properties: {
-    name: { type: "string" },
-    email: { type: "string", format: "email" }
-  }
-};
-
-// Slower: Deeply nested allOf/anyOf
-const slowSchema = {
-  allOf: [
-    { allOf: [{ allOf: [...] }]}
-  ]
-};
-
-// Better: Flatten your schema
-const betterSchema = {
-  type: "object",
-  properties: { /* ... */ }
-};
-```
-
-## Features
-
-- Supports draft-06 and draft-07 of the [JSON Schema](https://json-schema.org/) specification.
-- Full support for internal references ($ref) and anchors ($id).
-- No Code Generation for Enhanced Safety and Validation Flexibility.
-- Custom type, keyword, and format validators.
-- Runtime object validation: first-class support for business logic checks (type checking and schema validation).
-- Immutable mode for data protection.
-- Lightweight and fast.
-- Easy to use and extend.
-- No runtime dependencies.
-- TypeScript support.
-
-## Security Philosophy: Hermetic Validation
-
-SchemaShield adopts a **Zero Trust** and **Hermetic Architecture** approach. Unlike validators that allow runtime network access, SchemaShield is strictly synchronous and offline by design.
-
-### Why No Remote References?
-
-Allowing a validator to fetch schemas from remote URLs (`$ref: "https://..."`) at runtime introduces critical security vectors and stability issues:
-
-1. **SSRF (Server-Side Request Forgery):** Prevents attackers from manipulating schemas to force internal network scanning or access metadata services.
-2. **Supply Chain Attacks:** Eliminates the risk of a remote schema being silently compromised, which could alter validation logic without code deployment.
-3. **Deterministic Reliability:** Validation never fails due to network latency, DNS issues, or third-party server downtime.
-
-**Recommendation:** Treat schemas as **code dependencies**, not dynamic assets. Download and bundle remote schemas locally during your build process to ensure immutable, versioned, and audit-ready validation.
-
-## No Code Generation
-
-Unlike some other validation libraries that rely on code generation to achieve fast performance, SchemaShield does not use code generation.
-
-This design decision ensures that you can safely pass real references to objects, classes, or variables in your custom validation functions without any unintended side effects or security concerns.
-
-For example, you can easily use `instanceof` to check if the provided data is an instance of a particular class or a subclass:
-
-```javascript
-schemaShield.addType("date-class", (data) => data instanceof Date);
-// or use your custom classes, functions or references
-class CustomDate extends Date {}
-schemaShield.addType("custom-date-class", (data) => data instanceof CustomDate);
-```
-
-## Security Implementation Examples
-
-### CSP-Compliant Validation
-
-SchemaShield works in strict CSP environments because it uses no code generation:
-
-```javascript
-// No eval(), no new Function() - CSP-safe
-const validator = new SchemaShield().compile({
-  type: "object",
-  properties: {
-    name: { type: "string" }
-  }
-});
-
-// This works in strict CSP policies
-const result = validator({ name: "John" });
-```
-
-### Preventing Prototype Pollution
-
-SchemaShield prevents prototype pollution by design:
-
-```javascript
-const schema = {
-  type: "object",
-  properties: {
-    name: { type: "string" }
-  },
-  additionalProperties: false
-};
-
-const validator = new SchemaShield().compile(schema);
-
-// Malicious input {"__proto__": {"evil": "value"}} will fail
-validator({ __proto__: { evil: "value" } });
-// { valid: false, error: ValidationError }
-
-// Only explicitly defined properties are allowed
-validator({ name: "John", age: 30 });
-// { valid: false, error: ValidationError (additionalProperties: false) }
-```
-
-### Immutable Mode
-
-Protect input data from accidental modification:
-
-```javascript
-const shield = new SchemaShield({ immutable: true });
-const validator = shield.compile({
-  type: "object",
-  properties: {
-    name: { type: "string" }
-  }
-});
-
-const input = { name: "John" };
-const result = validator(input);
-
-// Input remains unchanged
-console.log(input);
-// { name: "John" }
-```
-
-## Error Handling
-
-SchemaShield provides comprehensive error handling for schema validation. When a validation error occurs:
-
-- If the instance was created with `{ failFast: true }` (the default), the `error` property will be `true` as a lightweight sentinel indicating that validation failed.
-- If the instance was created with `{ failFast: false }`, the `error` property will contain a `ValidationError` instance with rich debugging information.
-
-This error object has the `getPath()` method, which is particularly useful for quickly identifying the location of an error in both the schema and the data.
-
-**Example:**
+Create an instance, compile a schema, and retain the returned function:
 
 ```javascript
 import { SchemaShield } from "schema-shield";
 
-const schemaShield = new SchemaShield({ failFast: false });
-
-const schema = {
+const shield = new SchemaShield();
+const validateMessage = shield.compile({
   type: "object",
   properties: {
-    name: { type: "string" },
-    age: {
-      type: "number",
-      minimum: 18
+    id: { type: "string", format: "uuid" },
+    body: { type: "string", minLength: 1 }
+  },
+  required: ["id", "body"]
+});
+
+const first = validateMessage({
+  id: "123e4567-e89b-12d3-a456-426614174000",
+  body: "Ready"
+});
+
+const second = validateMessage({ id: "invalid", body: "" });
+
+console.log(first.valid); // true
+console.log(second.valid); // false
+```
+
+### Choose an error mode
+
+The default mode minimizes error construction:
+
+```javascript
+const validate = new SchemaShield().compile({ type: "integer" });
+const result = validate("3");
+
+console.log(result);
+// { data: "3", error: true, valid: false }
+```
+
+Detailed mode returns a `ValidationError` for built-in failures and custom failures created with `defineError()`:
+
+```javascript
+const validate = new SchemaShield({ failFast: false }).compile({
+  type: "object",
+  properties: {
+    profile: {
+      type: "object",
+      properties: {
+        age: { type: "integer", minimum: 18 }
+      },
+      required: ["age"]
     }
-  }
-};
+  },
+  required: ["profile"]
+});
 
-const validator = schemaShield.compile(schema);
+const result = validate({ profile: { age: 16 } });
 
-const invalidData = {
-  name: "John Doe",
-  age: 15
-};
+if (!result.valid && result.error !== true) {
+  console.log(result.error.getPath());
+  // { schemaPath: "#/properties/profile/properties/age/minimum",
+  //   instancePath: "#/profile/age" }
 
-const validationResult = validator(invalidData);
-
-if (validationResult.valid) {
-  console.log("Data is valid:", validationResult.data);
-} else {
-  console.error("Validation error:", validationResult.error.message); // "Property is invalid"
-
-  // Get the paths to the error location in the schema and in the data
-  const errorPaths = validationResult.error.getPath();
-  console.error("Schema path:", errorPaths.schemaPath); // "#/properties/age/minimum"
-  console.error("Instance path:", errorPaths.instancePath); // "#/age"
+  console.log(result.error.getTree());
 }
 ```
 
-For more advanced error handling and a detailed explanation of the ValidationError properties and methods, refer to the [More on Error Handling](#more-on-error-handling) section.
+> Detailed mode preserves a causal chain for the first failing path. It does not collect every independent validation error into a list. A custom keyword that returns `true` directly still produces `error: true`, even when `failFast` is `false`.
 
-## Adding Custom Types
+### Apply defaults
 
-SchemaShield allows you to add custom types for validation using the `addType` method.
-
-### Method Signature
+`default` remains an annotation unless `useDefaults` is enabled.
 
 ```javascript
-interface TypeFunction {
-  (data: any): boolean;
-}
+const validateSettings = new SchemaShield({
+  useDefaults: true
+}).compile({
+  type: "object",
+  properties: {
+    theme: { type: "string", default: "system" },
+    retries: { type: "integer", default: 3 }
+  }
+});
 
-addType(name: string, validator: TypeFunction, overwrite?: boolean): void;
+const input = {};
+const result = validateSettings(input);
+
+console.log(result.data);
+// { theme: "system", retries: 3 }
 ```
 
-- `name`: The name of the custom type. This should be a unique string that does not conflict with existing types.
-- `validator`: A `TypeFunction` that takes a single argument `data` and returns a boolean value. The function should return `true` if the provided data is valid for the custom type, and `false` otherwise.
-- `overwrite` (optional): Set to `true` to overwrite an existing type with the same name. Default is `false`. If set to `false` and a type with the same name already exists, an error will be thrown.
+| `useDefaults` | Behavior                                                                                                               |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `false`       | Leaves `default` as an annotation. This is the default.                                                                |
+| `true`        | Replaces absent or `undefined` object properties with their defaults.                                                  |
+| `"empty"`     | Also replaces `null` and empty strings. Values such as `0`, `false`, empty arrays, and empty objects remain unchanged. |
 
-### Example: Adding a Custom Type
+Object and array defaults are cloned for each validation. Nested defaults apply when their containing object exists or the container itself receives a default.
 
-In this example, we'll add a custom type called age that validates if a given number is between 18 and 120.
+> Defaults are mutations. During ordinary validation, an inserted default is validated like any other value. If that default is invalid, validation fails and the inserted value can remain on mutable input.
+
+### Preserve the original input
+
+Set `immutable: true` to validate a cloned value:
+
+```javascript
+const validate = new SchemaShield({
+  immutable: true,
+  useDefaults: true
+}).compile({
+  type: "object",
+  properties: {
+    role: { type: "string", default: "member" }
+  }
+});
+
+const input = {};
+const result = validate(input);
+
+console.log(input); // {}
+console.log(result.data); // { role: "member" }
+console.log(result.data === input); // false
+```
+
+> Immutable mode clones the root value with the platform's `structuredClone`. Class instances become cloned objects without their original prototype. Values unsupported by `structuredClone`, including functions, promises, weak collections, and symbols, make cloning throw. Treat immutable mode as reliable isolation for ordinary JSON-compatible data, not as a universal object-capability boundary.
+
+### Validate live JavaScript objects
+
+Custom types can recognize domain values directly:
 
 ```javascript
 import { SchemaShield } from "schema-shield";
 
-const schemaShield = new SchemaShield({ failFast: false });
-
-// Custom type 'age' validator function
-const ageValidator = (data) => {
-  return typeof data === "number" && data >= 18 && data <= 120;
-};
-
-// Adding the custom type 'age'
-schemaShield.addType("age", ageValidator);
-
-const schema = {
-  type: "object",
-  properties: {
-    name: { type: "string" },
-    age: { type: "age" }
+class Invoice {
+  constructor(total) {
+    this.total = total;
   }
-};
-
-const validator = schemaShield.compile(schema);
-
-const validData = {
-  name: "John Doe",
-  age: 25
-};
-
-const validationResult = validator(validData);
-
-if (validationResult.valid) {
-  console.log("Data is valid:", validationResult.data);
-} else {
-  console.error("Validation error:", validationResult.error.getCause().message);
-}
-```
-
-## Adding Custom Formats
-
-SchemaShield allows you to add custom formats for validation using the `addFormat` method.
-
-### Method Signature
-
-```javascript
-interface FormatFunction {
-  (data: any): boolean;
 }
 
-addFormat(name: string, validator: FormatFunction, overwrite?: boolean): void;
-```
+const shield = new SchemaShield({ failFast: false });
 
-- `name`: The name of the custom format. This should be a unique string that does not conflict with existing formats.
-- `validator`: A FormatFunction that takes a single argument data and returns a boolean value. The function should return true if the provided data is valid for the custom format, and false otherwise.
-- `overwrite` (optional): Set to true to overwrite an existing format with the same name. Default is false. If set to false and a format with the same name already exists, an error will be thrown.
-
-### Example: Adding a Custom Format
-
-In this example, we'll add a custom format called ssn that validates if a given string is a valid U.S. Social Security Number (SSN).
-
-```javascript
-import { SchemaShield } from "schema-shield";
-
-const schemaShield = new SchemaShield({ failFast: false });
-
-// Custom format 'ssn' validator function
-const ssnValidator = (data) => {
-  const ssnPattern = /^(?!000|.+0{4})(?:\d{9}|\d{3}-\d{2}-\d{4})$/;
-  return typeof data === "string" && ssnPattern.test(data);
-};
-
-// Adding the custom format 'ssn'
-schemaShield.addFormat("ssn", ssnValidator);
-
-const schema = {
-  type: "object",
-  properties: {
-    name: { type: "string" },
-    ssn: { type: "string", format: "ssn" }
+shield.addType("invoice", (value) => value instanceof Invoice);
+shield.addKeyword("positiveTotal", (schema, data, defineError) => {
+  if (!schema.positiveTotal || !(data instanceof Invoice)) {
+    return;
   }
-};
 
-const validator = schemaShield.compile(schema);
-
-const validData = {
-  name: "John Doe",
-  ssn: "123-45-6789"
-};
-
-const validationResult = validator(validData);
-
-if (validationResult.valid) {
-  console.log("Data is valid:", validationResult.data);
-} else {
-  console.error("Validation error:", validationResult.error.getCause().message);
-}
-```
-
-## Adding Custom Keywords
-
-SchemaShield allows you to add custom keywords for validation using the `addKeyword` method. This is the most powerful method for adding custom validation logic to SchemaShield because it allows you to interact with the entire schema and data being validated at the level of the keyword.
-
-### Method Signature
-
-```javascript
-type Result = void | ValidationError | true;
-
-interface DefineErrorOptions {
-  item?: any; // Final item in the path
-  cause?: ValidationError | true; // Cause of the error (or true in failFast mode)
-  data?: any; // Data that caused the error
-}
-
-interface DefineErrorFunction {
-  (message: string, options?: DefineErrorOptions): ValidationError | true;
-}
-
-interface ValidateFunction {
-  (data: any): Result;
-}
-
-interface CompiledSchema {
-  $validate?: ValidateFunction;
-  [key: string]: any;
-}
-
-interface FormatFunction {
-  (data: any): boolean;
-}
-
-interface TypeFunction {
-  (data: any): boolean;
-}
-
-declare class SchemaShield {
-    constructor(options?: {
-      immutable?: boolean;
-      failFast?: boolean;
-    });
-    compile(schema: any): Validator;
-    addType(name: string, validator: TypeFunction, overwrite?: boolean): void;
-    addFormat(name: string, validator: FormatFunction, overwrite?: boolean): void;
-    addKeyword(name: string, validator: KeywordFunction, overwrite?: boolean): void;
-    getType(type: string): TypeFunction | false;
-    getFormat(format: string): FormatFunction | false;
-    getKeyword(keyword: string): KeywordFunction | false;
-    isSchemaLike(subSchema: any): boolean;
-}
-
-interface KeywordFunction {
-  (
-    schema: CompiledSchema,
-    data: any,
-    defineError: DefineErrorFunction,
-    instance: SchemaShield
-  ): Result;
-}
-
-
-
-addKeyword(name: string, validator: KeywordFunction, overwrite?: boolean): void;
-```
-
-- `name`: The name of the custom keyword. This should be a unique string that does not conflict with existing keywords.
-- `validator`: A `KeywordFunction` that takes four arguments: `schema`, `data`, `defineError`, and `instance` (The SchemaShield instance that is currently running the validation). The function should not return anything if the data is valid for the custom keyword, and should return a `ValidationError` instance if the data is invalid when `failFast` is `false`, or `true` when `failFast` is `true`.
-- `overwrite` (optional): Set to true to overwrite an existing keyword with the same name. Default is false. If set to false and a keyword with the same name already exists, an error will be thrown.
-
-#### About the `defineError` Function
-
-Take into account that the error must be generated using the `defineError` function because the error returned by this method has the required data relevant for the current keyword (`schema`, `keyword`, `getCause` method).
-
-- `message`: A string that describes the validation error.
-- `options`: An optional object with properties that provide more context for the error:
-  - `item`?: An optional value representing the final item in the path where the validation error occurred. (e.g. index of an array item)
-  - `cause`?: An optional `ValidationError` (or `true` in fail-fast mode) that represents the cause of the current error.
-  - `data`?: An optional value representing the data that caused the validation error.
-
-When the SchemaShield instance is created with `failFast: true`, `defineError` returns `true` instead of a `ValidationError`, and keyword implementations should simply `return` whatever `defineError` gives them.
-
-#### About the `instance` Argument
-
-The `instance` argument is the SchemaShield instance that is currently running the validation. This can be used to access to other `types`, `keywords` or `formats` that have been added to the instance.
-
-### Example: Adding a Custom Keyword
-
-In this example, we'll add a custom keyword called divisibleBy that validates if a given number is divisible by a specified divisor.
-
-```javascript
-import { SchemaShield, ValidationError } from "schema-shield";
-
-const schemaShield = new SchemaShield({ failFast: false });
-
-// Custom keyword 'divisibleBy' validator function
-const divisibleByValidator = (schema, data, defineError, instance) => {
-  if (typeof data !== "number") {
-    return defineError("Value must be a number", {
+  if (data.total <= 0) {
+    return defineError("Invoice total must be positive", {
+      code: "INVALID_INVOICE_TOTAL",
       data
     });
+  }
+});
+
+const validateInvoice = shield.compile({
+  type: "invoice",
+  positiveTotal: true
+});
+
+const result = validateInvoice(new Invoice(-10));
+console.log(result.valid); // false
+```
+
+> Leave `immutable` disabled when class identity or reference identity matters. A structured-cloned class instance loses its prototype and stops satisfying `instanceof` checks.
+
+## Working with schema resources
+
+### Register external schemas
+
+`addSchema()` stores a local snapshot of a schema resource. URI strings identify resources and resolve references, but they never trigger I/O.
+
+```javascript
+import { SchemaShield } from "schema-shield";
+
+const shield = new SchemaShield({ failFast: false });
+
+shield.addSchema(
+  {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $id: "address.json",
+    type: "object",
+    properties: {
+      city: { type: "string", minLength: 1 },
+      postalCode: { type: "string" }
+    },
+    required: ["city"]
+  },
+  {
+    uri: "https://resources.example/schemas/address.json",
+    aliases: ["https://schemas.example/address"]
+  }
+);
+
+const validateCustomer = shield.compile({
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  type: "object",
+  properties: {
+    address: { $ref: "https://schemas.example/address" }
+  },
+  required: ["address"]
+});
+```
+
+Registration follows these rules:
+
+- `uri` and every alias must be absolute URIs without fragments.
+- A root `$id` is resolved against `uri` when both are present.
+- Without `uri`, the active root `id` or `$id` must already be absolute and fragment-free.
+- Boolean schemas require an explicit `uri`.
+- The retrieval URI, resolved root identifier, and aliases identify the same resource.
+- Registration snapshots the schema. Later mutations to the source object do not change future compilations.
+- Newly registered schemas affect future `compile()` calls. Existing validators keep their compiled targets.
+- Duplicate identities are rejected. Registered resources cannot be overwritten or removed.
+- Resources may be registered in any order. Every resource reachable from the compiled root must be present by compile time.
+- SchemaShield provides no fetch callback, loader, file access, or remote retrieval fallback.
+
+### Use local references and JSON Pointers
+
+Local references, relative references, cross-document references, aliases, transitive references, and JSON Pointer fragments are resolved during compilation:
+
+```javascript
+const validate = new SchemaShield().compile({
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $defs: {
+    identifier: {
+      type: "string",
+      pattern: "^[A-Z]{3}-[0-9]+$"
+    }
+  },
+  type: "object",
+  properties: {
+    id: { $ref: "#/$defs/identifier" }
+  },
+  required: ["id"]
+});
+```
+
+An unresolved reachable reference throws synchronously from `compile()` with `REFERENCE_NOT_FOUND`.
+
+### Use anchors and recursive references
+
+SchemaShield resolves named anchors in modern dialects, draft 2019-09 `$recursiveRef`, and draft 2020-12 `$dynamicRef`. Dynamic resolution of a draft 2019-09 `$recursiveRef` requires the destination resource root to declare `$recursiveAnchor: true`. Without that anchor, the reference uses its statically resolved target. Include `$schema` whenever behavior depends on a dialect:
+
+```javascript
+const validateTree = new SchemaShield({ maxDepth: 64 }).compile({
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $id: "https://schemas.example/tree",
+  $dynamicAnchor: "node",
+  type: "object",
+  properties: {
+    value: { type: "string" },
+    children: {
+      type: "array",
+      items: { $dynamicRef: "#node" }
+    }
+  },
+  required: ["value"]
+});
+```
+
+> Invalid or duplicate anchors fail during compilation. Recursive validation remains subject to the runtime `maxDepth` limit.
+
+## Extend SchemaShield
+
+Registrations belong to one `SchemaShield` instance and affect validators compiled from that instance. Types, formats, and keywords use `overwrite = false` by default. Registering an existing active name throws unless `overwrite = true` is explicitly enabled. An internal entry represented by `false` is disabled rather than active, so it can be activated without overwrite.
+
+### Custom types
+
+```typescript
+addType(name: string, validator: TypeFunction, overwrite?: boolean): void
+getType(name: string): TypeFunction | false
+```
+
+```javascript
+const shield = new SchemaShield();
+
+shield.addType("safe-integer", (data) => Number.isSafeInteger(data));
+
+const validate = shield.compile({ type: "safe-integer" });
+```
+
+A type function receives the candidate value and returns `true` when it belongs to the type.
+
+### Custom formats
+
+```typescript
+addFormat(name: string, validator: FormatFunction, overwrite?: boolean): void
+getFormat(name: string): FormatFunction | false
+```
+
+```javascript
+const shield = new SchemaShield();
+
+shield.addFormat("ticket-id", (data) => /^TKT-[0-9]{6}$/.test(data));
+
+const validate = shield.compile({
+  type: "string",
+  format: "ticket-id"
+});
+```
+
+The `format` keyword calls format validators only for strings. Unknown formats are ignored.
+
+### Custom keywords
+
+```typescript
+addKeyword(name: string, validator: KeywordFunction, overwrite?: boolean): void
+getKeyword(name: string): KeywordFunction | false
+```
+
+```javascript
+const shield = new SchemaShield({ failFast: false });
+
+shield.addKeyword("divisibleBy", (schema, data, defineError) => {
+  if (typeof data !== "number") {
+    return;
   }
 
   if (data % schema.divisibleBy !== 0) {
     return defineError(`Value must be divisible by ${schema.divisibleBy}`, {
+      code: "NOT_DIVISIBLE",
+      item: "divisibleBy",
       data
     });
   }
-};
+});
 
-// Adding the custom keyword 'divisibleBy'
-schemaShield.addKeyword("divisibleBy", divisibleByValidator);
-
-const schema = {
-  type: "object",
-  properties: {
-    value: { type: "number", divisibleBy: 5 }
-  }
-};
-
-const validator = schemaShield.compile(schema);
-
-const validData = {
-  value: 15
-};
-
-const validationResult = validator(validData);
-
-if (validationResult.valid) {
-  console.log("Data is valid:", validationResult.data);
-} else {
-  console.error("Validation error:", validationResult.error.getCause().message);
-}
+const validate = shield.compile({
+  type: "number",
+  divisibleBy: 5
+});
 ```
 
-### Complex example: Adding a Custom Keyword that uses the instance
+A keyword receives five arguments:
 
-In this example we'll add a custom keyword called `prefixedUsername` that will validate if a given string is a valid username and has a specific prefix. This will only work if the additional validation methods and types have been added to the instance.
+1. `schema`, the active `CompiledSchema`.
+2. `data`, the current value.
+3. `defineError(message, options)`, the error factory for the active mode.
+4. `instance`, the active `SchemaShield` instance.
+5. `validateSubschema`, an optional helper for custom keywords that descend into compiled subschemas.
+
+`defineError()` accepts `code`, `item`, `cause`, and `data`. It returns `true` in fail-fast mode and a `ValidationError` in detailed mode. Return its result from the keyword to reject the value. Returning `undefined` accepts it.
+
+When supplied, `validateSubschema()` participates in depth guards, evaluated-item tracking, and default rollback. Its optional `evaluated` argument can identify a `property` or `item` and can set `unevaluated` or `discardAnnotations`. The helper also exposes optional `savepoint()`, `rollback(savepoint)`, and `tracksEvaluated` members for advanced integrations. These hooks describe current low-level extension behavior and should be used only when a keyword needs to manage nested validation.
+
+`setDefault()` is available to custom keywords that need to write a default through SchemaShield's mutation journal:
 
 ```javascript
-import { SchemaShield, ValidationError } from "schema-shield";
-
-const schemaShield = new SchemaShield({ failFast: false });
-
-// Custom type validator: nonEmptyString
-const nonEmptyStringValidator = (data) =>
-  typeof data === "string" && data.length > 0;
-schemaShield.addType("nonEmptyString", nonEmptyStringValidator);
-
-// Custom keyword validator: hasPrefix
-const hasPrefixValidator = (schema, data, defineError, instance) => {
-  const { prefix } = schema.hasPrefix;
-  if (typeof data === "string" && !data.startsWith(prefix)) {
-    return defineError(`String must have the prefix "${prefix}"`, {
-      data
-    });
+shield.addKeyword("withGeneratedId", (schema, data, _defineError, instance) => {
+  if (
+    schema.withGeneratedId === true &&
+    data &&
+    typeof data === "object" &&
+    !("id" in data)
+  ) {
+    instance.setDefault(data, "id", "pending");
   }
-};
-schemaShield.addKeyword("hasPrefix", hasPrefixValidator);
+});
+```
 
-// Custom format validator: username
-const usernameValidator = (data) => /^[a-zA-Z0-9._-]{3,}$/i.test(data);
-schemaShield.addFormat("username", usernameValidator);
+> Custom functions may inspect or mutate live values. Their behavior is part of your application's trust boundary.
 
-// Custom keyword 'prefixedUsername' validator function
-const prefixedUsername = (schema, data, defineError, instance) => {
-  const { validType, prefixValidator, validFormat } = schema.prefixedUsername;
+## API reference
 
-  // Get the validators for the specified types and formats from the instance
-  // (if they exist)
-  const typeValidator = instance.getType(validType);
-  const prefixKeyword = instance.getKeyword(prefixValidator);
-  const formatValidator = instance.getFormat(validFormat);
+### Root exports
 
-  for (let i = 0; i < data.length; i++) {
-    const item = data[i];
+The package root has three runtime exports:
 
-    // Validate that the data is of the correct type if specified
-    if (validType && typeValidator) {
-      if (!typeValidator(item)) {
-        return defineError(`Invalid type: ${validType}`, {
-          item: i,
-          data: data[i]
-        });
-      }
-    }
+| Export            | Kind     | Purpose                                                                      |
+| ----------------- | -------- | ---------------------------------------------------------------------------- |
+| `SchemaShield`    | Class    | Owns configuration, extension registries, schema resources, and compilation. |
+| `ValidationError` | Class    | Represents detailed compile-time or validation failures.                     |
+| `deepClone`       | Function | Clones supported values for application-controlled isolation.                |
 
-    // Validate that the data has the correct format if specified
-    if (validFormat && formatValidator) {
-      if (!formatValidator(item)) {
-        return defineError(`Invalid format: ${validFormat}`, {
-          item: i,
-          data: data[i]
-        });
-      }
-    }
+There is no default export.
 
-    // Validate that the data has the correct prefix if specified
-    if (prefixKeyword) {
-      const error = prefixKeyword(schema, item, defineError, instance);
-      if (error) {
-        return defineError(`Invalid prefix: ${prefixValidator}`, {
-          cause: error,
-          item: i,
-          data: data[i]
-        });
-      }
-    }
-  }
-};
+The package root also exports these TypeScript types:
 
-schemaShield.addKeyword("prefixedUsername", prefixedUsername);
+- `Result`
+- `JSONSchema`
+- `AddSchemaOptions`
+- `ValidateSubschemaFunction`
+- `KeywordFunction`
+- `TypeFunction`
+- `FormatFunction`
+- `ValidateFunction`
+- `CompiledSchema`
+- `Validator`
 
-const schema = {
-  type: "array",
-  prefixedUsername: {
-    validType: "nonEmptyString",
-    prefixValidator: "hasPrefix",
-    validFormat: "username"
-  },
-  items: {
-    type: "string"
-  }
-};
+### Public TypeScript types
 
-const validator = schemaShield.compile(schema);
+#### `Result`
 
-const validData = ["user.john", "user.jane"];
+```typescript
+type Result = void | ValidationError | true;
+```
 
-const validationResult = validator(validData);
+Internal validation and extension functions return nothing on success, `true` for a minimal failure, or `ValidationError` for a detailed failure.
 
-if (validationResult.valid) {
-  console.log("Data is valid:", validationResult.data);
-} else {
-  console.error("Validation error:", validationResult.error.getCause().message);
+#### `JSONSchema`
+
+```typescript
+type JSONSchema = boolean | Record<string, any>;
+```
+
+Used by schema registration. Portable JSON Schema roots are booleans or schema objects. `compile(any)` also has a non-standard convenience behavior for cloneable literal values and arrays. See [`compile()`](#compileschema).
+
+#### `AddSchemaOptions`
+
+```typescript
+interface AddSchemaOptions {
+  uri?: string;
+  aliases?: readonly string[];
 }
 ```
 
-## Supported Formats
+`uri` is the absolute, fragment-free retrieval identity. `aliases` adds equivalent absolute, fragment-free identities.
 
-SchemaShield includes built-in validators for the following formats:
+#### `ValidateSubschemaFunction`
 
-- **Date & Time:** `date`, `time`, `date-time`, `duration`.
-- **Email:** `email`, `idn-email`.
-- **Hostnames:** `hostname`, `idn-hostname`.
-- **IP Addresses:** `ipv4`, `ipv6`.
-- **Resource Identifiers:** `uuid`, `uri`, `uri-reference`, `uri-template`, `iri`, `iri-reference`.
-- **JSON Pointers:** `json-pointer`, `relative-json-pointer`.
-- **Regex:** `regex`.
-
-You can override any of these or add new ones using `schemaShield.addFormat`.
-
-## Validating Runtime Objects
-
-JSON Schema is traditionally for serialized JSON text. SchemaShield extends this concept to **JavaScript Objects**. It allows validation of class instances, Dates, and internal application state directly.
-
-For example, imagine you have a custom class representing a project and another representing an employee. You could create a custom validator to ensure that only employees with the right qualifications are assigned to a specific project:
-
-```javascript
-import { SchemaShield, ValidationError } from "schema-shield";
-
-const schemaShield = new SchemaShield({ failFast: false });
-
-// Custom classes
-class Project {
-  constructor(name: string, requiredSkills: string[]) {
-    this.name = name;
-    this.requiredSkills = requiredSkills;
-  }
-}
-
-class Employee {
-  constructor(name: string, skills: string[]) {
-    this.name = name;
-    this.skills = skills;
-  }
-
-  hasSkillsForProject(project: Project) {
-    return project.requiredSkills.every((skill) => this.skills.includes(skill));
-  }
-}
-
-// Add custom types to the instance
-schemaShield.addType("project", (data) => data instanceof Project);
-schemaShield.addType("employee", (data) => data instanceof Employee);
-
-schemaShield.addKeyword(
-  "requiresQualifiedEmployee",
-  (schema, data, defineError, instance) => {
-    const { assignment, project, employee } = data;
-
-    const stringTypeValidator = instance.getType("string");
-    const projectTypeValidator = instance.getType("project");
-    const employeeTypeValidator = instance.getType("employee");
-
-    if (!stringTypeValidator(assignment)) {
-      return defineError("Assignment must be a string", {
-        item: "assignment",
-        data: assignment
-      });
+```typescript
+interface ValidateSubschemaFunction {
+  (
+    schema: CompiledSchema | boolean,
+    data: any,
+    evaluated?: {
+      property?: string;
+      item?: number;
+      unevaluated?: boolean;
+      discardAnnotations?: boolean;
     }
-
-    if (!projectTypeValidator(project)) {
-      return defineError("Project must be a Project instance", {
-        item: "project",
-        data: project
-      });
-    }
-
-    if (!employeeTypeValidator(employee)) {
-      return defineError("Employee must be an Employee instance", {
-        item: "employee",
-        data: employee
-      });
-    }
-
-    if (schema.requiresQualifiedEmployee) {
-      if (!employee.hasSkillsForProject(project)) {
-        return defineError(
-          "Employee does not meet the project's requirements",
-          {
-            data: {
-              assignment,
-              project,
-              employee
-            }
-          }
-        );
-      }
-    }
-  }
-);
-
-// Create and compile the schema
-const schema = {
-  type: "object",
-  properties: {
-    assignment: {}, // Empty schema because we will validate it with the custom keyword
-    project: {}, // Empty schema because we will validate it with the custom keyword
-    employee: {} // Empty schema because we will validate it with the custom keyword
-  },
-  required: ["assignment", "project", "employee"],
-  requiresQualifiedEmployee: true
-};
-
-const validator = schemaShield.compile(schema);
-
-// Create some data to validate
-const employee1 = new Employee("Employee 1", ["A", "B", "C"]);
-
-const project1 = new Project("Project 1", ["A", "B"]);
-
-const dataToValidate = {
-  assignment: "Assignment 1 for Project 1",
-  project: project1,
-  employee: employee1
-};
-
-// Validate the data
-const validationResult = validator(dataToValidate);
-
-if (validationResult.valid) {
-  console.log("Assignment is valid:", validationResult.data);
-} else {
-  console.error("Validation error:", validationResult.error.message);
+  ): Result;
+  savepoint?(): number;
+  rollback?(savepoint: number): void;
+  tracksEvaluated?: boolean;
 }
 ```
 
-In this example, SchemaShield safely accesses instances of custom classes and utilizes them in the validation process. This level of complexity and flexibility would not be possible or would require a lot of boilerplate code with other libraries that rely on code generation.
+An optional helper passed to custom keywords for nested validation. It returns `Result` and may expose mutation and annotation controls when the compiled schema requires them.
 
-## More on Error Handling
+#### `KeywordFunction`
 
-SchemaShield provides a `ValidationError` class to handle errors that occur during schema validation. When a validation error is encountered, a `ValidationError` instance is returned in the error property of the validation result when `failFast: false` is used; otherwise `error` is `true`.
-
-This error instance uses the [`Error.cause`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error/cause) property. This allows you to analyze the whole error chain or retrieve the root cause of the error using the `getCause()`, `getTree()`, and `getPath()` methods.
-
-### ValidationError Properties
-
-- `message`: A string containing a description of the error.
-- `item`: The final item in the path that caused the error (either a string or a number) (optional).
-- `keyword`: The keyword that triggered the error.
-- `cause`: A nested ValidationError or a normal Error that caused the current error.
-- `schemaPath`: The JSON Pointer path to the error location in the schema.
-- `instancePath`: The JSON Pointer path to the error location in the data.
-- `data`: The data that caused the error (optional).
-- `schema`: The schema that caused the error (optional).
-
-_Note:_ The `schemaPath` and `instancePath` will be only available after using the `getCause()` `getTree()` or `getPath()` methods.
-
-### Get the path to the error location
-
-You can use the `getPath` method to get the JSON Pointer path to the error location in the schema and in the data. This method returns an object containing the `schemaPath` and `instancePath`.
-
-**Example:**
-
-```javascript
-import { SchemaShield } from "schema-shield";
-
-const schemaShield = new SchemaShield({ failFast: false });
-
-const schema = {
-  type: "object",
-  properties: {
-    description: { type: "string" },
-    shouldLoadDb: { type: "boolean" },
-    enableNetConnectFor: { type: "array", items: { type: "string" } },
-    params: {
-      type: "object",
-      additionalProperties: {
-        type: "object",
-        properties: {
-          description: { type: "string" },
-          default: { type: "string" }
-        },
-        required: ["description"]
+```typescript
+interface KeywordFunction {
+  (
+    schema: CompiledSchema,
+    data: any,
+    defineError: (
+      message: string,
+      options?: {
+        code?: string;
+        item?: any;
+        cause?: ValidationError | true;
+        data?: any;
       }
-    },
-    run: { type: "string" }
-  }
-};
-
-const validator = schemaShield.compile(schema);
-
-const invalidData = {
-  description: "Say hello to the bot.",
-  shouldLoadDb: false,
-  enableNetConnectFor: [],
-  params: {
-    color: {
-      type: "string",
-      // description: "The color of the text", // Missing description on purpose
-      default: "red"
-    }
-  },
-  run: "run"
-};
-
-const validationResult = validator(invalidData);
-
-if (validationResult.valid) {
-  console.log("Data is valid:", validationResult.data);
-} else {
-  console.error("Validation error:", validationResult.error.message); // "Property is invalid"
-
-  // Get the paths to the error location in the schema and in the data
-  const errorPaths = validationResult.error.getPath();
-  console.error("Schema path:", errorPaths.schemaPath); // "#/properties/params/additionalProperties/required"
-  console.error("Instance path:", errorPaths.instancePath); // "#/params/color/description"
+    ) => ValidationError | void | true,
+    instance: SchemaShield,
+    validateSubschema?: ValidateSubschemaFunction
+  ): Result;
 }
 ```
 
-### Get the full error chain as a tree
+The root export is `KeywordFunction`. The inline `defineError` shape above documents its callback contract. Its helper types are not package-root exports.
 
-You can use the `getTree()` method to retrieve the full error chain as a tree. This method returns an ErrorTree object with the complete nested error structure, allowing you to analyze the full chain of errors that occurred during validation.
+#### `TypeFunction`
 
-#### ErrorTree Signature
+```typescript
+interface TypeFunction {
+  (data: any): boolean;
+}
+```
+
+Returns `true` when the value matches a built-in or custom type.
+
+#### `FormatFunction`
+
+```typescript
+interface FormatFunction {
+  (data: any): boolean;
+}
+```
+
+Returns `true` when a string satisfies a built-in or custom format. SchemaShield invokes format functions only for string data.
+
+#### `ValidateFunction`
+
+```typescript
+interface ValidateFunction {
+  (data: any): Result;
+}
+```
+
+The low-level callable stored on a compiled schema as `$validate`. Most applications should call `Validator` instead.
+
+#### `CompiledSchema`
+
+```typescript
+interface CompiledSchema {
+  $validate?: ValidateFunction;
+  [key: string]: any;
+}
+```
+
+The interpreted schema graph produced by `compile()`. It is exposed for inspection and extension interoperability. Treat undocumented properties as implementation details.
+
+#### `Validator`
+
+```typescript
+interface Validator {
+  (data: any): {
+    data: any;
+    error: ValidationError | null | true;
+    valid: boolean;
+  };
+  compiledSchema: CompiledSchema;
+}
+```
+
+The reusable function returned by `compile()`.
+
+### SchemaShield constructor
+
+```typescript
+new SchemaShield(options?: {
+  immutable?: boolean;
+  failFast?: boolean;
+  maxDepth?: number;
+  useDefaults?: boolean | "empty";
+})
+```
+
+| Option        | Default | Purpose and limits                                                                                                                                                                                                                                                                                                                         |
+| ------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `immutable`   | `false` | Clones input with `structuredClone` before validation. Class instances lose their original prototype. Unsupported values make cloning throw. |
+| `failFast`    | `true`  | Uses `true` as the normal failure sentinel. Set to `false` for causal `ValidationError` objects. Both modes stop at the first failure.                                                                                                                                                                                                     |
+| `maxDepth`    | `128`   | Runtime recursive-validation limit. Must be an integer from `1` through `256`. Invalid values throw `INVALID_MAX_DEPTH`.                                                                                                                                                                                                                   |
+| `useDefaults` | `false` | Accepts only `false`, `true`, or `"empty"`. Invalid values throw `INVALID_USE_DEFAULTS`.                                                                                                                                                                                                                                                   |
+
+The constructor returns a new independent registry. Types, formats, keywords, and schema resources are not shared between instances.
+
+### SchemaShield methods
+
+#### `setDefault(target, key, value)`
+
+```typescript
+setDefault(target: Record<string, any>, key: string, value: any): void
+```
+
+Writes an enumerable, configurable, writable property and records the previous property state when validation has an active mutation journal. It returns nothing. Custom keywords can use this method so speculative nested validation can roll the write back when required. The method mutates `target` directly and does not validate `value` by itself.
+
+#### `addType(name, validator, overwrite)`
+
+```typescript
+addType(name: string, validator: TypeFunction, overwrite?: boolean): void
+```
+
+Registers a synchronous type predicate and returns nothing. `overwrite` defaults to `false`. A duplicate active name throws `ValidationError` unless overwrite is enabled.
+
+#### `getType(type)`
+
+```typescript
+getType(type: string): TypeFunction | false
+```
+
+Returns the registered predicate for `type`. Disabled built-in names can return `false`. An unknown name currently returns `undefined` at runtime, although the declaration says `false`.
+
+#### `addFormat(name, validator, overwrite)`
+
+```typescript
+addFormat(name: string, validator: FormatFunction, overwrite?: boolean): void
+```
+
+Registers a synchronous string-format predicate and returns nothing. `overwrite` defaults to `false`. A duplicate active name throws `ValidationError` unless overwrite is enabled.
+
+#### `getFormat(format)`
+
+```typescript
+getFormat(format: string): FormatFunction | false
+```
+
+Returns the registered predicate for `format`. An unknown name currently returns `undefined` at runtime, although the declaration says `false`.
+
+#### `isDefaultFormatValidator(format, validator)`
+
+```typescript
+isDefaultFormatValidator(
+  format: string,
+  validator: FormatFunction
+): boolean
+```
+
+Returns `true` when `validator` is identical to the original built-in function stored in SchemaShield's static format table for `format`. The comparison does not use the validator currently registered on the instance. SchemaShield uses this distinction to cache built-in format results, while replacements and custom validators are not treated as default validators.
+
+#### `addKeyword(name, validator, overwrite)`
+
+```typescript
+addKeyword(
+  name: string,
+  validator: KeywordFunction,
+  overwrite?: boolean
+): void
+```
+
+Registers a synchronous keyword function and returns nothing. `overwrite` defaults to `false`. A duplicate active name throws `ValidationError` unless overwrite is enabled.
+
+#### `getKeyword(keyword)`
+
+```typescript
+getKeyword(keyword: string): KeywordFunction | false
+```
+
+Returns the registered keyword function. Some recognized annotation or unsupported names are registered as `false`. An unknown name currently returns `undefined` at runtime, although the declaration says `false`.
+
+#### `addSchema(schema, options)`
+
+```typescript
+addSchema(schema: JSONSchema, options?: AddSchemaOptions): void
+```
+
+Validates registration inputs, snapshots `schema`, assigns its identities, and stores it on the instance. It returns nothing. It accepts JSON-compatible object schemas and boolean schemas. Cyclic object graphs, non-finite numbers, functions, symbols, arrays at the root, and non-plain schema objects are rejected.
+
+All identities must resolve to absolute URIs without fragments. Boolean schemas require `options.uri`. The method rejects duplicate identities and provides no overwrite, removal, loading, or fetching operation.
+
+#### `getSchemaRef(path)`
+
+```typescript
+getSchemaRef(path: string): CompiledSchema | undefined
+```
+
+Looks up a location in the current compiled root. `"#"` returns the root. A `"#/..."` path uses JSON Pointer decoding. A simple name can resolve a matching legacy `definitions` or `defs` entry or the root's matching identifier. It returns `undefined` when there is no compiled root or no match. Malformed URI encoding or JSON Pointer escapes can throw.
+
+This method inspects the compiled root. It is not a lookup into the `addSchema()` registry.
+
+#### `getSchemaById(id)`
+
+```typescript
+getSchemaById(id: string): CompiledSchema | undefined
+```
+
+Traverses the current compiled root and returns the first compiled node whose `$id` or `id` exactly equals `id`. It returns `undefined` when there is no match or no compiled root. It does not retrieve a resource and is not a direct registry lookup.
+
+#### `compile(schema)`
+
+```typescript
+compile(schema: any): Validator
+```
+
+Compiles an input into a synchronous `Validator`. Boolean values retain JSON Schema boolean semantics, and schema-like objects compile as schemas. Other cloneable literal values and cloneable arrays use a non-standard convenience path that wraps the input as a literal branch of `oneOf`.
+
+Cloneable literals are compared with strict equality. Values such as strings, numbers other than `NaN`, `null`, `undefined`, and `BigInt` can therefore match their retained literal value. `NaN` compiles, but it cannot match because strict equality treats `NaN` as unequal to itself. Arrays are also stored as literal branches. A separately created structurally equal array does not match because literal `oneOf` branches are compared by identity. It can match only when validation receives the exact array retained in `validator.compiledSchema`.
+
+Snapshot creation can throw for values that `structuredClone` cannot clone, including functions and symbols. Portable JSON Schema should express literals with a boolean or object schema, normally through `const` or `enum`, instead of passing a literal value or array as the root schema.
+
+Compilation resolves every reachable local and registered reference. It can throw `ValidationError`, or the literal `true` in the current fail-fast unknown-type case. The fixed compile graph-depth limit is `128` and is separate from the configurable runtime `maxDepth`.
+
+Current schema-shape behavior has two additional edges:
+
+- An empty object, `{}`, is rejected as `Invalid schema` instead of acting as an always-valid schema. Use `true` for an explicit always-valid root.
+- If every name in `type` is unknown, `failFast: true` can throw the literal `true` during compilation. With `failFast: false`, compilation throws a `ValidationError`.
+
+#### `isSchemaLike(subSchema)`
+
+```typescript
+isSchemaLike(subSchema: any): boolean
+```
+
+Returns `true` when `subSchema` is a non-array object that contains `type` or at least one name recognized by the instance's keyword registry. It returns `false` for booleans, arrays, primitives, and `{}`. This is a structural recognition helper, not complete metaschema validation.
+
+### Validator
+
+```typescript
+const validator: Validator = shield.compile(schema);
+const result = validator(data);
+```
+
+| Member                     | Meaning                                                                                                           |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `result.valid`             | `true` when validation succeeds.                                                                                  |
+| `result.data`              | The value that was validated. It can be the original value, a mutated value with defaults, or an immutable clone. |
+| `result.error`             | `null` on success, `true` for a minimal failure, or `ValidationError` for a detailed failure.                     |
+| `validator.compiledSchema` | The compiled root used by the validator.                                                                          |
+
+The validator returns normally for data-validation failures. Compile errors, custom keyword exceptions, clone failures, and other programming errors can throw.
+
+### ValidationError
+
+```typescript
+new ValidationError(message: string)
+```
+
+`ValidationError` extends `Error`. SchemaShield creates and enriches these errors during detailed validation and compilation.
+
+#### Properties
+
+| Property       | Type                            | Meaning                                                                                            |
+| -------------- | ------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `code`         | `string \| undefined`           | Machine-readable code when the failure defines one.                                                |
+| `message`      | `string`                        | Human-readable failure description.                                                                |
+| `item`         | `string \| number \| undefined` | Property or index associated with this link in the error chain.                                    |
+| `keyword`      | `string`                        | Keyword associated with the failure. Manually constructed errors do not receive it until assigned. |
+| `cause`        | `ValidationError \| undefined`  | Nested failure that caused this wrapper error.                                                     |
+| `schemaPath`   | `string`                        | JSON Pointer path to the resolved root failure. Initially empty.                                   |
+| `instancePath` | `string`                        | JSON Pointer path to the resolved root data failure. Initially empty.                              |
+| `data`         | `any`                           | Data attached to the failure, when available.                                                      |
+| `schema`       | `CompiledSchema \| undefined`   | Compiled schema attached to the failure, when available.                                           |
+
+`schemaPath` and `instancePath` are populated while resolving the chain through `getCause()`, `getTree()`, or `getPath()`.
+
+#### `getCause()`
+
+```typescript
+getCause(): ValidationError
+```
+
+Walks the causal chain, populates paths, and returns the deepest reachable `ValidationError`. Cyclic error chains are guarded.
+
+#### `getTree()`
 
 ```typescript
 interface ErrorTree {
-  message: string; // The error message
-  keyword: string; // The keyword that triggered the error
-  item?: string | number; // The final item in the path that caused the error (either a string or a number) (optional)
-  schemaPath: string; // The JSON Pointer path to the error location in the schema
-  instancePath: string; // The JSON Pointer path to the error location in the data
-  data?: any; // The data that caused the error (optional)
-  cause?: ErrorTree; // A nested ErrorTree representation of the nested error that caused the current error
+  message: string;
+  keyword: string;
+  item?: string | number;
+  schemaPath: string;
+  instancePath: string;
+  data?: any;
+  cause?: ErrorTree;
+}
+
+getTree(): ErrorTree
+```
+
+Returns a nested tree of plain error-node objects for the first-failure chain. The tree itself is a chain of causes, not a collection of all independent errors. It is not guaranteed to be JSON-serializable because each node's `data` can contain cycles, `BigInt`, or other values rejected by `JSON.stringify()`.
+
+#### `getPath()`
+
+```typescript
+getPath(): {
+  schemaPath: string;
+  instancePath: string;
 }
 ```
 
-**Example:**
+Returns the schema and instance JSON Pointer paths for the deepest cause.
+
+### deepClone
+
+```typescript
+deepClone<T>(value: T): T
+```
+
+Delegates cloning to the platform's `structuredClone`. Supported values follow the native structured clone algorithm, including circular references, `Date`, `RegExp`, `Map`, `Set`, `ArrayBuffer`, typed-array views, and `Error` values. Class instances lose their original prototype. Unsupported values, including functions, promises, weak collections, and symbols, throw the platform clone error.
+
+## JSON Schema compatibility
+
+### Dialects
+
+SchemaShield recognizes these dialects through `$schema`:
+
+| Dialect  | `$schema` value                                |
+| -------- | ---------------------------------------------- |
+| draft-04 | `http://json-schema.org/draft-04/schema#`      |
+| draft-06 | `http://json-schema.org/draft-06/schema#`      |
+| draft-07 | `http://json-schema.org/draft-07/schema#`      |
+| 2019-09  | `https://json-schema.org/draft/2019-09/schema` |
+| 2020-12  | `https://json-schema.org/draft/2020-12/schema` |
+
+Schemas without `$schema` use legacy compatibility behavior. Declare `$schema` for dialect-sensitive keywords, identifiers, anchors, reference siblings, vocabularies, tuple items, or content behavior.
+
+Implemented validation and applicator families include:
+
+- Types and values: `type`, `enum`, and `const`
+- Numbers: `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, and `multipleOf`
+- Strings: `minLength`, `maxLength`, `pattern`, and `format`
+- Arrays: `items`, `prefixItems`, `additionalItems`, `contains`, `minContains`, `maxContains`, `minItems`, `maxItems`, `uniqueItems`, and `unevaluatedItems`
+- Objects: `required`, `properties`, `patternProperties`, `additionalProperties`, `propertyNames`, `dependencies`, `dependentRequired`, `dependentSchemas`, `minProperties`, `maxProperties`, and `unevaluatedProperties`
+- Composition and conditions: `allOf`, `anyOf`, `oneOf`, `not`, `if`, `then`, and `else`
+- References: `$ref`, `$recursiveRef`, `$recursiveAnchor`, and `$dynamicRef`, with dialect-specific identifier and anchor behavior
+- Content assertions: limited `contentEncoding` and `contentMediaType` behavior described below
+- Annotations used by compilation or left inert: `default`, `definitions`, `$defs`, `$id`, `id`, `$schema`, `title`, `description`, `$comment`, and `examples`
+
+Keyword availability follows the selected dialect and, for modern custom metaschemas, recognized vocabulary declarations.
+
+### Built-in formats
+
+SchemaShield includes synchronous validators for:
+
+- Date and time: `date`, `time`, `date-time`, `duration`
+- Email: `email`, `idn-email`
+- Host names: `hostname`, `idn-hostname`
+- IP addresses: `ipv4`, `ipv6`
+- Identifiers and references: `uuid`, `uri`, `uri-reference`, `uri-template`, `iri`, `iri-reference`
+- JSON Pointers: `json-pointer`, `relative-json-pointer`
+- Regular expressions: `regex`
+
+Formats apply only to strings. Unknown formats are annotations in practice and do not fail validation. Replace or add a validator with `addFormat()` when your application requires different semantics.
+
+### Non-standard extensions
+
+SchemaShield recognizes two non-standard schema keywords:
+
+#### `values`
+
+Applies one subschema to every own enumerable property value of a non-array object.
 
 ```javascript
-import { SchemaShield } from "schema-shield";
-
-const schemaShield = new SchemaShield({ failFast: false });
-
-const schema = {
+const validateScores = new SchemaShield().compile({
   type: "object",
-  properties: {
-    description: { type: "string" },
-    shouldLoadDb: { type: "boolean" },
-    enableNetConnectFor: { type: "array", items: { type: "string" } },
-    params: {
-      type: "object",
-      additionalProperties: {
-        type: "object",
-        properties: {
-          description: { type: "string" },
-          default: { type: "string" }
-        },
-        required: ["description"]
-      }
-    },
-    run: { type: "string" }
-  }
-};
-
-const validator = schemaShield.compile(schema);
-
-const invalidData = {
-  description: "Say hello to the bot.",
-  shouldLoadDb: false,
-  enableNetConnectFor: [],
-  params: {
-    color: {
-      type: "string",
-      // description: "The color of the text", // Missing description on purpose
-      default: "red"
-    }
-  },
-  run: "run"
-};
-
-const validationResult = validator(invalidData);
-
-if (validationResult.valid) {
-  console.log("Data is valid:", validationResult.data);
-} else {
-  console.error("Validation error:", validationResult.error.message); // "Property is invalid"
-
-  // Get the full error chain as a tree
-  const errorTree = validationResult.error.getTree();
-  console.error(errorTree);
-
-  /*
-    {
-      message: "Property is invalid",
-      keyword: "properties",
-      item: "params",
-      schemaPath: "#/properties/params",
-      instancePath: "#/params",
-      data: { color: { type: "string", default: "red" } },
-      cause: {
-        message: "Additional properties are invalid",
-        keyword: "additionalProperties",
-        item: "color",
-        schemaPath: "#/properties/params/additionalProperties",
-        instancePath: "#/params/color",
-        data: { type: "string", default: "red" },
-        cause: {
-          message: "Required property is missing",
-          keyword: "required",
-          item: "description",
-          schemaPath: "#/properties/params/additionalProperties/required",
-          instancePath: "#/params/color/description",
-          data: undefined
-        }
-      }
-    }
-  */
-}
+  values: { type: "number", minimum: 0 }
+});
 ```
 
-The `errorTree` object contains the full error chain with nested causes, allowing you to analyze the entire error structure.
+#### `elements`
 
-### Get the cause of the error
-
-You can use the `getCause()` method to retrieve the root cause of a validation error. This method returns the nested ValidationError instance that triggered the current error and contains the `schemaPath` and `instancePath` properties.
+Applies one subschema to every element of an array.
 
 ```javascript
-import { SchemaShield } from "schema-shield";
-
-const schemaShield = new SchemaShield({ failFast: false });
-
-const schema = {
-  type: "object",
-  properties: {
-    description: { type: "string" },
-    shouldLoadDb: { type: "boolean" },
-    enableNetConnectFor: { type: "array", items: { type: "string" } },
-    params: {
-      type: "object",
-      additionalProperties: {
-        type: "object",
-        properties: {
-          description: { type: "string" },
-          default: { type: "string" }
-        },
-        required: ["description"]
-      }
-    },
-    run: { type: "string" }
-  }
-};
-
-const validator = schemaShield.compile(schema);
-
-const invalidData = {
-  description: "Say hello to the bot.",
-  shouldLoadDb: false,
-  enableNetConnectFor: [],
-  params: {
-    color: {
-      type: "string",
-      // description: "The color of the text", // Missing description on purpose
-      default: "red"
-    }
-  },
-  run: "run"
-};
-
-const validationResult = validator(invalidData);
-
-if (validationResult.valid) {
-  console.log("Data is valid:", validationResult.data);
-} else {
-  console.error("Validation error:", validationResult.error.message); // "Property is invalid"
-
-  // Get the root cause of the error
-  const errorCause = validationResult.error.getCause();
-  console.error("Root cause:", errorCause.message); // "Required property is missing"
-  console.error("Schema path:", errorCause.schemaPath); // "#/properties/params/additionalProperties/required"
-  console.error("Instance path:", errorCause.instancePath); // "#/params/color/description"
-  console.error("Error data:", errorCause.data); // undefined
-  console.error("Error schema:", errorCause.schema); // ["description"]
-  console.error("Error keyword:", errorCause.keyword); // "required"
-}
+const validateTags = new SchemaShield().compile({
+  type: "array",
+  elements: { type: "string", minLength: 1 }
+});
 ```
 
-## Immutable Mode
+Use standard `additionalProperties`, `items`, or `prefixItems` when schema portability matters.
 
-SchemaShield offers an optional immutable mode to prevent modifications to the input data during validation. In some cases, SchemaShield may mutate the data when using the `default` keyword or within custom added keywords.
+### Compatibility notes
 
-By enabling immutable mode, the library creates a deep copy of the input data before performing any validation checks, ensuring that the original data remains unchanged throughout the process. This feature can be useful in situations where preserving the integrity of the input data is essential.
+- `nullable` and `discriminator` are recognized as unsupported OpenAPI keywords and ignored.
+- Draft 2019-09 `$recursiveRef` resolves dynamically only when its destination resource root declares `$recursiveAnchor: true`.
+- `contentEncoding` validates only `base64`, and only where that keyword is active for the selected dialect.
+- `contentMediaType` validates only `application/json`, and only where that keyword is active for the selected dialect.
+- `contentSchema` is currently inert. Parsed or decoded content is not validated against it.
+- Unknown formats are ignored.
+- The `format` keyword validates strings only.
+- `enum`, `const`, and `uniqueItems` use structural comparison. Large collections containing complex objects can require more comparison work.
+- Schema resources remain local. URI schemes do not enable retrieval.
 
-To enable immutable mode, simply pass the `immutable` option when creating a new `SchemaShield` instance:
+## Execution model and limits
 
-```javascript
-const schemaShield = new SchemaShield({ immutable: true });
-```
+| Behavior                         | Current contract                                                                                                                                                                                                                                                                                                     |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Execution                        | Synchronous interpreted JavaScript.                                                                                                                                                                                                                                                                                  |
+| Runtime code generation          | None. SchemaShield does not call `eval()` or `new Function()`.                                                                                                                                                                                                                                                       |
+| Implicit I/O                     | None. Compilation and validation do not fetch, read files, query DNS, or access remote schemas.                                                                                                                                                                                                                      |
+| Runtime dependencies             | None.                                                                                                                                                                                                                                                                                                                |
+| Failure selection                | First failure only.                                                                                                                                                                                                                                                                                                  |
+| `failFast: true`                 | Usually returns `error: true` from a validator. The unknown-type compile edge can throw `true`.                                                                                                                                                                                                                      |
+| `failFast: false`                | Returns a causal `ValidationError` for built-ins and `defineError()` failures. It does not aggregate all errors.                                                                                                                                                                                                     |
+| Runtime recursion                | Controlled by `maxDepth`, default `128`, configurable from `1` through `256`.                                                                                                                                                                                                                                        |
+| Compile graph depth              | Fixed at `128`, independent of `maxDepth`.                                                                                                                                                                                                                                                                           |
+| Cyclic JavaScript schema graph   | Rejected with `CYCLIC_SCHEMA_GRAPH`.                                                                                                                                                                                                                                                                                 |
+| Recursive JSON Schema references | Supported for registered and local resources, subject to runtime depth control.                                                                                                                                                                                                                                      |
+| Defaults                         | Can mutate data. Invalid inserted defaults can remain after a normal failed validation.                                                                                                                                                                                                                              |
+| Immutable mode                   | Clones the root with `structuredClone`. Class instances lose their original prototype, and unsupported values make cloning throw. |
+| Schema registration              | Snapshot-based, additive, local, and per instance. No overwrite or removal.                                                                                                                                                                                                                                          |
+| Empty object schema              | Rejected at the root. Use `true` for an explicit always-valid schema.                                                                                                                                                                                                                                                |
+| Registry getters                 | Missing names can return `undefined` at runtime despite declarations that say `false`.                                                                                                                                                                                                                               |
 
-By default, the immutable mode is disabled. If you don't need the immutability guarantee, you can leave it disabled to optimize performance.
+## Error codes
 
-However, there are some caveats to consider when using immutable mode. The deep copy may not accurately reproduce complex objects such as instantiated classes. In such cases, you can handle the cloning process yourself using a custom keyword to ensure the proper preservation of your data's structure.
+The following machine-readable codes are emitted by current constructor, registration, compilation, and depth checks:
 
-## TypeScript Support
+| Code                          | Meaning                                                                                         |
+| ----------------------------- | ----------------------------------------------------------------------------------------------- |
+| `INVALID_MAX_DEPTH`           | `maxDepth` is not an integer from `1` through `256`.                                            |
+| `INVALID_USE_DEFAULTS`        | `useDefaults` is not `false`, `true`, or `"empty"`.                                             |
+| `INVALID_SCHEMA`              | A schema supplied to `addSchema()` is not an accepted JSON-compatible schema object or boolean. |
+| `INVALID_ADD_SCHEMA_OPTIONS`  | The `addSchema()` options value is not an object.                                               |
+| `INVALID_SCHEMA_URI`          | `options.uri` is not an absolute, fragment-free URI.                                            |
+| `INVALID_SCHEMA_ID`           | A schema identifier is invalid, missing when required, or resolves incorrectly.                 |
+| `INVALID_SCHEMA_ALIAS`        | Aliases are malformed or contain an invalid identity.                                           |
+| `DUPLICATE_SCHEMA_ID`         | Two registered or reachable schema resources claim the same identity.                           |
+| `INVALID_ANCHOR`              | An anchor does not satisfy the selected dialect's anchor syntax.                                |
+| `DUPLICATE_ANCHOR`            | Two reachable nodes claim the same anchor identity.                                             |
+| `REFERENCE_NOT_FOUND`         | A reachable reference cannot be resolved from local or registered resources.                    |
+| `UNKNOWN_REQUIRED_VOCABULARY` | A custom modern metaschema requires a vocabulary SchemaShield does not recognize.               |
+| `CYCLIC_SCHEMA_GRAPH`         | The input contains a cycle in the JavaScript object graph of schema nodes.                      |
+| `MAX_COMPILE_DEPTH_EXCEEDED`  | The schema graph exceeds the fixed compile-depth limit.                                         |
+| `MAX_DEPTH_EXCEEDED`          | Recursive runtime validation exceeds `maxDepth`.                                                |
 
-SchemaShield offers comprehensive TypeScript support, enhancing the library's usability for TypeScript projects. Type definitions are included in the package, so you can import the library and use it in your TypeScript projects without any additional configuration.
+Validation keywords can produce `ValidationError` objects without one of these codes. Custom keywords can define application-specific codes through `defineError()`.
 
-With the built in TypeScript support, you can take advantage of features like strong typing, autocompletion, and compile-time error checking, which can help you catch potential issues early and improve the overall quality of your code.
+## Development
 
-## Known Limitations
-
-SchemaShield is optimized for local execution and strict security.
-
-### 1. Dynamic ID Scope Resolution (Scope Alteration)
-
-SchemaShield resolves references based on static JSON Pointers and unique IDs. It does not support changing the resolution base URI dynamically based on nested `$id` properties within sub-schemas.
-
-- **Impact:** Rare edge-cases in draft-07 involving complex relative URI resolution inside nested scopes are not supported.
-
-### 2. Unicode Length Validation
-
-SchemaShield validates `minLength` and `maxLength` based on JavaScript's `length` property (UTF-16 code units), not Unicode Code Points.
-
-- **Impact:** Emoji or surrogate pairs may be counted as length 2.
-
-### 3. Conservative Equality Path (Performance Trade-off)
-
-For keywords like `enum`, `const`, and `uniqueItems`, SchemaShield prioritizes exact structural comparisons to preserve predictable behavior.
-
-- **Impact:** For very large arrays or enums with many complex objects, this conservative path can be slower than aggressive hashing strategies.
-- **Future Option:** An opt-in aggressive mode based on structural hashing/bucketing could improve throughput in those extreme cases, but it is intentionally not enabled by default to avoid edge-case semantic divergence.
-
-## Testing
-
-SchemaShield prioritizes reliability and accuracy in JSON Schema validation by using the [JSON Schema Test Suite](https://github.com/json-schema-org/JSON-Schema-Test-Suite).
-
-This comprehensive test suite ensures compliance with the JSON Schema standard, providing developers with a dependable and consistent validation experience.
+Run the test suite:
 
 ```bash
 npm test
-# Runs the normal Mocha suite through Node.js without the long scratchpad benchmark.
-
-npm run benchmark:short -- <baseline-entrypoint> [candidate-entrypoint]
-# Runs the versioned 1,003-case performance gate. The candidate defaults to
-# lib/index.ts. The command fails above 1.05x globally, above 1.10x in any
-# cohort, or after five minutes.
-
-npm run test:scratchpad
-# Runs the scratchpad and its long benchmark explicitly.
-
-bun run test
-# Runs the same package script and Mocha suite. This does not select Bun's
-# native test runner.
-
-bun test
-# Selects Bun's native test runner. The project suite uses Mocha APIs, so this
-# command is not the release gate for this repository.
-
-bun run dev:test
-# Watches tests and library sources, then reruns the normal Mocha suite through Node.js.
 ```
 
-## Contribute
+Run tests in watch mode:
 
-SchemaShield is an open-source project, and we welcome contributions from the community. By contributing to SchemaShield, you can help improve the library and expand its feature set.
+```bash
+npm run dev:test
+```
 
-If you are interested in contributing, please follow these steps:
+Build the distribution:
 
-- **Fork the repository:** Fork the SchemaShield repository on GitHub and clone it to your local machine.
+```bash
+npm run build
+```
 
-- **Create a feature branch:** Create a new branch for your feature or bugfix. Make sure to give it a descriptive name.
+## Contributing
 
-- **Implement your changes:** Make the necessary changes to the codebase. Be sure to add or update the relevant tests and documentation.
+Contributions that improve validation behavior, compatibility, developer experience, documentation, or interpreted execution are welcome.
 
-- **Test your changes:** Before submitting your pull request, make sure your changes pass all existing tests and any new tests you've added. It's also a good idea to ensure that your changes do not introduce any performance regressions or new issues.
+Before opening a pull request:
 
-- **Submit a pull request:** Once your changes are complete and tested, submit a pull request to the main SchemaShield repository. In your pull request description, please provide a brief summary of your changes and any relevant context.
-
-- **Code review:** Your pull request will be reviewed and may request changes or provide feedback. Be prepared to engage in a discussion and possibly make further changes to your code based on the feedback.
-
-- **Merge:** Once your pull request is approved, it will be merged into the main SchemaShield repository.
-
-We appreciate your interest in contributing to SchemaShield and look forward to your valuable input. Together, we can make SchemaShield an even better library for the community.
+1. Add or update the relevant tests and documentation.
+2. Run the functional suite.
+3. Build the distribution when package output changes.
+4. Explain the behavior change and its motivation.
 
 ## Acknowledgments
 
-- **ajv**: The gold standard for JSON Schema validation. Your performance sets the bar and drives the entire ecosystem forward.
+SchemaShield acknowledges AJV and `@exodus/schemasafe` for their contributions to the wider JSON Schema validation ecosystem and for the public engineering work that has inspired this validator design.
 
-- **@exodus/schemasafe**: Your interpreter-first approach validates that security-first architectures can still deliver strong performance. Competing with you makes us better.
+## License
 
-## Legal
+Copyright Masquerade Circus.
 
-Author: [Masquerade Circus](http://masquerade-circus.net).
-License [Apache-2.0](https://opensource.org/licenses/Apache-2.0)
+Licensed under Apache-2.0. See [`LICENSE`](LICENSE).

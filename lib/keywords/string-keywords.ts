@@ -1,15 +1,46 @@
 import { FormatFunction, KeywordFunction } from "../index";
 import { compilePatternMatcher } from "../utils/pattern-matcher";
+import { definePropertyOrThrow } from "../utils/main-utils";
 
-type LastStringResultCache = {
-  data: string;
-  result: boolean;
-  hasValue: boolean;
-};
+const PATTERN_MATCH_CACHE_LIMIT = 512;
+const FORMAT_RESULT_CACHE_LIMIT = 512;
+
+function hasAtLeastCodePoints(value: string, limit: number): boolean {
+  let count = 0;
+  for (let index = 0; index < value.length; index++) {
+    const unit = value.charCodeAt(index);
+    if (
+      unit >= 0xd800 &&
+      unit <= 0xdbff &&
+      index + 1 < value.length
+    ) {
+      const nextUnit = value.charCodeAt(index + 1);
+      if (nextUnit >= 0xdc00 && nextUnit <= 0xdfff) {
+        index++;
+      }
+    }
+
+    count++;
+    if (count >= limit) {
+      return true;
+    }
+  }
+
+  return count >= limit;
+}
 
 export const StringKeywords: Record<string, KeywordFunction> = {
   minLength(schema, data, defineError) {
-    if (typeof data !== "string" || data.length >= schema.minLength) {
+    if (typeof data !== "string") {
+      return;
+    }
+
+    const units = data.length;
+    const limit = schema.minLength;
+    if (units < limit) {
+      return defineError("Value is shorter than the minimum length", { data });
+    }
+    if (units - limit >= limit || hasAtLeastCodePoints(data, limit)) {
       return;
     }
 
@@ -17,11 +48,20 @@ export const StringKeywords: Record<string, KeywordFunction> = {
   },
 
   maxLength(schema, data, defineError) {
-    if (typeof data !== "string" || data.length <= schema.maxLength) {
+    if (typeof data !== "string") {
       return;
     }
 
-    return defineError("Value is longer than the maximum length", { data });
+    const units = data.length;
+    const limit = schema.maxLength;
+    if (units <= limit) {
+      return;
+    }
+    if (units - limit > limit || hasAtLeastCodePoints(data, limit + 1)) {
+      return defineError("Value is longer than the maximum length", { data });
+    }
+
+    return;
   },
 
   pattern(schema, data, defineError) {
@@ -34,7 +74,7 @@ export const StringKeywords: Record<string, KeywordFunction> = {
       | undefined;
 
     let patternMatchCache = (schema as any)._patternMatchCache as
-      | LastStringResultCache
+      | Map<string, boolean>
       | undefined;
 
     if (!patternMatch) {
@@ -45,7 +85,7 @@ export const StringKeywords: Record<string, KeywordFunction> = {
             ? (value: string) => compiled.test(value)
             : compiled;
 
-        Object.defineProperty(schema, "_patternMatch", {
+        definePropertyOrThrow(schema, "_patternMatch", {
           value: patternMatch,
           enumerable: false,
           configurable: false,
@@ -60,19 +100,15 @@ export const StringKeywords: Record<string, KeywordFunction> = {
     }
 
     if (!patternMatchCache) {
-      patternMatchCache = {
-        data: "",
-        result: false,
-        hasValue: false
-      };
-      Object.defineProperty(schema, "_patternMatchCache", {
+      patternMatchCache = new Map<string, boolean>();
+      definePropertyOrThrow(schema, "_patternMatchCache", {
         value: patternMatchCache,
         enumerable: false,
         configurable: false,
         writable: false
       });
-    } else if (patternMatchCache.hasValue && patternMatchCache.data === data) {
-      if (patternMatchCache.result) {
+    } else if (patternMatchCache.has(data)) {
+      if (patternMatchCache.get(data)) {
         return;
       }
 
@@ -80,9 +116,9 @@ export const StringKeywords: Record<string, KeywordFunction> = {
     }
 
     const isMatch = patternMatch(data);
-    patternMatchCache.data = data;
-    patternMatchCache.result = isMatch;
-    patternMatchCache.hasValue = true;
+    if (patternMatchCache.size < PATTERN_MATCH_CACHE_LIMIT) {
+      patternMatchCache.set(data, isMatch);
+    }
 
     if (isMatch) {
       return;
@@ -106,12 +142,12 @@ export const StringKeywords: Record<string, KeywordFunction> = {
       | boolean
       | undefined;
     let formatResultCache = (schema as any)._formatResultCache as
-      | LastStringResultCache
+      | Map<string, boolean>
       | undefined;
 
     if (formatValidate === undefined) {
       formatValidate = instance.getFormat(schema.format);
-      Object.defineProperty(schema, "_formatValidate", {
+      definePropertyOrThrow(schema, "_formatValidate", {
         value: formatValidate,
         enumerable: false,
         configurable: false,
@@ -129,7 +165,7 @@ export const StringKeywords: Record<string, KeywordFunction> = {
         formatValidate
       );
 
-      Object.defineProperty(schema, "_formatResultCacheEnabled", {
+      definePropertyOrThrow(schema, "_formatResultCacheEnabled", {
         value: formatResultCacheEnabled,
         enumerable: false,
         configurable: false,
@@ -146,19 +182,15 @@ export const StringKeywords: Record<string, KeywordFunction> = {
     }
 
     if (!formatResultCache) {
-      formatResultCache = {
-        data: "",
-        result: false,
-        hasValue: false
-      };
-      Object.defineProperty(schema, "_formatResultCache", {
+      formatResultCache = new Map<string, boolean>();
+      definePropertyOrThrow(schema, "_formatResultCache", {
         value: formatResultCache,
         enumerable: false,
         configurable: false,
         writable: false
       });
-    } else if (formatResultCache.hasValue && formatResultCache.data === data) {
-      if (formatResultCache.result) {
+    } else if (formatResultCache.has(data)) {
+      if (formatResultCache.get(data)) {
         return;
       }
 
@@ -166,9 +198,9 @@ export const StringKeywords: Record<string, KeywordFunction> = {
     }
 
     const isValid = formatValidate(data);
-    formatResultCache.data = data;
-    formatResultCache.result = isValid;
-    formatResultCache.hasValue = true;
+    if (formatResultCache.size < FORMAT_RESULT_CACHE_LIMIT) {
+      formatResultCache.set(data, isValid);
+    }
 
     if (isValid) {
       return;

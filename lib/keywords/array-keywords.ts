@@ -1,4 +1,7 @@
-import { isCompiledSchema } from "../utils/main-utils";
+import {
+  definePropertyOrThrow,
+  isCompiledSchema
+} from "../utils/main-utils";
 
 import { KeywordFunction } from "../index";
 import { hasChanged } from "../utils/has-changed";
@@ -97,28 +100,53 @@ function getPrimitiveArraySignature(value: any[]): string | null {
 
 export const ArrayKeywords: Record<string, KeywordFunction> = {
   // lib/keywords/array-keywords.ts
-  items(schema, data, defineError) {
+  items(schema, data, defineError, _instance, validateSubschema) {
     if (!Array.isArray(data)) {
       return;
     }
 
     const schemaItems = schema.items;
     const dataLength = data.length;
+    const startIndex =
+      (schema as any)._dialect === "2020-12" &&
+      Array.isArray(schema.prefixItems)
+        ? schema.prefixItems.length
+        : 0;
 
     if (typeof schemaItems === "boolean") {
-      if (schemaItems === false && dataLength > 0) {
+      if (schemaItems === false && dataLength > startIndex) {
         return defineError("Array items are not allowed", { data });
+      }
+      if (validateSubschema) {
+        for (let i = startIndex; i < dataLength; i++) {
+          validateSubschema(true, data[i], { item: i });
+        }
       }
       return;
     }
 
     if (Array.isArray(schemaItems)) {
+      if ((schema as any)._dialect === "2020-12") {
+        return;
+      }
       const schemaItemsLength = schemaItems.length;
       const itemsLength =
         schemaItemsLength < dataLength ? schemaItemsLength : dataLength;
 
       for (let i = 0; i < itemsLength; i++) {
         const schemaItem = schemaItems[i];
+
+        if (validateSubschema) {
+          const error = validateSubschema(schemaItem, data[i], { item: i });
+          if (error) {
+            return defineError("Array item is invalid", {
+              item: i,
+              cause: error,
+              data: data[i]
+            });
+          }
+          continue;
+        }
 
         if (typeof schemaItem === "boolean") {
           if (schemaItem === false && data[i] !== undefined) {
@@ -151,8 +179,10 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
       return;
     }
 
-    for (let i = 0; i < dataLength; i++) {
-      const error = validate(data[i]);
+    for (let i = startIndex; i < dataLength; i++) {
+      const error = validateSubschema
+        ? validateSubschema(schemaItems, data[i], { item: i })
+        : validate(data[i]);
       if (error) {
         return defineError("Array item is invalid", {
           item: i,
@@ -202,12 +232,21 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
     return defineError("Array is too long", { data });
   },
 
-  additionalItems(schema, data, defineError) {
+  additionalItems(schema, data, defineError, _instance, validateSubschema) {
     if (!Array.isArray(data) || !Array.isArray(schema.items)) {
       return;
     }
 
-    const tupleLength = schema.items.length;
+    let tupleLength = (schema as any)._tupleItemsLength as number | undefined;
+    if (tupleLength === undefined) {
+      tupleLength = schema.items.length;
+      definePropertyOrThrow(schema, "_tupleItemsLength", {
+        value: tupleLength,
+        enumerable: false,
+        configurable: false,
+        writable: false
+      });
+    }
 
     if (data.length <= tupleLength) {
       return;
@@ -215,6 +254,22 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
 
     if (schema.additionalItems === false) {
       return defineError("Array is too long", { data });
+    }
+
+    if (validateSubschema) {
+      for (let i = tupleLength; i < data.length; i++) {
+        const error = validateSubschema(schema.additionalItems, data[i], {
+          item: i
+        });
+        if (error) {
+          return defineError("Array item is invalid", {
+            item: i,
+            cause: error,
+            data: data[i]
+          });
+        }
+      }
+      return;
     }
 
     if (
@@ -240,6 +295,47 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
     }
 
     return;
+  },
+
+  prefixItems(schema, data, defineError, _instance, validateSubschema) {
+    if (!Array.isArray(data) || !Array.isArray(schema.prefixItems)) {
+      return;
+    }
+
+    const limit = Math.min(data.length, schema.prefixItems.length);
+    for (let index = 0; index < limit; index++) {
+      const prefixSchema = schema.prefixItems[index];
+      if (validateSubschema) {
+        const error = validateSubschema(prefixSchema, data[index], {
+          item: index
+        });
+        if (error) {
+          return defineError("Array item is invalid", {
+            item: index,
+            cause: error,
+            data: data[index]
+          });
+        }
+        continue;
+      }
+      if (prefixSchema === false) {
+        return defineError("Array item is not allowed", {
+          item: index,
+          data: data[index]
+        });
+      }
+      if (!isCompiledSchema(prefixSchema)) {
+        continue;
+      }
+      const error = prefixSchema.$validate(data[index]);
+      if (error) {
+        return defineError("Array item is invalid", {
+          item: index,
+          cause: error,
+          data: data[index]
+        });
+      }
+    }
   },
 
   uniqueItems(schema, data, defineError) {
@@ -287,7 +383,9 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
       return;
     }
 
-    let primitiveSeen: Set<any> | null = null;
+    let hasFirstPrimitive = false;
+    let firstPrimitive: any;
+    let primitiveSeen: Set<any> | undefined;
     let primitiveArraySignatures: Set<string> | undefined;
     let arrayBuckets: Map<string, any[]> | undefined;
     let objectBuckets: Map<string, any[]> | undefined;
@@ -296,8 +394,14 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
       const item = data[i];
 
       if (isUniquePrimitive(item)) {
-        if (primitiveSeen === null) {
-          primitiveSeen = new Set<any>();
+        if (!hasFirstPrimitive) {
+          hasFirstPrimitive = true;
+          firstPrimitive = item;
+          continue;
+        }
+
+        if (!primitiveSeen) {
+          primitiveSeen = new Set<any>([firstPrimitive]);
         }
 
         if (primitiveSeen.has(item)) {
@@ -370,30 +474,89 @@ export const ArrayKeywords: Record<string, KeywordFunction> = {
     }
   },
 
-  contains(schema, data, defineError) {
+  contains(schema, data, defineError, _instance, validateSubschema) {
     if (!Array.isArray(data)) {
       return;
     }
-    if (typeof schema.contains === "boolean") {
-      if (schema.contains) {
-        if (data.length === 0) {
-          return defineError("Array must contain at least one item", { data });
+    const modern =
+      (schema as any)._dialect === "2019-09" ||
+      (schema as any)._dialect === "2020-12";
+    const configuredMinimum = schema.minContains;
+    const configuredMaximum = schema.maxContains;
+    const minimum =
+      modern && Number.isInteger(configuredMinimum) && configuredMinimum >= 0
+        ? configuredMinimum
+        : 1;
+    const maximum =
+      modern && Number.isInteger(configuredMaximum) && configuredMaximum >= 0
+        ? configuredMaximum
+        : Number.POSITIVE_INFINITY;
+    let matches = 0;
+    const savepoint = validateSubschema?.savepoint?.();
+
+    try {
+      if (typeof schema.contains === "boolean") {
+        matches = schema.contains ? data.length : 0;
+        if (schema.contains && validateSubschema) {
+          for (let i = 0; i < data.length; i++) {
+            validateSubschema(true, data[i], { item: i });
+          }
         }
-        return;
+      } else if (isCompiledSchema(schema.contains)) {
+        for (let i = 0; i < data.length; i++) {
+          const error = validateSubschema
+            ? validateSubschema(schema.contains, data[i], { item: i })
+            : schema.contains.$validate(data[i]);
+          if (!error) {
+            matches++;
+            if (matches > maximum) {
+              break;
+            }
+          }
+        }
       }
 
-      return defineError("Array must not contain any items", { data });
-    }
-
-    const containsValidate = schema.contains.$validate;
-    for (let i = 0; i < data.length; i++) {
-      const error = containsValidate(data[i]);
-      if (!error) {
+      if (matches >= minimum && matches <= maximum) {
         return;
       }
-      continue;
+      if (typeof savepoint === "number") {
+        validateSubschema?.rollback?.(savepoint);
+      }
+      return defineError("Array contains an invalid number of matching items", {
+        data
+      });
+    } catch (error) {
+      if (typeof savepoint === "number") {
+        validateSubschema?.rollback?.(savepoint);
+      }
+      throw error;
     }
+  },
 
-    return defineError("Array must contain at least one item", { data });
+  minContains() {
+    return;
+  },
+
+  maxContains() {
+    return;
+  },
+
+  unevaluatedItems(schema, data, defineError, _instance, validateSubschema) {
+    if (!Array.isArray(data) || !validateSubschema) {
+      return;
+    }
+    for (let index = 0; index < data.length; index++) {
+      const error = validateSubschema(schema.unevaluatedItems, data[index], {
+        item: index,
+        unevaluated: true
+      });
+      if (error) {
+        return defineError("Unevaluated array item is invalid", {
+          item: index,
+          cause: error,
+          data: data[index]
+        });
+      }
+    }
   }
 };

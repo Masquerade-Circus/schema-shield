@@ -41,7 +41,7 @@ describe("SchemaShield instance", () => {
       array: ["hello", "world"]
     };
 
-    let schemaShield = new SchemaShield();
+    let schemaShield = new SchemaShield({ useDefaults: true });
     let validate = schemaShield.compile(schema);
 
     expect(validate(data)).toEqual({

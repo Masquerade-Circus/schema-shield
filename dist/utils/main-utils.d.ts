@@ -1,4 +1,6 @@
-import { CompiledSchema } from "../index";
+import type { CompiledSchema } from "../index";
+export declare function definePropertyOrThrow<T extends object>(target: T, key: PropertyKey, descriptor: PropertyDescriptor): T;
+export declare function hasOwn(target: any, key: PropertyKey): boolean;
 interface ErrorTree {
     message: string;
     keyword: string;
@@ -8,16 +10,9 @@ interface ErrorTree {
     data?: any;
     cause?: ErrorTree;
 }
-export interface CompactValidationPath {
-    messages: string[];
-    keywords: string[];
-    schemas: CompiledSchema[];
-    items: Array<string | number | undefined>;
-    data: any[];
-}
 export declare class ValidationError extends Error {
-    message: string;
     code?: string;
+    message: string;
     item?: string | number;
     keyword: string;
     cause?: ValidationError;
@@ -25,11 +20,7 @@ export declare class ValidationError extends Error {
     instancePath: string;
     data?: any;
     schema?: CompiledSchema;
-    private compactPath?;
-    private compactLeaf?;
     constructor(message: string);
-    setCompactPath(path: CompactValidationPath, leaf: ValidationError): void;
-    private visitPath;
     getCause(): ValidationError;
     getTree(): ErrorTree;
     getPath(): {
@@ -38,6 +29,7 @@ export declare class ValidationError extends Error {
     };
 }
 export interface DefineErrorOptions {
+    code?: string;
     item?: any;
     cause?: ValidationError | true;
     data?: any;
@@ -46,9 +38,10 @@ export interface DefineErrorFunction {
     (message: string, options?: DefineErrorOptions): ValidationError | void | true;
 }
 export declare function getDefinedErrorFunctionForKey(key: string, schema: CompiledSchema, failFast: boolean): DefineErrorFunction;
+export declare function escapeJsonPointerToken(value: string | number): string;
 export declare function getUTF16Length(str: any): number;
 export declare function isCompiledSchema(subSchema: any): subSchema is CompiledSchema;
-export declare function getNamedFunction<T>(name: string, fn: T): T;
+export declare function getNamedFunction<T extends object>(name: string, fn: T): T;
 export declare function resolvePath(root: any, path: string): any;
 export declare function areCloseEnough(a: number, b: number, epsilon?: number): boolean;
 export {};

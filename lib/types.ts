@@ -11,10 +11,10 @@ export const Types: Record<string, TypeFunction | false> = {
     return typeof data === "string";
   },
   number(data) {
-    return typeof data === "number";
+    return typeof data === "number" && Number.isFinite(data);
   },
   integer(data) {
-    return typeof data === "number" && data % 1 === 0;
+    return typeof data === "number" && Number.isFinite(data) && data % 1 === 0;
   },
   boolean(data) {
     return typeof data === "boolean";
