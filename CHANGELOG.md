@@ -1,5 +1,28 @@
 
 
+## [1.3.0](https://github.com/Masquerade-Circus/schema-shield/compare/1.0.5...1.3.0) (2026-08-04)
+
+
+### Features
+
+* add built-in official metaschemas ([a917139](https://github.com/Masquerade-Circus/schema-shield/commit/a9171392c9d693f5ee640a7f9c5f3244635557f6))
+* add stack-safe deep validation ([929bcd3](https://github.com/Masquerade-Circus/schema-shield/commit/929bcd3b9ee1581592fa6259fb2863dafc87c6d2))
+
+
+### Performance Improvements
+
+* optimize schema compilation and validation ([41d7623](https://github.com/Masquerade-Circus/schema-shield/commit/41d762324eeaa7162952bb32b5aa893819169033))
+
+
+### Build System
+
+* change build strategy to use only bun ([e284ae1](https://github.com/Masquerade-Circus/schema-shield/commit/e284ae109242ba512741899ab5dfba2b47b3ca59))
+
+
+### Documentation
+
+* save production rebuild plan ([97b6c70](https://github.com/Masquerade-Circus/schema-shield/commit/97b6c70167a3ef2abd8b162a64c3c71f4b5eae50))
+
 ## [1.2.0](https://github.com/Masquerade-Circus/schema-shield/compare/1.1.0...1.2.0) (2026-07-30)
 
 
