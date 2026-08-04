@@ -1,5 +1,12 @@
 
 
+## [1.4.0](https://github.com/Masquerade-Circus/schema-shield/compare/1.3.0...1.4.0) (2026-08-04)
+
+
+### Features
+
+* add configurable format assertions ([e51079e](https://github.com/Masquerade-Circus/schema-shield/commit/e51079eea1ef0c90661850258cc1b7dfed465d7e))
+
 ## [1.3.0](https://github.com/Masquerade-Circus/schema-shield/compare/1.0.5...1.3.0) (2026-08-04)
 
 
