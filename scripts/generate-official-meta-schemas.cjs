@@ -18,8 +18,8 @@ function generateOfficialMetaSchemas({ check = false } = {}) {
   ) {
     throw new Error("Unexpected official metaschema repository");
   }
-  if (manifest.resources.length !== 18) {
-    throw new Error("Official metaschema manifest must contain 18 resources");
+  if (manifest.resources.length !== 19) {
+    throw new Error("Official metaschema manifest must contain 19 resources");
   }
   const license = readFileSync(
     path.join(root, "meta-schemas", manifest.license.localPath)
@@ -37,9 +37,6 @@ function generateOfficialMetaSchemas({ check = false } = {}) {
       resource.localPath.includes("..")
     ) {
       throw new Error(`Unsafe metaschema source path: ${resource.localPath}`);
-    }
-    if (resource.sourcePath.endsWith("meta/format-assertion.json")) {
-      throw new Error("format-assertion is not a supported builtin resource");
     }
     if (keys.has(resource.key) || uris.has(resource.uri)) {
       throw new Error(`Duplicate official metaschema identity: ${resource.uri}`);

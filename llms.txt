@@ -11,7 +11,7 @@ SchemaShield is a secure interpreter for JSON Schema draft-04, draft-06, draft-0
 - **Runtime Object Validation**: Native support for validating class instances, Dates, and custom objects alongside serialized JSON
 - **Built-in Error Trees**: Advanced error reporting with getCause(), getTree(), getPath() methods
 - **Zero Dependencies**: No external runtime dependencies
-- **Official Metaschemas**: 18 built-in resources with compile-time metavalidation
+- **Official Metaschemas**: 19 built-in resources with compile-time metavalidation
 
 ## Benchmarks
 
@@ -38,6 +38,14 @@ passed to that call. Exact `$schema` identities select built-in or custom dialec
 Use `compile(schema, { validateSchema: false })` for a complete schema graph that
 has already been validated in the application pipeline. Schema resources resolve
 from the built-in catalog and the instance's local registry.
+
+Official metaschemas are active in every instance; `addMetaSchema()` is only for
+custom dialects. The constructor option `format: true` validates registered
+formats in every dialect. `format: false` disables optional validation. With the
+option omitted, schemas without `$schema` and custom `format-assertion` dialects
+validate formats. Official dialects and custom dialects without assertion treat
+formats as annotations. A custom assertion dialect rejects `format: false` and
+unknown formats during compilation.
 
 ## Use Cases
 
@@ -168,11 +176,20 @@ const betterSchema = {
 ### Constructor Options
 
 ```javascript
-new SchemaShield({ immutable?: boolean, failFast?: boolean })
+new SchemaShield({
+  immutable?: boolean,
+  failFast?: boolean,
+  format?: boolean,
+  maxDepth?: number,
+  useDefaults?: boolean | "empty"
+})
 ```
 
 - **immutable**: Set to true to prevent modifications to input data during validation
 - **failFast**: Set to false to receive detailed error objects (default: true)
+- **format**: Set to true to validate registered formats in every dialect or false to disable optional assertions. Omit it to follow the selected dialect.
+- **maxDepth**: Runtime validation depth from 1 through 256 (default: 128)
+- **useDefaults**: Apply schema defaults with true or include null and empty strings with "empty"
 
 ### Methods
 

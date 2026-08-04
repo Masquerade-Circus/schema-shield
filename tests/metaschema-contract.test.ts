@@ -9,6 +9,8 @@ import {
 
 const DRAFT_7 = "http://json-schema.org/draft-07/schema#";
 const DRAFT_2020 = "https://json-schema.org/draft/2020-12/schema";
+const FORMAT_ASSERTION =
+  "https://json-schema.org/draft/2020-12/vocab/format-assertion";
 
 function captureError(action: () => void): ValidationError {
   try {
@@ -54,7 +56,7 @@ describe("builtin metaschema contract", () => {
 
   it("uses the official draft-06 patternProperties name constraint", () => {
     const error = captureError(() =>
-      new SchemaShield().compile({
+      new SchemaShield({ format: true }).compile({
         $schema: "http://json-schema.org/draft-06/schema#",
         patternProperties: { "[": { type: "string" } }
       })
@@ -70,6 +72,26 @@ describe("builtin metaschema contract", () => {
 
     expect(error.code).toBe("INVALID_SCHEMA");
     expect(error.getPath().instancePath).toBe("#/writeOnly");
+  });
+
+  it("does not invalidate data for format-annotation in draft 2020-12", () => {
+    const validate = new SchemaShield().compile({
+      $schema: DRAFT_2020,
+      type: "string",
+      format: "email"
+    });
+
+    expect(validate("not-an-email").valid).toBe(true);
+  });
+
+  it("keeps format validation active for schemas without $schema", () => {
+    const validate = new SchemaShield().compile({
+      type: "string",
+      format: "email"
+    });
+
+    expect(validate("not-an-email").valid).toBe(false);
+    expect(validate("person@example.com").valid).toBe(true);
   });
 
   it("allows trusted callers to skip metavalidation explicitly", () => {
@@ -107,6 +129,18 @@ describe("builtin metaschema contract", () => {
 
     expect(validateSchemaDocument({ type: "integer" }).valid).toBe(true);
     expect(validateSchemaDocument({ type: "invalid" }).valid).toBe(false);
+  });
+
+  it("makes the official format-assertion metaschema available locally", () => {
+    const validateFormatKeyword = new SchemaShield().compile(
+      {
+        $ref: "https://json-schema.org/draft/2020-12/meta/format-assertion"
+      },
+      { validateSchema: false }
+    );
+
+    expect(validateFormatKeyword({ format: "email" }).valid).toBe(true);
+    expect(validateFormatKeyword({ format: 1 }).valid).toBe(false);
   });
 
   it("metavalidates every reachable registered resource", () => {
@@ -189,6 +223,32 @@ describe("custom metaschema contract", () => {
     });
     expect(validate("accepted").valid).toBe(true);
     expect(validate("rejected").valid).toBe(false);
+  });
+
+  it("invalidates data when a custom dialect declares format-assertion", () => {
+    const customMetaschema = "https://schemas.example/meta/format-assertion";
+    const shield = new SchemaShield();
+    shield.addMetaSchema({
+      $schema: DRAFT_2020,
+      $id: customMetaschema,
+      $vocabulary: {
+        "https://json-schema.org/draft/2020-12/vocab/core": true,
+        [FORMAT_ASSERTION]: true
+      },
+      type: ["object", "boolean"],
+      properties: {
+        format: { type: "string" }
+      }
+    });
+
+    const validate = shield.compile({
+      $schema: customMetaschema,
+      type: "string",
+      format: "email"
+    });
+
+    expect(validate("not-an-email").valid).toBe(false);
+    expect(validate("person@example.com").valid).toBe(true);
   });
 
   it("does not promote an ordinary schema resource to a dialect", () => {

@@ -1,6 +1,6 @@
 # Official JSON Schema metaschemas
 
-SchemaShield vendors 18 JSON resources from the official
+SchemaShield vendors 19 JSON resources from the official
 `json-schema-org/json-schema-spec` repository. The normal build verifies these
 local files against `manifest.json` and generates
 `lib/official-meta-schemas.json` deterministically.
@@ -14,8 +14,8 @@ local files against `manifest.json` and generates
 | 2020-12 | `769daad75a9553562333a8937a187741cb708c72` |
 
 The built-in 2020-12 catalog contains the vocabularies implemented by
-SchemaShield. The optional `format-assertion` vocabulary remains outside that
-catalog.
+SchemaShield, including the optional `format-assertion` metaschema. The general
+2020-12 metaschema keeps `format-annotation` as its declared format vocabulary.
 
 ## Maintainer commands
 

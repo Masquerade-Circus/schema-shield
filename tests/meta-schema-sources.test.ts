@@ -10,7 +10,7 @@ const snapshot = JSON.parse(
 );
 
 describe("official metaschema sources", () => {
-  it("pins the complete supported resource set without format-assertion", () => {
+  it("pins the complete supported resource set including format-assertion", () => {
     const commits = {
       draft4: "dba92b702c94858162f653590230e7573c8b7dd0",
       draft6: "59ed5f6fc6f6386e23ca51d7f31d7fe9cf696713",
@@ -22,18 +22,23 @@ describe("official metaschema sources", () => {
     expect(manifest.repository).toBe(
       "https://github.com/json-schema-org/json-schema-spec"
     );
-    expect(manifest.resources).toHaveLength(18);
+    expect(manifest.resources).toHaveLength(19);
     expect(
       new Set(manifest.resources.map((resource: any) => resource.key)).size
-    ).toBe(18);
+    ).toBe(19);
     expect(
       new Set(manifest.resources.map((resource: any) => resource.uri)).size
-    ).toBe(18);
+    ).toBe(19);
     expect(
-      manifest.resources.some((resource: any) =>
-        resource.sourcePath.endsWith("meta/format-assertion.json")
+      manifest.resources.find(
+        (resource: any) => resource.key === "draft2020FormatAssertion"
       )
-    ).toBe(false);
+    ).toEqual(
+      expect.objectContaining({
+        sourcePath: "meta/format-assertion.json",
+        uri: "https://json-schema.org/draft/2020-12/meta/format-assertion"
+      })
+    );
     for (const resource of manifest.resources) {
       expect(resource.commit).toBe(
         commits[resource.dialect as keyof typeof commits]

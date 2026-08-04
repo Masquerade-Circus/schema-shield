@@ -31,6 +31,7 @@ const {
   draft2020Validation,
   draft2020Metadata,
   draft2020Format,
+  draft2020FormatAssertion,
   draft2020Content
 } = require("./official-meta-schemas.json");
 
@@ -88,6 +89,11 @@ const resources: Array<{
   },
   { dialect: "2020-12", uri: draft2020Metadata.$id, schema: draft2020Metadata },
   { dialect: "2020-12", uri: draft2020Format.$id, schema: draft2020Format },
+  {
+    dialect: "2020-12",
+    uri: draft2020FormatAssertion.$id,
+    schema: draft2020FormatAssertion
+  },
   { dialect: "2020-12", uri: draft2020Content.$id, schema: draft2020Content }
 ];
 

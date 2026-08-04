@@ -64,7 +64,10 @@ describe("official modern keyword and bounded format cases", () => {
         const id = `${draft}:${relativePath}#/groups/${groupIndex}/tests/${testIndex}`;
 
         it(`${id} ${test.description}`, () => {
-          const result = new SchemaShield().compile(group.schema)(test.data);
+          const format = relativePath.startsWith("optional/format/");
+          const result = new SchemaShield(format ? { format: true } : {}).compile(
+            group.schema
+          )(test.data);
           expect(result.valid).toBe(test.valid);
         });
       }

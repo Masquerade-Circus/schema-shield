@@ -55,6 +55,7 @@ export declare class SchemaShield {
     private keywords;
     private immutable;
     private useDefaults;
+    private formatMode;
     private rootSchema;
     private failFast;
     private maxDepth;
@@ -70,9 +71,10 @@ export declare class SchemaShield {
     private registeredSchemas;
     private registeredSchemaIds;
     private customMetaValidators;
-    constructor({ immutable, failFast, maxDepth, useDefaults }?: {
+    constructor(options?: {
         immutable?: boolean;
         failFast?: boolean;
+        format?: boolean;
         maxDepth?: number;
         useDefaults?: boolean | "empty";
     });

@@ -66,16 +66,16 @@ Every validator returns the same shape:
   - [Apply defaults](#apply-defaults)
   - [Preserve the original input](#preserve-the-original-input)
   - [Validate live JavaScript objects](#validate-live-javascript-objects)
+- [Extend SchemaShield](#extend-schemashield)
+  - [Custom types](#custom-types)
+  - [Custom formats](#custom-formats)
+  - [Custom keywords](#custom-keywords)
 - [Working with schema resources](#working-with-schema-resources)
   - [Use built-in metaschemas](#use-built-in-metaschemas)
   - [Register external schemas](#register-external-schemas)
   - [Register a custom metaschema](#register-a-custom-metaschema)
   - [Use local references and JSON Pointers](#use-local-references-and-json-pointers)
   - [Use anchors and recursive references](#use-anchors-and-recursive-references)
-- [Extend SchemaShield](#extend-schemashield)
-  - [Custom types](#custom-types)
-  - [Custom formats](#custom-formats)
-  - [Custom keywords](#custom-keywords)
 - [API reference](#api-reference)
   - [Root exports](#root-exports)
   - [Public TypeScript types](#public-typescript-types)
@@ -313,11 +313,113 @@ console.log(result.valid); // false
 
 > Leave `immutable` disabled when class identity or reference identity matters. A structured-cloned class instance loses its prototype and stops satisfying `instanceof` checks.
 
+## Extend SchemaShield
+
+Application registrations belong to one `SchemaShield` instance and affect validators compiled from that instance. Official metaschemas are shared immutable built-ins. Types, formats, and keywords use `overwrite = false` by default. Registering an existing active name throws unless `overwrite = true` is explicitly enabled. An internal entry represented by `false` is disabled rather than active, so it can be activated without overwrite.
+
+### Custom types
+
+```typescript
+addType(name: string, validator: TypeFunction, overwrite?: boolean): void
+getType(name: string): TypeFunction | false
+```
+
+```javascript
+const shield = new SchemaShield();
+
+shield.addType("safe-integer", (data) => Number.isSafeInteger(data));
+
+const validate = shield.compile({ type: "safe-integer" });
+```
+
+A type function receives the candidate value and returns `true` when it belongs to the type.
+
+### Custom formats
+
+```typescript
+addFormat(name: string, validator: FormatFunction, overwrite?: boolean): void
+getFormat(name: string): FormatFunction | false
+```
+
+```javascript
+const shield = new SchemaShield();
+
+shield.addFormat("ticket-id", (data) => /^TKT-[0-9]{6}$/.test(data));
+
+const validate = shield.compile({
+  type: "string",
+  format: "ticket-id"
+});
+```
+
+The `format` keyword calls registered format validators only for strings. An unknown format compiles unless the selected custom dialect requires `format-assertion`.
+
+### Custom keywords
+
+```typescript
+addKeyword(name: string, validator: KeywordFunction, overwrite?: boolean): void
+getKeyword(name: string): KeywordFunction | false
+```
+
+```javascript
+const shield = new SchemaShield({ failFast: false });
+
+shield.addKeyword("divisibleBy", (schema, data, defineError) => {
+  if (typeof data !== "number") {
+    return;
+  }
+
+  if (data % schema.divisibleBy !== 0) {
+    return defineError(`Value must be divisible by ${schema.divisibleBy}`, {
+      code: "NOT_DIVISIBLE",
+      item: "divisibleBy",
+      data
+    });
+  }
+});
+
+const validate = shield.compile({
+  type: "number",
+  divisibleBy: 5
+});
+```
+
+A keyword receives five arguments:
+
+1. `schema`, the active `CompiledSchema`.
+2. `data`, the current value.
+3. `defineError(message, options)`, the error factory for the active mode.
+4. `instance`, the active `SchemaShield` instance.
+5. `validateSubschema`, an optional helper for custom keywords that descend into compiled subschemas.
+
+`defineError()` accepts `code`, `item`, `cause`, and `data`. It returns `true` in fail-fast mode and a `ValidationError` in detailed mode. Return its result from the keyword to reject the value. Returning `undefined` accepts it.
+
+When supplied, `validateSubschema()` participates in depth guards, evaluated-item tracking, and default rollback. Its optional `evaluated` argument can identify a `property` or `item` and can set `unevaluated` or `discardAnnotations`. The helper also exposes optional `savepoint()`, `rollback(savepoint)`, and `tracksEvaluated` members for advanced integrations. These hooks describe current low-level extension behavior and should be used only when a keyword needs to manage nested validation.
+
+`setDefault()` is available to custom keywords that need to write a default through SchemaShield's mutation journal:
+
+```javascript
+shield.addKeyword("withGeneratedId", (schema, data, _defineError, instance) => {
+  if (
+    schema.withGeneratedId === true &&
+    data &&
+    typeof data === "object" &&
+    !("id" in data)
+  ) {
+    instance.setDefault(data, "id", "pending");
+  }
+});
+```
+
+> Custom functions may inspect or mutate live values. Their behavior is part of your application's trust boundary.
+
 ## Working with schema resources
 
 ### Use built-in metaschemas
 
-SchemaShield includes 18 official metaschema resources for draft-04, draft-06, draft-07, 2019-09, and 2020-12. The 2019-09 and 2020-12 catalogs include the complete graphs of implemented vocabulary resources. All built-in resources are immutable, shared by every instance, and ready for local `$ref` resolution.
+SchemaShield includes 19 official metaschema resources for draft-04, draft-06, draft-07, 2019-09, and 2020-12. The 2019-09 and 2020-12 catalogs include the complete graphs of implemented vocabulary resources plus the optional 2020-12 `format-assertion` metaschema. All built-in resources are immutable, shared by every instance, and ready for local `$ref` resolution.
+
+Official metaschemas are already active in every `SchemaShield` instance. They do not need `addMetaSchema()`. Use `addMetaSchema()` only to register an application-defined dialect. Use `compile(schema, { validateSchema: false })` when the complete reachable schema graph was validated earlier in the application pipeline.
 
 `compile()` validates every reachable schema resource against its declared metaschema by default. A `$schema` value selects a built-in or custom metaschema through an exact identity match. Empty, malformed, and unknown identities throw `UNKNOWN_METASCHEMA`.
 
@@ -422,6 +524,28 @@ shield.compile({
 
 SchemaShield validates each custom metaschema against its declared parent metaschema before registration. Required vocabulary identities must exactly match an implemented 2019-09 or 2020-12 vocabulary. An unknown required vocabulary throws `UNKNOWN_REQUIRED_VOCABULARY`. Registration is local, additive, and snapshot-based.
 
+SchemaShield decides whether `format` validates data from the constructor option and the selected dialect.
+
+For registered formats, the complete policy is:
+
+| Schema context                                             | Omitted           | `format: true` | `format: false`   |
+| ---------------------------------------------------------- | ----------------- | -------------- | ----------------- |
+| Without `$schema`                                          | Validates         | Validates      | Does not validate |
+| Official draft-04, draft-06, draft-07, 2019-09, or 2020-12 | Does not validate | Validates      | Does not validate |
+| Custom dialect with `format-assertion`                     | Validates         | Validates      | Does not compile  |
+| Custom dialect without `format-assertion`                  | Does not validate | Validates      | Does not validate |
+
+For unknown formats, the policy is:
+
+| Schema context                                             | Omitted          | `format: true`   | `format: false`  |
+| ---------------------------------------------------------- | ---------------- | ---------------- | ---------------- |
+| Without `$schema`                                          | Compiles         | Compiles         | Compiles         |
+| Official draft-04, draft-06, draft-07, 2019-09, or 2020-12 | Compiles         | Compiles         | Compiles         |
+| Custom dialect with `format-assertion`                     | Does not compile | Does not compile | Does not compile |
+| Custom dialect without `format-assertion`                  | Compiles         | Compiles         | Compiles         |
+
+`format: false` conflicts with a custom assertion dialect and throws `FORMAT_ASSERTION_REQUIRED`. An unknown format under that dialect throws `UNKNOWN_FORMAT` when format validation is enabled or follows the default policy.
+
 ### Use local references and JSON Pointers
 
 Local references, relative references, cross-document references, aliases, transitive references, and JSON Pointer fragments are resolved during compilation:
@@ -467,106 +591,6 @@ const validateTree = new SchemaShield({ maxDepth: 64 }).compile({
 ```
 
 > Invalid or duplicate anchors fail during compilation. Recursive validation remains subject to the runtime `maxDepth` limit.
-
-## Extend SchemaShield
-
-Application registrations belong to one `SchemaShield` instance and affect validators compiled from that instance. Official metaschemas are shared immutable built-ins. Types, formats, and keywords use `overwrite = false` by default. Registering an existing active name throws unless `overwrite = true` is explicitly enabled. An internal entry represented by `false` is disabled rather than active, so it can be activated without overwrite.
-
-### Custom types
-
-```typescript
-addType(name: string, validator: TypeFunction, overwrite?: boolean): void
-getType(name: string): TypeFunction | false
-```
-
-```javascript
-const shield = new SchemaShield();
-
-shield.addType("safe-integer", (data) => Number.isSafeInteger(data));
-
-const validate = shield.compile({ type: "safe-integer" });
-```
-
-A type function receives the candidate value and returns `true` when it belongs to the type.
-
-### Custom formats
-
-```typescript
-addFormat(name: string, validator: FormatFunction, overwrite?: boolean): void
-getFormat(name: string): FormatFunction | false
-```
-
-```javascript
-const shield = new SchemaShield();
-
-shield.addFormat("ticket-id", (data) => /^TKT-[0-9]{6}$/.test(data));
-
-const validate = shield.compile({
-  type: "string",
-  format: "ticket-id"
-});
-```
-
-The `format` keyword calls format validators only for strings. Unknown formats are ignored.
-
-### Custom keywords
-
-```typescript
-addKeyword(name: string, validator: KeywordFunction, overwrite?: boolean): void
-getKeyword(name: string): KeywordFunction | false
-```
-
-```javascript
-const shield = new SchemaShield({ failFast: false });
-
-shield.addKeyword("divisibleBy", (schema, data, defineError) => {
-  if (typeof data !== "number") {
-    return;
-  }
-
-  if (data % schema.divisibleBy !== 0) {
-    return defineError(`Value must be divisible by ${schema.divisibleBy}`, {
-      code: "NOT_DIVISIBLE",
-      item: "divisibleBy",
-      data
-    });
-  }
-});
-
-const validate = shield.compile({
-  type: "number",
-  divisibleBy: 5
-});
-```
-
-A keyword receives five arguments:
-
-1. `schema`, the active `CompiledSchema`.
-2. `data`, the current value.
-3. `defineError(message, options)`, the error factory for the active mode.
-4. `instance`, the active `SchemaShield` instance.
-5. `validateSubschema`, an optional helper for custom keywords that descend into compiled subschemas.
-
-`defineError()` accepts `code`, `item`, `cause`, and `data`. It returns `true` in fail-fast mode and a `ValidationError` in detailed mode. Return its result from the keyword to reject the value. Returning `undefined` accepts it.
-
-When supplied, `validateSubschema()` participates in depth guards, evaluated-item tracking, and default rollback. Its optional `evaluated` argument can identify a `property` or `item` and can set `unevaluated` or `discardAnnotations`. The helper also exposes optional `savepoint()`, `rollback(savepoint)`, and `tracksEvaluated` members for advanced integrations. These hooks describe current low-level extension behavior and should be used only when a keyword needs to manage nested validation.
-
-`setDefault()` is available to custom keywords that need to write a default through SchemaShield's mutation journal:
-
-```javascript
-shield.addKeyword("withGeneratedId", (schema, data, _defineError, instance) => {
-  if (
-    schema.withGeneratedId === true &&
-    data &&
-    typeof data === "object" &&
-    !("id" in data)
-  ) {
-    instance.setDefault(data, "id", "pending");
-  }
-});
-```
-
-> Custom functions may inspect or mutate live values. Their behavior is part of your application's trust boundary.
 
 ## API reference
 
@@ -756,17 +780,19 @@ The reusable function returned by `compile()`.
 new SchemaShield(options?: {
   immutable?: boolean;
   failFast?: boolean;
+  format?: boolean;
   maxDepth?: number;
   useDefaults?: boolean | "empty";
 })
 ```
 
-| Option        | Default | Purpose and limits                                                                                                                                                                                                                                                                                                                         |
-| ------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `immutable`   | `false` | Clones input with `structuredClone` before validation. Class instances lose their original prototype. Unsupported values make cloning throw. |
-| `failFast`    | `true`  | Uses `true` as the normal failure sentinel. Set to `false` for causal `ValidationError` objects. Both modes stop at the first failure.                                                                                                                                                                                                     |
-| `maxDepth`    | `128`   | Runtime recursive-validation limit. Must be an integer from `1` through `256`. Invalid values throw `INVALID_MAX_DEPTH`.                                                                                                                                                                                                                   |
-| `useDefaults` | `false` | Accepts only `false`, `true`, or `"empty"`. Invalid values throw `INVALID_USE_DEFAULTS`.                                                                                                                                                                                                                                                   |
+| Option        | Default | Purpose and limits                                                                                                                                                                                                                                                              |
+| ------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `immutable`   | `false` | Clones input with `structuredClone` before validation. Class instances lose their original prototype. Unsupported values make cloning throw.                                                                                                                                    |
+| `failFast`    | `true`  | Uses `true` as the normal failure sentinel. Set to `false` for causal `ValidationError` objects. Both modes stop at the first failure.                                                                                                                                          |
+| `format`      | Omitted | Controls format assertions for the instance. `true` validates registered formats in every dialect. `false` disables optional format validation. A custom `format-assertion` dialect requires validation and rejects `false`. Values other than booleans throw `INVALID_FORMAT`. |
+| `maxDepth`    | `128`   | Runtime recursive-validation limit. Must be an integer from `1` through `256`. Invalid values throw `INVALID_MAX_DEPTH`.                                                                                                                                                        |
+| `useDefaults` | `false` | Accepts only `false`, `true`, or `"empty"`. Invalid values throw `INVALID_USE_DEFAULTS`.                                                                                                                                                                                        |
 
 The constructor returns new independent type, format, keyword, ordinary-resource, and custom-metaschema registries. Official metaschema resources and their cached validators are immutable built-ins shared by all instances.
 
@@ -1019,7 +1045,7 @@ SchemaShield recognizes these dialects through exact `$schema` identities:
 | 2019-09  | `https://json-schema.org/draft/2019-09/schema` |
 | 2020-12  | `https://json-schema.org/draft/2020-12/schema` |
 
-The 18 official metaschema resources are built in, including the complete graphs of implemented vocabulary resources for modern drafts. Schemas without `$schema` use SchemaShield's native compatibility behavior. Declare `$schema` for portable metaschema validation, dialect-sensitive keywords, identifiers, anchors, reference siblings, vocabularies, tuple items, or content behavior.
+The 19 official metaschema resources are built in, including the complete graphs of implemented vocabulary resources for modern drafts and the optional 2020-12 `format-assertion` metaschema. Schemas without `$schema` use SchemaShield's native compatibility behavior and validate registered formats. Declare `$schema` for portable metaschema validation, dialect-sensitive keywords, identifiers, anchors, reference siblings, vocabularies, tuple items, format semantics, or content behavior.
 
 Implemented validation and applicator families include:
 
@@ -1047,7 +1073,7 @@ SchemaShield includes synchronous validators for:
 - JSON Pointers: `json-pointer`, `relative-json-pointer`
 - Regular expressions: `regex`
 
-Formats apply only to strings. Unknown formats are annotations in practice and do not fail validation. Replace or add a validator with `addFormat()` when your application requires different semantics.
+Formats apply only to strings. Use the constructor's `format` option to activate or disable optional assertions. Unknown formats compile in native and official contexts. A custom dialect that requires `format-assertion` rejects unknown formats during compilation. Replace or add a validator with `addFormat()` when your application requires different semantics.
 
 ### Non-standard extensions
 
@@ -1084,7 +1110,7 @@ Use standard `additionalProperties`, `items`, or `prefixItems` when schema porta
 - `contentEncoding` validates only `base64`, and only where that keyword is active for the selected dialect.
 - `contentMediaType` validates only `application/json`, and only where that keyword is active for the selected dialect.
 - `contentSchema` is currently inert. Parsed or decoded content is not validated against it.
-- Unknown formats are ignored.
+- Unknown formats compile unless a custom dialect requires `format-assertion`.
 - The `format` keyword validates strings only.
 - `enum`, `const`, and `uniqueItems` use structural comparison. Large collections containing complex objects can require more comparison work.
 - Schema resources remain local. URI schemes do not enable retrieval.
@@ -1093,26 +1119,26 @@ Use standard `additionalProperties`, `items`, or `prefixItems` when schema porta
 
 ## Execution model and limits
 
-| Behavior                         | Current contract                                                                                                                                                                                                                                                                                                     |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Execution                        | Synchronous interpreted JavaScript.                                                                                                                                                                                                                                                                                  |
-| Runtime code generation          | None. SchemaShield does not call `eval()` or `new Function()`.                                                                                                                                                                                                                                                       |
-| Implicit I/O                     | None. Compilation and validation do not fetch, read files, query DNS, or access remote schemas.                                                                                                                                                                                                                      |
-| Runtime dependencies             | None.                                                                                                                                                                                                                                                                                                                |
-| Failure selection                | First failure only.                                                                                                                                                                                                                                                                                                  |
-| `failFast: true`                 | Usually returns `error: true` from a validator. The unknown-type compile edge can throw `true`.                                                                                                                                                                                                                      |
-| `failFast: false`                | Returns a causal `ValidationError` for built-ins and `defineError()` failures. It does not aggregate all errors.                                                                                                                                                                                                     |
-| Runtime recursion                | Controlled by `maxDepth`, default `128`, configurable from `1` through `256`.                                                                                                                                                                                                                                        |
-| Compile graph depth              | Fixed at `128`, independent of `maxDepth`.                                                                                                                                                                                                                                                                           |
-| Cyclic JavaScript schema graph   | Rejected with `CYCLIC_SCHEMA_GRAPH`.                                                                                                                                                                                                                                                                                 |
-| Recursive JSON Schema references | Supported for registered and local resources, subject to runtime depth control.                                                                                                                                                                                                                                      |
-| Defaults                         | Can mutate data. Invalid inserted defaults can remain after a normal failed validation.                                                                                                                                                                                                                              |
-| Immutable mode                   | Clones the root with `structuredClone`. Class instances lose their original prototype, and unsupported values make cloning throw. |
-| Schema registration              | Snapshot-based, additive, local, and per instance. No overwrite or removal.                                                                                                                                                                                                                                          |
-| Built-in metaschemas             | Shared, immutable, and ready for local resolution on every instance. Modern drafts include the complete graphs of implemented vocabulary resources.                                                                                                                                                                  |
-| Schema validation                | `compile()` validates every reachable resource by default. `validateSchema(schema)` validates the schema document passed to that call.                                                                                                                                                                                |
-| Empty object schema              | Rejected at the root. Use `true` for an explicit always-valid schema.                                                                                                                                                                                                                                                |
-| Registry getters                 | Missing names can return `undefined` at runtime despite declarations that say `false`.                                                                                                                                                                                                                               |
+| Behavior                         | Current contract                                                                                                                                    |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Execution                        | Synchronous interpreted JavaScript.                                                                                                                 |
+| Runtime code generation          | None. SchemaShield does not call `eval()` or `new Function()`.                                                                                      |
+| Implicit I/O                     | None. Compilation and validation do not fetch, read files, query DNS, or access remote schemas.                                                     |
+| Runtime dependencies             | None.                                                                                                                                               |
+| Failure selection                | First failure only.                                                                                                                                 |
+| `failFast: true`                 | Usually returns `error: true` from a validator. The unknown-type compile edge can throw `true`.                                                     |
+| `failFast: false`                | Returns a causal `ValidationError` for built-ins and `defineError()` failures. It does not aggregate all errors.                                    |
+| Runtime recursion                | Controlled by `maxDepth`, default `128`, configurable from `1` through `256`.                                                                       |
+| Compile graph depth              | Fixed at `128`, independent of `maxDepth`.                                                                                                          |
+| Cyclic JavaScript schema graph   | Rejected with `CYCLIC_SCHEMA_GRAPH`.                                                                                                                |
+| Recursive JSON Schema references | Supported for registered and local resources, subject to runtime depth control.                                                                     |
+| Defaults                         | Can mutate data. Invalid inserted defaults can remain after a normal failed validation.                                                             |
+| Immutable mode                   | Clones the root with `structuredClone`. Class instances lose their original prototype, and unsupported values make cloning throw.                   |
+| Schema registration              | Snapshot-based, additive, local, and per instance. No overwrite or removal.                                                                         |
+| Built-in metaschemas             | Shared, immutable, and ready for local resolution on every instance. Modern drafts include the complete graphs of implemented vocabulary resources. |
+| Schema validation                | `compile()` validates every reachable resource by default. `validateSchema(schema)` validates the schema document passed to that call.              |
+| Empty object schema              | Rejected at the root. Use `true` for an explicit always-valid schema.                                                                               |
+| Registry getters                 | Missing names can return `undefined` at runtime despite declarations that say `false`.                                                              |
 
 ## Error codes
 
@@ -1122,6 +1148,9 @@ The following machine-readable codes are emitted by current constructor, registr
 | ----------------------------- | ----------------------------------------------------------------------------------------------- |
 | `INVALID_MAX_DEPTH`           | `maxDepth` is not an integer from `1` through `256`.                                            |
 | `INVALID_USE_DEFAULTS`        | `useDefaults` is not `false`, `true`, or `"empty"`.                                             |
+| `INVALID_FORMAT`              | The constructor's `format` option is present and is not a boolean.                              |
+| `FORMAT_ASSERTION_REQUIRED`   | `format: false` conflicts with a custom dialect that requires `format-assertion`.               |
+| `UNKNOWN_FORMAT`              | A schema uses an unregistered format under a custom dialect that requires `format-assertion`.   |
 | `INVALID_SCHEMA`              | A schema supplied to `addSchema()` is not an accepted JSON-compatible schema object or boolean. |
 | `INVALID_ADD_SCHEMA_OPTIONS`  | The `addSchema()` options value is not an object.                                               |
 | `INVALID_COMPILE_OPTIONS`     | The `compile()` options or `validateSchema` value is invalid.                                   |
@@ -1134,7 +1163,7 @@ The following machine-readable codes are emitted by current constructor, registr
 | `DUPLICATE_ANCHOR`            | Two reachable nodes claim the same anchor identity.                                             |
 | `REFERENCE_NOT_FOUND`         | A reachable reference cannot be resolved from local or registered resources.                    |
 | `UNKNOWN_REQUIRED_VOCABULARY` | A custom modern metaschema requires a vocabulary SchemaShield does not recognize.               |
-| `UNKNOWN_METASCHEMA`          | `$schema` does not exactly identify a built-in or registered custom metaschema.                  |
+| `UNKNOWN_METASCHEMA`          | `$schema` does not exactly identify a built-in or registered custom metaschema.                 |
 | `CYCLIC_SCHEMA_GRAPH`         | The input contains a cycle in the JavaScript object graph of schema nodes.                      |
 | `MAX_COMPILE_DEPTH_EXCEEDED`  | The schema graph exceeds the fixed compile-depth limit.                                         |
 | `MAX_DEPTH_EXCEEDED`          | Recursive runtime validation exceeds `maxDepth`.                                                |
@@ -1189,7 +1218,7 @@ npm run update:metaschemas
 ```
 
 Network access is isolated to the explicit update command. The normal build reads
-`meta-schemas/manifest.json`, verifies the 18 local source files, and regenerates
+`meta-schemas/manifest.json`, verifies the 19 local source files, and regenerates
 `lib/official-meta-schemas.json` deterministically. The manifest records each
 upstream commit, path, canonical URI, and SHA-256 digest. License and attribution
 data ship under `meta-schemas/`.

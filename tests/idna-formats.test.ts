@@ -37,14 +37,18 @@ describe("official hostname and IDNA format suites", () => {
 
         for (const test of cases.filter((test) => !test.valid)) {
           it(`rejects ${test.description}`, () => {
-            const validate = new SchemaShield().compile(test.schema);
+            const validate = new SchemaShield({ format: true }).compile(
+              test.schema
+            );
             expect(validate(test.data).valid).toBe(false);
           });
         }
 
         for (const test of cases.filter((test) => test.valid)) {
           it(`accepts ${test.description}`, () => {
-            const validate = new SchemaShield().compile(test.schema);
+            const validate = new SchemaShield({ format: true }).compile(
+              test.schema
+            );
             expect(validate(test.data).valid).toBe(true);
           });
         }

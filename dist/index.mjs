@@ -1562,6 +1562,24 @@ var require_official_meta_schemas = __commonJS({
           }
         }
       },
+      draft2020FormatAssertion: {
+        $schema: "https://json-schema.org/draft/2020-12/schema",
+        $id: "https://json-schema.org/draft/2020-12/meta/format-assertion",
+        $vocabulary: {
+          "https://json-schema.org/draft/2020-12/vocab/format-assertion": true
+        },
+        $dynamicAnchor: "meta",
+        title: "Format vocabulary meta-schema for assertion results",
+        type: [
+          "object",
+          "boolean"
+        ],
+        properties: {
+          format: {
+            type: "string"
+          }
+        }
+      },
       draft2020Content: {
         $schema: "https://json-schema.org/draft/2020-12/schema",
         $id: "https://json-schema.org/draft/2020-12/meta/content",
@@ -4383,6 +4401,7 @@ var {
   draft2020Validation,
   draft2020Metadata,
   draft2020Format,
+  draft2020FormatAssertion,
   draft2020Content
 } = require_official_meta_schemas();
 var resources = [
@@ -4435,6 +4454,11 @@ var resources = [
   },
   { dialect: "2020-12", uri: draft2020Metadata.$id, schema: draft2020Metadata },
   { dialect: "2020-12", uri: draft2020Format.$id, schema: draft2020Format },
+  {
+    dialect: "2020-12",
+    uri: draft2020FormatAssertion.$id,
+    schema: draft2020FormatAssertion
+  },
   { dialect: "2020-12", uri: draft2020Content.$id, schema: draft2020Content }
 ];
 for (const resource of resources) {
@@ -4452,6 +4476,7 @@ var BUILTIN_DIALECT_BY_URI = new Map(
 // lib/index.ts
 var MAX_COMPILE_DEPTH = 128;
 var LOCAL_SCHEMA_BASE = "schema-shield://local/root";
+var FORMAT_ASSERTION_2020_VOCABULARY = "https://json-schema.org/draft/2020-12/vocab/format-assertion";
 var VOCABULARY_CATEGORIES = /* @__PURE__ */ new Map([
   ["https://json-schema.org/draft/2019-09/vocab/core", "core"],
   ["https://json-schema.org/draft/2019-09/vocab/applicator", "applicator"],
@@ -4500,12 +4525,7 @@ function createBuiltinTypeValidator(_type, defineError, fallback) {
 }
 var _defaultSavepoint, defaultSavepoint_fn, _rollbackDefaultSavepoint, rollbackDefaultSavepoint_fn, _captureDefaultSavepoint, captureDefaultSavepoint_fn, _restoreDefaults, restoreDefaults_fn;
 var _SchemaShield = class {
-  constructor({
-    immutable = false,
-    failFast = true,
-    maxDepth = 128,
-    useDefaults = false
-  } = {}) {
+  constructor(options = {}) {
     __privateAdd(this, _defaultSavepoint);
     __privateAdd(this, _rollbackDefaultSavepoint);
     __privateAdd(this, _captureDefaultSavepoint);
@@ -4515,6 +4535,7 @@ var _SchemaShield = class {
     __publicField(this, "keywords", {});
     __publicField(this, "immutable", false);
     __publicField(this, "useDefaults", false);
+    __publicField(this, "formatMode", "default");
     __publicField(this, "rootSchema", null);
     __publicField(this, "failFast", true);
     __publicField(this, "maxDepth");
@@ -4530,6 +4551,22 @@ var _SchemaShield = class {
     __publicField(this, "registeredSchemas", []);
     __publicField(this, "registeredSchemaIds", /* @__PURE__ */ new Map());
     __publicField(this, "customMetaValidators", /* @__PURE__ */ new Map());
+    const {
+      immutable = false,
+      failFast = true,
+      maxDepth = 128,
+      useDefaults = false
+    } = options;
+    let formatMode = "default";
+    if (hasOwn(options, "format")) {
+      if (options.format !== true && options.format !== false) {
+        const error = new ValidationError("format must be true or false");
+        error.code = "INVALID_FORMAT";
+        error.keyword = "format";
+        throw error;
+      }
+      formatMode = options.format ? "enabled" : "disabled";
+    }
     if (!Number.isInteger(maxDepth) || maxDepth < 1 || maxDepth > 256) {
       const error = new ValidationError("maxDepth must be an integer from 1 to 256");
       error.code = "INVALID_MAX_DEPTH";
@@ -4548,6 +4585,7 @@ var _SchemaShield = class {
     this.failFast = failFast;
     this.maxDepth = maxDepth;
     this.useDefaults = useDefaults;
+    this.formatMode = formatMode;
     for (const [type, validator] of Object.entries(Types)) {
       if (validator) {
         this.addType(type, validator);
@@ -5181,6 +5219,7 @@ var _SchemaShield = class {
       dialect,
       metaschemaUri: null,
       vocabularies: null,
+      formatAssertionRequired: false,
       dependenciesCompatibility: !this.isModernDialect(dialect),
       definitionsCompatibility: !this.isModernDialect(dialect)
     };
@@ -5264,10 +5303,14 @@ var _SchemaShield = class {
       };
     }
     const vocabularies = /* @__PURE__ */ new Set();
+    let formatAssertionRequired = false;
     for (const [uri, required] of Object.entries(declared)) {
       const category = this.vocabularyCategory(uri);
       if (category !== null) {
         vocabularies.add(category);
+        if (uri === FORMAT_ASSERTION_2020_VOCABULARY) {
+          formatAssertionRequired = true;
+        }
         continue;
       }
       if (required === true) {
@@ -5283,6 +5326,7 @@ var _SchemaShield = class {
       dialect: metaschemaDialect,
       metaschemaUri,
       vocabularies,
+      formatAssertionRequired,
       dependenciesCompatibility: this.metaschemaDefinesKeyword(
         metaschema,
         "dependencies"
@@ -5321,6 +5365,15 @@ var _SchemaShield = class {
     }
     if (key === "definitions") {
       return environment.definitionsCompatibility;
+    }
+    if (key === "format") {
+      if (this.formatMode === "enabled") {
+        return true;
+      }
+      if (this.formatMode === "disabled") {
+        return false;
+      }
+      return environment.metaschemaUri === null || environment.formatAssertionRequired;
     }
     const vocabulary = this.keywordVocabulary(key);
     if (vocabulary !== null && environment.vocabularies !== null && !environment.vocabularies.has(vocabulary)) {
@@ -5868,16 +5921,25 @@ var _SchemaShield = class {
   getMetaSchemaValidator(uri) {
     const builtin = BUILTIN_META_SCHEMA_BY_URI.get(uri);
     if (builtin) {
-      const cached2 = _SchemaShield.builtinMetaValidators.get(uri);
+      const cacheKey = `${this.formatMode}:${uri}`;
+      const cached2 = _SchemaShield.builtinMetaValidators.get(cacheKey);
       if (cached2) {
         return cached2;
       }
-      const owner = new _SchemaShield({ failFast: false });
+      const ownerOptions = {
+        failFast: false
+      };
+      if (this.formatMode === "enabled") {
+        ownerOptions.format = true;
+      } else if (this.formatMode === "disabled") {
+        ownerOptions.format = false;
+      }
+      const owner = new _SchemaShield(ownerOptions);
       const validator2 = owner.compile(
         { $ref: builtin.uri },
         { validateSchema: false }
       );
-      _SchemaShield.builtinMetaValidators.set(uri, validator2);
+      _SchemaShield.builtinMetaValidators.set(cacheKey, validator2);
       return validator2;
     }
     const registration = this.registeredSchemaIds.get(uri);
@@ -6528,6 +6590,20 @@ var _SchemaShield = class {
     const pendingCombinators = [];
     const dialect = sourceSchema ? this.compilingDialects.get(sourceSchema) || "legacy" : "legacy";
     const environment = sourceSchema ? this.compilingEnvironments.get(sourceSchema) || this.defaultEnvironment(dialect) : this.defaultEnvironment("legacy");
+    if (environment.formatAssertionRequired && this.formatMode === "disabled") {
+      const error = new ValidationError(
+        "format cannot be false for a format-assertion dialect"
+      );
+      error.code = "FORMAT_ASSERTION_REQUIRED";
+      error.keyword = "format";
+      throw error;
+    }
+    if (environment.formatAssertionRequired && typeof schema.format === "string" && !this.getFormat(schema.format)) {
+      const error = new ValidationError(`Unknown format: ${schema.format}`);
+      error.code = "UNKNOWN_FORMAT";
+      error.keyword = "format";
+      throw error;
+    }
     definePropertyOrThrow(compiledSchema, "_dialect", {
       value: dialect,
       enumerable: false,

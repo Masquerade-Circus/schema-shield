@@ -161,6 +161,15 @@
       "sha256": "abc775adfefd89d22358170d9bf93f4ebd2349563bbbedd60f02bef7c812bcc0"
     },
     {
+      "key": "draft2020FormatAssertion",
+      "dialect": "2020-12",
+      "commit": "769daad75a9553562333a8937a187741cb708c72",
+      "sourcePath": "meta/format-assertion.json",
+      "localPath": "sources/2020-12/meta/format-assertion.json",
+      "uri": "https://json-schema.org/draft/2020-12/meta/format-assertion",
+      "sha256": "c52242b9a1bb786b26c3e82c7add428c31f9c96e575dce99e56ea5feaa6da20c"
+    },
+    {
       "key": "draft2020Content",
       "dialect": "2020-12",
       "commit": "769daad75a9553562333a8937a187741cb708c72",
