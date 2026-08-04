@@ -89,7 +89,7 @@ describe("official modern vocabulary cases", () => {
         it(`${id} ${test.description}`, () => {
           const shield = new SchemaShield();
           const metaschemaUri = group.schema.$schema;
-          shield.addSchema(
+          shield.addMetaSchema(
             {
               $schema: dialect,
               $id: metaschemaUri,
@@ -145,14 +145,17 @@ describe("modern keyword dialect boundaries and invalid configurations", () => {
   });
 
   it("ignores malformed keyword values outside their applicable contracts", () => {
-    const validate = new SchemaShield().compile({
-      $schema: "https://json-schema.org/draft/2020-12/schema",
-      dependentRequired: [],
-      dependentSchemas: [],
-      prefixItems: {},
-      minContains: "one",
-      maxContains: -1
-    });
+    const validate = new SchemaShield().compile(
+      {
+        $schema: "https://json-schema.org/draft/2020-12/schema",
+        dependentRequired: [],
+        dependentSchemas: [],
+        prefixItems: {},
+        minContains: "one",
+        maxContains: -1
+      },
+      { validateSchema: false }
+    );
 
     expect(validate({ value: true }).valid).toBe(true);
   });

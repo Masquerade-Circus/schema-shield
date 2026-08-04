@@ -2,7 +2,7 @@
 
 ## Overview
 
-SchemaShield is a secure interpreter for JSON Schema (draft-06, draft-07) that prioritizes architectural stability and developer experience over raw synthetic throughput. Designed for strict environments and complex domain logic.
+SchemaShield is a secure interpreter for JSON Schema draft-04, draft-06, draft-07, 2019-09, and 2020-12. It provides predictable local validation for strict environments and complex domain logic.
 
 ## Key Differentiators
 
@@ -11,21 +11,33 @@ SchemaShield is a secure interpreter for JSON Schema (draft-06, draft-07) that p
 - **Runtime Object Validation**: Native support for validating class instances, Dates, and custom objects alongside serialized JSON
 - **Built-in Error Trees**: Advanced error reporting with getCause(), getTree(), getPath() methods
 - **Zero Dependencies**: No external runtime dependencies
+- **Official Metaschemas**: 18 built-in resources with compile-time metavalidation
 
 ## Benchmarks
 
-- **Bun**: #1 fastest validator at 11,740 ops/s — 2.5x faster than ajv, 4x faster than schemasafe
-- **Node.js**: #3 fastest at 13,161 ops/s (69.8% ajv) — 50x faster than jsonschema
+- **Self-baselined**: Measures the draft-06 corpus against prior SchemaShield runs
+- **Runtime-specific**: Stores local baselines under `./tmp` to avoid fake cross-machine precision
 - **Zero Compilation Overhead**: Ideal for serverless/edge cold starts
 
 ## Supported Features
 
-- **JSON Schema Drafts**: 06, 07
+- **JSON Schema Drafts**: draft-04, draft-06, draft-07, 2019-09, 2020-12
 - **Keywords**: allOf, anyOf, oneOf, $ref, $id, required, properties, additionalProperties, enum, const, uniqueItems, pattern, patternProperties, minLength, maxLength, minimum, maximum, type, format, and more
 - **Custom Extensions**:
-  - addType(name, validatorFn) — custom type validators
-  - addFormat(name, validatorFn) — custom format validators
-  - addKeyword(name, validatorFn) — custom keyword validators
+  - addType(name, validatorFn): custom type validators
+  - addFormat(name, validatorFn): custom format validators
+  - addKeyword(name, validatorFn): custom keyword validators
+  - addMetaSchema(schema, options): custom dialect registration
+
+## Metaschema Validation
+
+`compile()` validates every reachable schema resource against its declared
+metaschema by default. `validateSchema(schema)` validates the schema document
+passed to that call. Exact `$schema` identities select built-in or custom dialects.
+
+Use `compile(schema, { validateSchema: false })` for a complete schema graph that
+has already been validated in the application pipeline. Schema resources resolve
+from the built-in catalog and the instance's local registry.
 
 ## Use Cases
 
@@ -164,13 +176,15 @@ new SchemaShield({ immutable?: boolean, failFast?: boolean })
 
 ### Methods
 
-- `compile(schema)` — Compiles a JSON Schema into a validator function
-- `addType(name, validatorFn, overwrite?)` — Adds a custom type validator
-- `addFormat(name, validatorFn, overwrite?)` — Adds a custom format validator
-- `addKeyword(name, validatorFn, overwrite?)` — Adds a custom keyword validator
-- `getType(name)` — Retrieves a custom type validator
-- `getFormat(name)` — Retrieves a custom format validator
-- `getKeyword(name)` — Retrieves a custom keyword validator
+- `compile(schema, options?)`: Metavalidates and compiles a JSON Schema
+- `validateSchema(schema)`: Validates a schema against its selected metaschema
+- `addMetaSchema(schema, options?)`: Registers a custom dialect selector
+- `addType(name, validatorFn, overwrite?)`: Adds a custom type validator
+- `addFormat(name, validatorFn, overwrite?)`: Adds a custom format validator
+- `addKeyword(name, validatorFn, overwrite?)`: Adds a custom keyword validator
+- `getType(name)`: Retrieves a custom type validator
+- `getFormat(name)`: Retrieves a custom format validator
+- `getKeyword(name)`: Retrieves a custom keyword validator
 
 ### Validation Result
 
@@ -188,17 +202,13 @@ new SchemaShield({ immutable?: boolean, failFast?: boolean })
 - `getTree()` — Returns full error chain as nested object
 - `getCause()` — Returns the root cause of the error
 
-## Comparison with Other Validators
+## Runtime Profile
 
-| Feature              | SchemaShield | ajv  | schemasafe |
-|---------------------|-------------|------|-----------|
-| CSP-compliant       | Native      | No   | Yes       |
-| Stack-safe          | Flat loop   | No   | No        |
-| Class instances     | Native      | No   | No        |
-| Zero dependencies   | Yes         | No   | Yes       |
-| Built-in formats    | 20+         | No   | Yes       |
-| Bun performance     | #1 fastest  | 40%  | 25%       |
-| Node.js performance | #3 fastest  | 100% | 74%       |
+- CSP-compliant interpreted execution
+- Flat-loop validation
+- Native class-instance validation
+- Zero runtime dependencies
+- Built-in formats
 
 ## Limitations
 

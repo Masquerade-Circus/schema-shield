@@ -21,7 +21,6 @@ const jsonTestFiles = files.reduce((acc, file) => {
 }, {});
 
 const jsonTestsToSkip = {
-  "validate definition against metaschema": "Not implemented",
   // Sub items
   "items and subitems": "Not implemented",
 

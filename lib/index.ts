@@ -21,6 +21,11 @@ import {
   applyPropertyDefaults,
   applyEmptyPropertyDefaults
 } from "./keywords/object-keywords";
+import {
+  BUILTIN_DIALECT_BY_URI,
+  BUILTIN_META_SCHEMA_BY_URI,
+  BUILTIN_META_SCHEMAS
+} from "./meta-schemas";
 
 export { ValidationError } from "./utils/main-utils";
 export { deepCloneUnfreeze as deepClone } from "./utils/deep-freeze";
@@ -32,6 +37,16 @@ export type JSONSchema = boolean | Record<string, any>;
 export interface AddSchemaOptions {
   uri?: string;
   aliases?: readonly string[];
+}
+
+export interface CompileOptions {
+  validateSchema?: boolean;
+}
+
+export interface ValidationResult {
+  data: any;
+  error: ValidationError | null | true;
+  valid: boolean;
 }
 
 export interface ValidateSubschemaFunction {
@@ -78,11 +93,7 @@ export interface CompiledSchema {
 }
 
 export interface Validator {
-  (data: any): {
-    data: any;
-    error: ValidationError | null | true;
-    valid: boolean;
-  };
+  (data: any): ValidationResult;
   compiledSchema: CompiledSchema;
 }
 
@@ -151,6 +162,7 @@ interface RegisteredSchema {
   nestedIdentities: readonly string[];
   baseUri: string;
   rootIdBesideRef: boolean;
+  metaSchema: boolean;
 }
 
 type SchemaDialect =
@@ -172,6 +184,7 @@ type VocabularyCategory =
 
 interface SchemaEnvironment {
   dialect: SchemaDialect;
+  metaschemaUri: string | null;
   vocabularies: ReadonlySet<VocabularyCategory> | null;
   dependenciesCompatibility: boolean;
   definitionsCompatibility: boolean;
@@ -201,6 +214,37 @@ interface DepthGuardState {
 
 const MAX_COMPILE_DEPTH = 128;
 const LOCAL_SCHEMA_BASE = "schema-shield://local/root";
+const VOCABULARY_CATEGORIES: ReadonlyMap<string, VocabularyCategory> = new Map([
+  ["https://json-schema.org/draft/2019-09/vocab/core", "core"],
+  ["https://json-schema.org/draft/2019-09/vocab/applicator", "applicator"],
+  ["https://json-schema.org/draft/2019-09/vocab/validation", "validation"],
+  ["https://json-schema.org/draft/2019-09/vocab/meta-data", "metadata"],
+  ["https://json-schema.org/draft/2019-09/vocab/format", "format"],
+  ["https://json-schema.org/draft/2019-09/vocab/content", "content"],
+  ["https://json-schema.org/draft/2020-12/vocab/core", "core"],
+  ["https://json-schema.org/draft/2020-12/vocab/applicator", "applicator"],
+  ["https://json-schema.org/draft/2020-12/vocab/validation", "validation"],
+  ["https://json-schema.org/draft/2020-12/vocab/unevaluated", "unevaluated"],
+  ["https://json-schema.org/draft/2020-12/vocab/meta-data", "metadata"],
+  ["https://json-schema.org/draft/2020-12/vocab/format-annotation", "format"],
+  ["https://json-schema.org/draft/2020-12/vocab/format-assertion", "format"],
+  ["https://json-schema.org/draft/2020-12/vocab/content", "content"]
+]);
+const BUILTIN_SCHEMA_REGISTRATIONS: readonly RegisteredSchema[] = Object.freeze(
+  BUILTIN_META_SCHEMAS.map((resource) => {
+    const hashIndex = resource.uri.indexOf("#");
+    const resourceUri =
+      hashIndex === -1 ? resource.uri : resource.uri.slice(0, hashIndex);
+    return Object.freeze({
+      schema: resource.schema as Record<string, any>,
+      identities: Object.freeze(Array.from(new Set([resource.uri, resourceUri]))),
+      nestedIdentities: Object.freeze([]),
+      baseUri: resourceUri,
+      rootIdBesideRef: true,
+      metaSchema: true
+    });
+  })
+);
 
 const FAIL_FAST_TYPE_VALIDATORS: Record<string, ValidateFunction> = {
   object: (data) =>
@@ -232,6 +276,7 @@ function createBuiltinTypeValidator(
 }
 
 export class SchemaShield {
+  private static builtinMetaValidators: Map<string, Validator> = new Map();
   private types: Record<string, TypeFunction | false> = {};
   private formats: Record<string, FormatFunction | false> = {};
   private keywords: Record<string, KeywordFunction | false> = {};
@@ -251,6 +296,7 @@ export class SchemaShield {
   private compilingSchemaChildren: WeakMap<object, object[]> = new WeakMap();
   private registeredSchemas: RegisteredSchema[] = [];
   private registeredSchemaIds: Map<string, RegisteredSchema> = new Map();
+  private customMetaValidators: Map<string, Validator> = new Map();
 
   constructor({
     immutable = false,
@@ -395,6 +441,50 @@ export class SchemaShield {
   }
 
   addSchema(schema: JSONSchema, options: AddSchemaOptions = {}): void {
+    this.registerSchema(schema, options, false);
+  }
+
+  addMetaSchema(schema: JSONSchema, options: AddSchemaOptions = {}): void {
+    const validation = this.validateSchema(schema);
+    if (!validation.valid) {
+      throw this.invalidSchemaError(validation.error);
+    }
+    if (schema === true || schema === false) {
+      throw this.schemaRegistrationError(
+        "A metaschema must be an object",
+        "INVALID_SCHEMA",
+        "schema"
+      );
+    }
+    if (typeof schema.$schema !== "string") {
+      throw this.schemaRegistrationError(
+        "A custom metaschema must declare $schema",
+        "INVALID_SCHEMA",
+        "$schema"
+      );
+    }
+    this.assertKnownRequiredVocabularies(schema);
+    const verifier = new SchemaShield({ failFast: false });
+    verifier.registeredSchemas = [...this.registeredSchemas];
+    verifier.registeredSchemaIds = new Map(this.registeredSchemaIds);
+    const registrationCount = verifier.registeredSchemas.length;
+    verifier.registerSchema(schema, options, true);
+    if (verifier.registeredSchemas.length === registrationCount) {
+      return;
+    }
+    const candidate = verifier.registeredSchemas[registrationCount];
+    verifier.compile(
+      { $ref: candidate.baseUri },
+      { validateSchema: false }
+    );
+    this.registerSchema(schema, options, true);
+  }
+
+  private registerSchema(
+    schema: JSONSchema,
+    options: AddSchemaOptions,
+    metaSchema: boolean
+  ): void {
     if (!this.isJsonSchema(schema)) {
       throw this.schemaRegistrationError(
         "Invalid schema",
@@ -407,6 +497,18 @@ export class SchemaShield {
         "addSchema options must be an object",
         "INVALID_ADD_SCHEMA_OPTIONS",
         "addSchema"
+      );
+    }
+
+    const builtin = this.claimedBuiltinMetaSchema(schema, options);
+    if (builtin !== null) {
+      if (this.schemasEqual(schema, builtin.schema)) {
+        return;
+      }
+      throw this.schemaRegistrationError(
+        `Builtin schema identity cannot be replaced: ${builtin.uri}`,
+        "BUILTIN_SCHEMA_ID_COLLISION",
+        "$id"
       );
     }
 
@@ -508,16 +610,110 @@ export class SchemaShield {
         }
       }
     }
+    for (const identity of [...identities, ...nestedIdentities]) {
+      const builtinIdentity = this.builtinMetaSchemaForIdentity(identity);
+      if (builtinIdentity !== null) {
+        throw this.schemaRegistrationError(
+          `Builtin schema identity cannot be replaced: ${builtinIdentity.uri}`,
+          "BUILTIN_SCHEMA_ID_COLLISION",
+          "$id"
+        );
+      }
+    }
     const registration: RegisteredSchema = Object.freeze({
       schema: snapshot,
       identities: Object.freeze(Array.from(identities)),
       nestedIdentities: Object.freeze(Array.from(nestedIdentities)),
       baseUri,
-      rootIdBesideRef: rootIdIsActive
+      rootIdBesideRef: rootIdIsActive,
+      metaSchema
     });
     this.registeredSchemas.push(registration);
     for (const identity of identities) {
       this.registeredSchemaIds.set(identity, registration);
+    }
+  }
+
+  private claimedBuiltinMetaSchema(
+    schema: JSONSchema,
+    options: AddSchemaOptions
+  ) {
+    const identities: any[] = [options.uri];
+    if (Array.isArray(options.aliases)) {
+      identities.push(...options.aliases);
+    }
+    if (schema !== true && schema !== false) {
+      identities.push(schema.$id, schema.id);
+    }
+
+    for (const identity of identities) {
+      const resource = this.builtinMetaSchemaForIdentity(identity);
+      if (resource !== null) {
+        return resource;
+      }
+    }
+    return null;
+  }
+
+  private builtinMetaSchemaForIdentity(identity: any) {
+    if (typeof identity !== "string") {
+      return null;
+    }
+    let normalized: string;
+    try {
+      normalized = new URL(identity).href;
+    } catch {
+      return null;
+    }
+    const normalizedResource = this.resourceUri(normalized);
+    for (const resource of BUILTIN_META_SCHEMAS) {
+      if (
+        normalized === resource.uri ||
+        normalizedResource === this.resourceUri(resource.uri)
+      ) {
+        return resource;
+      }
+    }
+    return null;
+  }
+
+  private schemasEqual(left: any, right: any): boolean {
+    if (left === right) {
+      return true;
+    }
+    if (
+      left === null ||
+      right === null ||
+      typeof left !== "object" ||
+      typeof right !== "object" ||
+      Array.isArray(left) !== Array.isArray(right)
+    ) {
+      return false;
+    }
+    const leftKeys = Object.keys(left);
+    const rightKeys = Object.keys(right);
+    if (leftKeys.length !== rightKeys.length) {
+      return false;
+    }
+    for (const key of leftKeys) {
+      if (!hasOwn(right, key) || !this.schemasEqual(left[key], right[key])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private assertKnownRequiredVocabularies(schema: Record<string, any>): void {
+    if (!this.isJsonObject(schema.$vocabulary)) {
+      return;
+    }
+    for (const [uri, required] of Object.entries(schema.$vocabulary)) {
+      if (required === true && this.vocabularyCategory(uri) === null) {
+        const error = new ValidationError(`Unknown required vocabulary: ${uri}`);
+        error.code = "UNKNOWN_REQUIRED_VOCABULARY";
+        error.keyword = "$vocabulary";
+        throw error;
+      }
     }
   }
 
@@ -955,29 +1151,17 @@ export class SchemaShield {
     if (typeof schema.$schema !== "string") {
       return inherited;
     }
-    if (schema.$schema.includes("draft-04/")) {
-      return "draft4";
+    try {
+      return BUILTIN_DIALECT_BY_URI.get(new URL(schema.$schema).href) || inherited;
+    } catch {
+      return inherited;
     }
-    if (schema.$schema.includes("draft/2019-09/")) {
-      return "2019-09";
-    }
-    if (schema.$schema.includes("draft/2020-12/")) {
-      return "2020-12";
-    }
-    if (
-      schema.$schema.includes("draft-06/")
-    ) {
-      return "draft6";
-    }
-    if (schema.$schema.includes("draft-07/")) {
-      return "draft7";
-    }
-    return inherited;
   }
 
   private defaultEnvironment(dialect: SchemaDialect): SchemaEnvironment {
     return {
       dialect,
+      metaschemaUri: null,
       vocabularies: null,
       dependenciesCompatibility: !this.isModernDialect(dialect),
       definitionsCompatibility: !this.isModernDialect(dialect)
@@ -985,32 +1169,7 @@ export class SchemaShield {
   }
 
   private vocabularyCategory(uri: string): VocabularyCategory | null {
-    if (uri.endsWith("/vocab/core")) {
-      return "core";
-    }
-    if (uri.endsWith("/vocab/applicator")) {
-      return "applicator";
-    }
-    if (uri.endsWith("/vocab/validation")) {
-      return "validation";
-    }
-    if (uri.endsWith("/vocab/unevaluated")) {
-      return "unevaluated";
-    }
-    if (
-      uri.endsWith("/vocab/format") ||
-      uri.endsWith("/vocab/format-annotation") ||
-      uri.endsWith("/vocab/format-assertion")
-    ) {
-      return "format";
-    }
-    if (uri.endsWith("/vocab/content")) {
-      return "content";
-    }
-    if (uri.endsWith("/vocab/meta-data")) {
-      return "metadata";
-    }
-    return null;
+    return VOCABULARY_CATEGORIES.get(uri) || null;
   }
 
   private metaschemaDefinesKeyword(schema: JSONSchema, keyword: string): boolean {
@@ -1050,39 +1209,32 @@ export class SchemaShield {
     schema: Record<string, any>,
     inherited: SchemaEnvironment
   ): SchemaEnvironment {
-    if (typeof schema.$schema !== "string") {
+    if (!hasOwn(schema, "$schema")) {
       return inherited;
     }
-
-    const dialect = this.effectiveDialect(schema, inherited.dialect);
-    if (dialect !== inherited.dialect || this.isModernDialect(dialect)) {
-      if (
-        schema.$schema.includes("draft-04/") ||
-        schema.$schema.includes("draft/2019-09/") ||
-        schema.$schema.includes("draft/2020-12/") ||
-        schema.$schema.includes("draft-06/") ||
-        schema.$schema.includes("draft-07/")
-      ) {
-        return {
-          ...this.defaultEnvironment(dialect),
-          dependenciesCompatibility: true,
-          definitionsCompatibility: !this.isModernDialect(dialect)
-        };
-      }
+    if (typeof schema.$schema !== "string") {
+      throw this.unknownMetaschemaError(String(schema.$schema));
     }
 
     let metaschemaUri: string;
     try {
       metaschemaUri = new URL(schema.$schema).href;
     } catch {
-      return inherited;
+      throw this.unknownMetaschemaError(schema.$schema);
     }
-    const registration = this.registeredSchemaIds.get(
-      this.resourceUri(metaschemaUri)
-    );
+    const builtinDialect = BUILTIN_DIALECT_BY_URI.get(metaschemaUri);
+    if (builtinDialect) {
+      return {
+        ...this.defaultEnvironment(builtinDialect),
+        metaschemaUri,
+        dependenciesCompatibility: true,
+        definitionsCompatibility: !this.isModernDialect(builtinDialect)
+      };
+    }
+    const registration = this.registeredSchemaIds.get(metaschemaUri);
     const metaschema = registration?.schema;
-    if (!metaschema || metaschema === true) {
-      return inherited;
+    if (!registration?.metaSchema || !metaschema || metaschema === true) {
+      throw this.unknownMetaschemaError(metaschemaUri);
     }
 
     const metaschemaDialect = this.effectiveDialect(
@@ -1093,6 +1245,7 @@ export class SchemaShield {
     if (!this.isJsonObject(declared)) {
       return {
         ...this.defaultEnvironment(metaschemaDialect),
+        metaschemaUri,
         dependenciesCompatibility: this.metaschemaDefinesKeyword(
           metaschema,
           "dependencies"
@@ -1122,6 +1275,7 @@ export class SchemaShield {
     }
     return {
       dialect: metaschemaDialect,
+      metaschemaUri,
       vocabularies,
       dependenciesCompatibility: this.metaschemaDefinesKeyword(
         metaschema,
@@ -1323,7 +1477,12 @@ export class SchemaShield {
       aliases.set(uri, node);
     };
 
-    for (const registration of this.registeredSchemas) {
+    const registrations = [
+      ...BUILTIN_SCHEMA_REGISTRATIONS,
+      ...this.registeredSchemas
+    ];
+
+    for (const registration of registrations) {
       for (const identity of registration.identities) {
         register(identity, registration.schema);
       }
@@ -1332,7 +1491,7 @@ export class SchemaShield {
 
     const registrationsByRoot = new WeakMap<object, RegisteredSchema>();
     const registrationsByNestedIdentity = new Map<string, RegisteredSchema[]>();
-    for (const registration of this.registeredSchemas) {
+    for (const registration of registrations) {
       if (registration.schema !== true && registration.schema !== false) {
         registrationsByRoot.set(registration.schema, registration);
       }
@@ -1857,8 +2016,123 @@ export class SchemaShield {
     };
   }
 
-  compile(schema: any): Validator {
-    const prepared = this.prepareSchema(schema);
+  validateSchema(schema: any): ValidationResult {
+    if (!this.isJsonSchema(schema)) {
+      const error = this.schemaRegistrationError(
+        "Invalid schema",
+        "INVALID_SCHEMA",
+        "schema"
+      );
+      return { data: schema, error, valid: false };
+    }
+    if (schema === true || schema === false) {
+      return { data: schema, error: null, valid: true };
+    }
+    if (!hasOwn(schema, "$schema")) {
+      if (!this.isSchemaLike(schema)) {
+        const error = this.schemaRegistrationError(
+          "Invalid schema",
+          "INVALID_SCHEMA",
+          "schema"
+        );
+        return { data: schema, error, valid: false };
+      }
+      return { data: schema, error: null, valid: true };
+    }
+    if (typeof schema.$schema !== "string") {
+      throw this.unknownMetaschemaError(String(schema.$schema));
+    }
+
+    let metaschemaUri: string;
+    try {
+      metaschemaUri = new URL(schema.$schema).href;
+    } catch {
+      throw this.unknownMetaschemaError(schema.$schema);
+    }
+    return this.validateSchemaWithMetaSchema(schema, metaschemaUri);
+  }
+
+  private validateSchemaWithMetaSchema(
+    schema: any,
+    metaschemaUri: string
+  ): ValidationResult {
+    const validator = this.getMetaSchemaValidator(metaschemaUri);
+    if (!validator) {
+      throw this.unknownMetaschemaError(metaschemaUri);
+    }
+    return validator(schema);
+  }
+
+  private getMetaSchemaValidator(uri: string): Validator | null {
+    const builtin = BUILTIN_META_SCHEMA_BY_URI.get(uri);
+    if (builtin) {
+      const cached = SchemaShield.builtinMetaValidators.get(uri);
+      if (cached) {
+        return cached;
+      }
+      const owner = new SchemaShield({ failFast: false });
+      const validator = owner.compile(
+        { $ref: builtin.uri },
+        { validateSchema: false }
+      );
+      SchemaShield.builtinMetaValidators.set(uri, validator);
+      return validator;
+    }
+
+    const registration = this.registeredSchemaIds.get(uri);
+    if (!registration?.metaSchema) {
+      return null;
+    }
+    const cached = this.customMetaValidators.get(uri);
+    if (cached) {
+      return cached;
+    }
+    const validator = this.compile(
+      { $ref: uri },
+      { validateSchema: false }
+    );
+    this.customMetaValidators.set(uri, validator);
+    return validator;
+  }
+
+  private invalidSchemaError(error: ValidationError | null | true) {
+    if (error instanceof ValidationError) {
+      error.code = "INVALID_SCHEMA";
+      return error;
+    }
+    return this.schemaRegistrationError(
+      "Invalid schema",
+      "INVALID_SCHEMA",
+      "schema"
+    );
+  }
+
+  private unknownMetaschemaError(uri: string) {
+    const error = new ValidationError(`Unknown metaschema: ${uri}`);
+    error.code = "UNKNOWN_METASCHEMA";
+    error.keyword = "$schema";
+    return error;
+  }
+
+  compile(schema: any, options: CompileOptions = {}): Validator {
+    if (!this.isJsonObject(options)) {
+      throw this.schemaRegistrationError(
+        "compile options must be an object",
+        "INVALID_COMPILE_OPTIONS",
+        "compile"
+      );
+    }
+    const validateSchema = hasOwn(options, "validateSchema")
+      ? options.validateSchema
+      : true;
+    if (validateSchema !== true && validateSchema !== false) {
+      throw this.schemaRegistrationError(
+        "validateSchema must be a boolean",
+        "INVALID_COMPILE_OPTIONS",
+        "validateSchema"
+      );
+    }
+    const prepared = this.prepareSchema(schema, validateSchema);
     const compiledSchema = prepared.compiledSchema;
     if (
       !prepared.requiresDepthGuard &&
@@ -1886,10 +2160,38 @@ export class SchemaShield {
     return this.createGuardedValidator(compiledSchema, prepared.depthGuardState!);
   }
 
-  private prepareSchema(schema: any) {
+  private prepareSchema(schema: any, validateSchema: boolean) {
     this.compilingSchemaChildren = new WeakMap();
     const referenceRegistry = this.buildReferenceRegistry(schema);
     const analysis = this.analyzeSchema(schema, referenceRegistry);
+    if (validateSchema) {
+      if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
+        const validation = this.validateSchema(schema);
+        if (!validation.valid) {
+          throw this.invalidSchemaError(validation.error);
+        }
+      } else {
+        const validatedResources = new WeakSet<object>();
+        for (const position of referenceRegistry.positions) {
+          if (
+            position.source !== position.resourceRoot ||
+            validatedResources.has(position.resourceRoot)
+          ) {
+            continue;
+          }
+          validatedResources.add(position.resourceRoot);
+          const validation = position.environment.metaschemaUri
+            ? this.validateSchemaWithMetaSchema(
+                position.resourceRoot,
+                position.environment.metaschemaUri
+              )
+            : this.validateSchema(position.resourceRoot);
+          if (!validation.valid) {
+            throw this.invalidSchemaError(validation.error);
+          }
+        }
+      }
+    }
     const reachableSchemas = analysis.reachableSchemas;
     this.compileCache = new WeakMap();
     this.compilingRequiresContext =

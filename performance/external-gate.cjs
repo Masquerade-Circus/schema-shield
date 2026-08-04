@@ -48,7 +48,7 @@ function runWorker({
   mode,
   bundle,
   manifest,
-  intersection,
+  caseIds,
   deadlineEpochMs,
   benchmarkOptions
 }) {
@@ -66,7 +66,7 @@ function runWorker({
     String(deadlineEpochMs)
   ];
   if (mode === "benchmark") {
-    args.push("--intersection", intersection);
+    args.push("--case-ids", caseIds);
     for (const [key, value] of Object.entries(benchmarkOptions)) {
       args.push(`--${key}`, String(value));
     }
@@ -146,10 +146,10 @@ function main() {
   const corpusRoot = path.resolve(__dirname, "../tmp/corpus/bcf1dc81");
   const manifestPath = path.join(corpusRoot, "manifest.json");
   const allowlistPath = path.join(corpusRoot, "production-allowlist.json");
-  const intersectionPath = path.join(corpusRoot, "throughput-intersection.json");
+  const caseIdsPath = path.join(corpusRoot, "throughput-cases.json");
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   const allowlist = JSON.parse(fs.readFileSync(allowlistPath, "utf8"));
-  const intersection = JSON.parse(fs.readFileSync(intersectionPath, "utf8"));
+  const throughputCases = JSON.parse(fs.readFileSync(caseIdsPath, "utf8"));
   const correctionPath = path.resolve(__dirname, "accepted-corrections.json");
   const acceptedCorrections = fs.existsSync(correctionPath)
     ? new Set(JSON.parse(fs.readFileSync(correctionPath, "utf8")))
@@ -161,7 +161,7 @@ function main() {
     mode: "parity",
     bundle: args.candidate,
     manifest: manifestPath,
-    intersection: intersectionPath,
+    caseIds: caseIdsPath,
     deadlineEpochMs
   });
   const divergences = [];
@@ -215,7 +215,7 @@ function main() {
         "max-iterations": 64
       }
     : {
-        "case-limit": intersection.caseIds.length,
+        "case-limit": throughputCases.caseIds.length,
         "warmup-count": 200,
         "sample-count": 3,
         "target-ns": 2000000,
@@ -234,7 +234,7 @@ function main() {
           mode: "benchmark",
           bundle: bundles[role],
           manifest: manifestPath,
-          intersection: intersectionPath,
+          caseIds: caseIdsPath,
           deadlineEpochMs,
           benchmarkOptions
         })
@@ -273,9 +273,9 @@ function main() {
     timeoutMs,
     manifestSha256: sha256File(manifestPath),
     allowlistSha256: sha256File(allowlistPath),
-    intersectionSha256: sha256File(intersectionPath),
-    intersectionCaseCount: intersection.caseIds.length,
-    engines: intersection.engines,
+    throughputSha256: sha256File(caseIdsPath),
+    throughputCaseCount: throughputCases.caseIds.length,
+    throughputSource: throughputCases.source,
     bundlePaths: bundles,
     bundleSha256: hashes,
     compileNanoseconds: Object.fromEntries(

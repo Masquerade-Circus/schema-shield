@@ -9,6 +9,7 @@ Compile reusable validators for JSON data or live JavaScript objects, extend the
 - Interpreted execution without `eval()` or `new Function()`
 - No implicit fetches, file reads, DNS lookups, or other I/O
 - JSON Schema draft-04, draft-06, draft-07, 2019-09, and 2020-12
+- Built-in official metaschemas with schema validation during compilation
 - Validation of JSON data, class instances, Dates, and other live values
 - Custom types, formats, and keywords
 - Structured errors with schema paths, instance paths, and causal chains
@@ -66,7 +67,9 @@ Every validator returns the same shape:
   - [Preserve the original input](#preserve-the-original-input)
   - [Validate live JavaScript objects](#validate-live-javascript-objects)
 - [Working with schema resources](#working-with-schema-resources)
+  - [Use built-in metaschemas](#use-built-in-metaschemas)
   - [Register external schemas](#register-external-schemas)
+  - [Register a custom metaschema](#register-a-custom-metaschema)
   - [Use local references and JSON Pointers](#use-local-references-and-json-pointers)
   - [Use anchors and recursive references](#use-anchors-and-recursive-references)
 - [Extend SchemaShield](#extend-schemashield)
@@ -312,9 +315,40 @@ console.log(result.valid); // false
 
 ## Working with schema resources
 
+### Use built-in metaschemas
+
+SchemaShield includes 18 official metaschema resources for draft-04, draft-06, draft-07, 2019-09, and 2020-12. The 2019-09 and 2020-12 catalogs include the complete graphs of implemented vocabulary resources. All built-in resources are immutable, shared by every instance, and ready for local `$ref` resolution.
+
+`compile()` validates every reachable schema resource against its declared metaschema by default. A `$schema` value selects a built-in or custom metaschema through an exact identity match. Empty, malformed, and unknown identities throw `UNKNOWN_METASCHEMA`.
+
+```javascript
+const shield = new SchemaShield({ failFast: false });
+
+shield.compile({
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  type: "string",
+  minLength: 1
+});
+
+const result = shield.validateSchema({
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  minLength: -1
+});
+
+console.log(result.valid); // false
+```
+
+For a complete schema graph validated earlier in your pipeline, skip metavalidation explicitly:
+
+```javascript
+shield.compile(schema, { validateSchema: false });
+```
+
+This option changes the metavalidation step. SchemaShield requires a known `$schema`, resolves every reachable reference, and uses local resources exclusively.
+
 ### Register external schemas
 
-`addSchema()` stores a local snapshot of a schema resource. URI strings identify resources and resolve references, but they never trigger I/O.
+`addSchema()` stores a local snapshot of a schema resource. URI strings identify resources within the local registry and guide reference resolution.
 
 ```javascript
 import { SchemaShield } from "schema-shield";
@@ -360,6 +394,33 @@ Registration follows these rules:
 - Duplicate identities are rejected. Registered resources cannot be overwritten or removed.
 - Resources may be registered in any order. Every resource reachable from the compiled root must be present by compile time.
 - SchemaShield provides no fetch callback, loader, file access, or remote retrieval fallback.
+
+Built-in metaschema identities are reserved. Registering an exact structural copy preserves the current resource. Registering different content under a reserved identity throws `BUILTIN_SCHEMA_ID_COLLISION`.
+
+### Register a custom metaschema
+
+Use `addMetaSchema()` to register a custom dialect that defines vocabularies or extends standard keyword contracts. Resources registered with `addSchema()` remain ordinary schema resources.
+
+```javascript
+const shield = new SchemaShield();
+
+shield.addMetaSchema({
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $id: "https://schemas.example/meta/domain",
+  $vocabulary: {
+    "https://json-schema.org/draft/2020-12/vocab/core": true,
+    "https://json-schema.org/draft/2020-12/vocab/validation": true
+  },
+  type: ["object", "boolean"]
+});
+
+shield.compile({
+  $schema: "https://schemas.example/meta/domain",
+  type: "string"
+});
+```
+
+SchemaShield validates each custom metaschema against its declared parent metaschema before registration. Required vocabulary identities must exactly match an implemented 2019-09 or 2020-12 vocabulary. An unknown required vocabulary throws `UNKNOWN_REQUIRED_VOCABULARY`. Registration is local, additive, and snapshot-based.
 
 ### Use local references and JSON Pointers
 
@@ -409,7 +470,7 @@ const validateTree = new SchemaShield({ maxDepth: 64 }).compile({
 
 ## Extend SchemaShield
 
-Registrations belong to one `SchemaShield` instance and affect validators compiled from that instance. Types, formats, and keywords use `overwrite = false` by default. Registering an existing active name throws unless `overwrite = true` is explicitly enabled. An internal entry represented by `false` is disabled rather than active, so it can be activated without overwrite.
+Application registrations belong to one `SchemaShield` instance and affect validators compiled from that instance. Official metaschemas are shared immutable built-ins. Types, formats, and keywords use `overwrite = false` by default. Registering an existing active name throws unless `overwrite = true` is explicitly enabled. An internal entry represented by `false` is disabled rather than active, so it can be activated without overwrite.
 
 ### Custom types
 
@@ -524,8 +585,10 @@ There is no default export.
 The package root also exports these TypeScript types:
 
 - `Result`
+- `ValidationResult`
 - `JSONSchema`
 - `AddSchemaOptions`
+- `CompileOptions`
 - `ValidateSubschemaFunction`
 - `KeywordFunction`
 - `TypeFunction`
@@ -543,6 +606,18 @@ type Result = void | ValidationError | true;
 ```
 
 Internal validation and extension functions return nothing on success, `true` for a minimal failure, or `ValidationError` for a detailed failure.
+
+#### `ValidationResult`
+
+```typescript
+interface ValidationResult {
+  data: any;
+  error: ValidationError | null | true;
+  valid: boolean;
+}
+```
+
+Returned by validators and `validateSchema()`.
 
 #### `JSONSchema`
 
@@ -562,6 +637,16 @@ interface AddSchemaOptions {
 ```
 
 `uri` is the absolute, fragment-free retrieval identity. `aliases` adds equivalent absolute, fragment-free identities.
+
+#### `CompileOptions`
+
+```typescript
+interface CompileOptions {
+  validateSchema?: boolean;
+}
+```
+
+`validateSchema` defaults to `true`. Set it to `false` for a complete reachable schema graph validated earlier in your pipeline.
 
 #### `ValidateSubschemaFunction`
 
@@ -683,7 +768,7 @@ new SchemaShield(options?: {
 | `maxDepth`    | `128`   | Runtime recursive-validation limit. Must be an integer from `1` through `256`. Invalid values throw `INVALID_MAX_DEPTH`.                                                                                                                                                                                                                   |
 | `useDefaults` | `false` | Accepts only `false`, `true`, or `"empty"`. Invalid values throw `INVALID_USE_DEFAULTS`.                                                                                                                                                                                                                                                   |
 
-The constructor returns a new independent registry. Types, formats, keywords, and schema resources are not shared between instances.
+The constructor returns new independent type, format, keyword, ordinary-resource, and custom-metaschema registries. Official metaschema resources and their cached validators are immutable built-ins shared by all instances.
 
 ### SchemaShield methods
 
@@ -768,6 +853,16 @@ Validates registration inputs, snapshots `schema`, assigns its identities, and s
 
 All identities must resolve to absolute URIs without fragments. Boolean schemas require `options.uri`. The method rejects duplicate identities and provides no overwrite, removal, loading, or fetching operation.
 
+Built-in metaschema identities are reserved. Registering an exact structural copy preserves the current resource. Registering different content under a reserved identity throws `BUILTIN_SCHEMA_ID_COLLISION`.
+
+#### `addMetaSchema(schema, options)`
+
+```typescript
+addMetaSchema(schema: JSONSchema, options?: AddSchemaOptions): void
+```
+
+Validates and registers a custom metaschema as a dialect selector. The metaschema must be an object, declare its parent dialect through `$schema`, and provide an absolute root `$id` or an explicit `uri`. Unknown required vocabularies, unresolved references, invalid schemas, duplicate identities, and built-in identity collisions throw synchronously. Resources registered through `addSchema()` remain ordinary schema resources.
+
 #### `getSchemaRef(path)`
 
 ```typescript
@@ -786,19 +881,31 @@ getSchemaById(id: string): CompiledSchema | undefined
 
 Traverses the current compiled root and returns the first compiled node whose `$id` or `id` exactly equals `id`. It returns `undefined` when there is no match or no compiled root. It does not retrieve a resource and is not a direct registry lookup.
 
+#### `validateSchema(schema)`
+
+```typescript
+validateSchema(schema: any): ValidationResult
+```
+
+Validates one schema against the exact built-in or custom metaschema selected by `$schema`. A valid schema returns `{ data: schema, error: null, valid: true }`. An invalid schema returns a normal validation result. A malformed or unknown `$schema` throws `UNKNOWN_METASCHEMA`.
+
+Schemas without `$schema` use SchemaShield's native compatibility recognition, including custom types and keywords. Declare `$schema` when the schema requires portable conformance to an official dialect.
+
 #### `compile(schema)`
 
 ```typescript
-compile(schema: any): Validator
+compile(schema: any, options?: CompileOptions): Validator
 ```
 
-Compiles an input into a synchronous `Validator`. Boolean values retain JSON Schema boolean semantics, and schema-like objects compile as schemas. Other cloneable literal values and cloneable arrays use a non-standard convenience path that wraps the input as a literal branch of `oneOf`.
+Validates every reachable schema resource against its declared metaschema, then compiles the input into a synchronous `Validator`. Set `options.validateSchema` to `false` for a complete graph validated earlier in your pipeline. Boolean values retain JSON Schema boolean semantics, and schema-like objects compile as schemas. Other cloneable literal values and cloneable arrays use a non-standard convenience path that wraps the input as a literal branch of `oneOf`.
 
 Cloneable literals are compared with strict equality. Values such as strings, numbers other than `NaN`, `null`, `undefined`, and `BigInt` can therefore match their retained literal value. `NaN` compiles, but it cannot match because strict equality treats `NaN` as unequal to itself. Arrays are also stored as literal branches. A separately created structurally equal array does not match because literal `oneOf` branches are compared by identity. It can match only when validation receives the exact array retained in `validator.compiledSchema`.
 
 Snapshot creation can throw for values that `structuredClone` cannot clone, including functions and symbols. Portable JSON Schema should express literals with a boolean or object schema, normally through `const` or `enum`, instead of passing a literal value or array as the root schema.
 
 Compilation resolves every reachable local and registered reference. It can throw `ValidationError`, or the literal `true` in the current fail-fast unknown-type case. The fixed compile graph-depth limit is `128` and is separate from the configurable runtime `maxDepth`.
+
+Schemas that declare an official `$schema` must satisfy that official metaschema. This includes the standard `type` names. Use a custom metaschema for an extended dialect. Schemas without `$schema` retain SchemaShield's native compatibility behavior for custom types, custom keywords, and non-standard extensions.
 
 Current schema-shape behavior has two additional edges:
 
@@ -811,7 +918,7 @@ Current schema-shape behavior has two additional edges:
 isSchemaLike(subSchema: any): boolean
 ```
 
-Returns `true` when `subSchema` is a non-array object that contains `type` or at least one name recognized by the instance's keyword registry. It returns `false` for booleans, arrays, primitives, and `{}`. This is a structural recognition helper, not complete metaschema validation.
+Returns `true` when `subSchema` is a non-array object that contains `type` or at least one name recognized by the instance's keyword registry. It returns `false` for booleans, arrays, primitives, and `{}`. This helper performs structural recognition. Use `validateSchema(schema)` to validate a schema document against its selected metaschema.
 
 ### Validator
 
@@ -902,7 +1009,7 @@ Delegates cloning to the platform's `structuredClone`. Supported values follow t
 
 ### Dialects
 
-SchemaShield recognizes these dialects through `$schema`:
+SchemaShield recognizes these dialects through exact `$schema` identities:
 
 | Dialect  | `$schema` value                                |
 | -------- | ---------------------------------------------- |
@@ -912,7 +1019,7 @@ SchemaShield recognizes these dialects through `$schema`:
 | 2019-09  | `https://json-schema.org/draft/2019-09/schema` |
 | 2020-12  | `https://json-schema.org/draft/2020-12/schema` |
 
-Schemas without `$schema` use legacy compatibility behavior. Declare `$schema` for dialect-sensitive keywords, identifiers, anchors, reference siblings, vocabularies, tuple items, or content behavior.
+The 18 official metaschema resources are built in, including the complete graphs of implemented vocabulary resources for modern drafts. Schemas without `$schema` use SchemaShield's native compatibility behavior. Declare `$schema` for portable metaschema validation, dialect-sensitive keywords, identifiers, anchors, reference siblings, vocabularies, tuple items, or content behavior.
 
 Implemented validation and applicator families include:
 
@@ -981,6 +1088,8 @@ Use standard `additionalProperties`, `items`, or `prefixItems` when schema porta
 - The `format` keyword validates strings only.
 - `enum`, `const`, and `uniqueItems` use structural comparison. Large collections containing complex objects can require more comparison work.
 - Schema resources remain local. URI schemes do not enable retrieval.
+- Dialect selection uses exact `$schema` identities. Unknown identities fail with `UNKNOWN_METASCHEMA`.
+- `compile()` metavalidates reachable resources by default. `{ validateSchema: false }` changes that step and keeps every other compile-time check active.
 
 ## Execution model and limits
 
@@ -1000,6 +1109,8 @@ Use standard `additionalProperties`, `items`, or `prefixItems` when schema porta
 | Defaults                         | Can mutate data. Invalid inserted defaults can remain after a normal failed validation.                                                                                                                                                                                                                              |
 | Immutable mode                   | Clones the root with `structuredClone`. Class instances lose their original prototype, and unsupported values make cloning throw. |
 | Schema registration              | Snapshot-based, additive, local, and per instance. No overwrite or removal.                                                                                                                                                                                                                                          |
+| Built-in metaschemas             | Shared, immutable, and ready for local resolution on every instance. Modern drafts include the complete graphs of implemented vocabulary resources.                                                                                                                                                                  |
+| Schema validation                | `compile()` validates every reachable resource by default. `validateSchema(schema)` validates the schema document passed to that call.                                                                                                                                                                                |
 | Empty object schema              | Rejected at the root. Use `true` for an explicit always-valid schema.                                                                                                                                                                                                                                                |
 | Registry getters                 | Missing names can return `undefined` at runtime despite declarations that say `false`.                                                                                                                                                                                                                               |
 
@@ -1013,14 +1124,17 @@ The following machine-readable codes are emitted by current constructor, registr
 | `INVALID_USE_DEFAULTS`        | `useDefaults` is not `false`, `true`, or `"empty"`.                                             |
 | `INVALID_SCHEMA`              | A schema supplied to `addSchema()` is not an accepted JSON-compatible schema object or boolean. |
 | `INVALID_ADD_SCHEMA_OPTIONS`  | The `addSchema()` options value is not an object.                                               |
+| `INVALID_COMPILE_OPTIONS`     | The `compile()` options or `validateSchema` value is invalid.                                   |
 | `INVALID_SCHEMA_URI`          | `options.uri` is not an absolute, fragment-free URI.                                            |
 | `INVALID_SCHEMA_ID`           | A schema identifier is invalid, missing when required, or resolves incorrectly.                 |
 | `INVALID_SCHEMA_ALIAS`        | Aliases are malformed or contain an invalid identity.                                           |
 | `DUPLICATE_SCHEMA_ID`         | Two registered or reachable schema resources claim the same identity.                           |
+| `BUILTIN_SCHEMA_ID_COLLISION` | A registration tries to replace a built-in metaschema identity with different content.          |
 | `INVALID_ANCHOR`              | An anchor does not satisfy the selected dialect's anchor syntax.                                |
 | `DUPLICATE_ANCHOR`            | Two reachable nodes claim the same anchor identity.                                             |
 | `REFERENCE_NOT_FOUND`         | A reachable reference cannot be resolved from local or registered resources.                    |
 | `UNKNOWN_REQUIRED_VOCABULARY` | A custom modern metaschema requires a vocabulary SchemaShield does not recognize.               |
+| `UNKNOWN_METASCHEMA`          | `$schema` does not exactly identify a built-in or registered custom metaschema.                  |
 | `CYCLIC_SCHEMA_GRAPH`         | The input contains a cycle in the JavaScript object graph of schema nodes.                      |
 | `MAX_COMPILE_DEPTH_EXCEEDED`  | The schema graph exceeds the fixed compile-depth limit.                                         |
 | `MAX_DEPTH_EXCEEDED`          | Recursive runtime validation exceeds `maxDepth`.                                                |
@@ -1041,6 +1155,45 @@ Run tests in watch mode:
 npm run dev:test
 ```
 
+Run the SchemaShield benchmark against the draft-06 test corpus:
+
+```bash
+npm run benchmark
+```
+
+Create a local baseline under the ignored `./tmp` directory, then compare a
+later run against it:
+
+```bash
+npm run benchmark:baseline
+npm run benchmark:compare
+```
+
+The benchmark checks every measured case against its expected JSON Schema
+result before it reports nanoseconds per operation and operations per second.
+Baseline comparison reports the largest ratios without enforcing a noisy,
+machine-dependent release threshold.
+
+Regenerate the committed metaschema snapshot from the pinned local sources. This
+command verifies every SHA-256 digest and works entirely from local files:
+
+```bash
+npm run generate:metaschemas
+```
+
+Maintainers can explicitly refresh those sources from the pinned commits in the
+official JSON Schema specification repository:
+
+```bash
+npm run update:metaschemas
+```
+
+Network access is isolated to the explicit update command. The normal build reads
+`meta-schemas/manifest.json`, verifies the 18 local source files, and regenerates
+`lib/official-meta-schemas.json` deterministically. The manifest records each
+upstream commit, path, canonical URI, and SHA-256 digest. License and attribution
+data ship under `meta-schemas/`.
+
 Build the distribution:
 
 ```bash
@@ -1060,7 +1213,7 @@ Before opening a pull request:
 
 ## Acknowledgments
 
-SchemaShield acknowledges AJV and `@exodus/schemasafe` for their contributions to the wider JSON Schema validation ecosystem and for the public engineering work that has inspired this validator design.
+SchemaShield acknowledges AJV and the broader JSON Schema community for the public engineering work that has inspired this validator design.
 
 ## License
 

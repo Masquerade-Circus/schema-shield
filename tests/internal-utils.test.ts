@@ -9,7 +9,7 @@ import {
   hasOwn
 } from "../lib/utils";
 
-describe("utils compatibility exports", () => {
+describe("internal utility behavior", () => {
   it("rejects values unsupported by structuredClone", () => {
     const unsupportedValues = [
       () => true,
@@ -23,7 +23,7 @@ describe("utils compatibility exports", () => {
     }
   });
 
-  it("exports deepClone alias", () => {
+  it("provides the internal deepClone alias", () => {
     const source = {
       foo: {
         bar: [1, 2, 3]
@@ -37,7 +37,7 @@ describe("utils compatibility exports", () => {
     expect(cloned.foo).not.toBe(source.foo);
   });
 
-  it("exports ValidationError", () => {
+  it("constructs the internal ValidationError class", () => {
     const error = new ValidationError("Boom");
 
     expect(error).toBeInstanceOf(Error);

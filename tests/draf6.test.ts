@@ -24,8 +24,6 @@ const jsonTestsToSkip = {
   // Sub items
   "items and subitems": "Not implemented",
 
-  // Ref
-  "validate definition against metaschema": "Not implemented",
   "remote ref, containing refs itself": "Not supported",
 
   // Needs investigation

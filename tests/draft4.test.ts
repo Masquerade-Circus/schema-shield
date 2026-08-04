@@ -59,13 +59,16 @@ describe("draft-04 dialect behavior", () => {
       { uri: "https://schemas.example/integer" }
     );
 
-    const validate = shield.compile({
-      $schema: draft4,
-      $ref: "https://schemas.example/integer",
-      definitions: {
-        ignored: { type: null }
-      }
-    });
+    const validate = shield.compile(
+      {
+        $schema: draft4,
+        $ref: "https://schemas.example/integer",
+        definitions: {
+          ignored: { type: null }
+        }
+      },
+      { validateSchema: false }
+    );
 
     expect(validate(1).valid).toBe(true);
     expect(validate("1").valid).toBe(false);
@@ -73,24 +76,36 @@ describe("draft-04 dialect behavior", () => {
 
   it("ignores numeric exclusive bounds that are invalid in draft-04", () => {
     const shield = new SchemaShield();
-    const minimum = shield.compile({
-      $schema: draft4,
-      minimum: 1,
-      exclusiveMinimum: 10
-    });
-    const maximum = shield.compile({
-      $schema: draft4,
-      maximum: 10,
-      exclusiveMaximum: 1
-    });
-    const standaloneMinimum = shield.compile({
-      $schema: draft4,
-      exclusiveMinimum: 10
-    });
-    const standaloneMaximum = shield.compile({
-      $schema: draft4,
-      exclusiveMaximum: 1
-    });
+    const minimum = shield.compile(
+      {
+        $schema: draft4,
+        minimum: 1,
+        exclusiveMinimum: 10
+      },
+      { validateSchema: false }
+    );
+    const maximum = shield.compile(
+      {
+        $schema: draft4,
+        maximum: 10,
+        exclusiveMaximum: 1
+      },
+      { validateSchema: false }
+    );
+    const standaloneMinimum = shield.compile(
+      {
+        $schema: draft4,
+        exclusiveMinimum: 10
+      },
+      { validateSchema: false }
+    );
+    const standaloneMaximum = shield.compile(
+      {
+        $schema: draft4,
+        exclusiveMaximum: 1
+      },
+      { validateSchema: false }
+    );
 
     expect(minimum(1).valid).toBe(true);
     expect(maximum(10).valid).toBe(true);

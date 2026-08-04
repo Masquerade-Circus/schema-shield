@@ -7,8 +7,7 @@ const drafts = [
   "draft6",
   "draft7",
   "draft2019-09",
-  "draft2020-12",
-  "draft-next"
+  "draft2020-12"
 ];
 const formats = ["hostname", "idn-hostname", "idn-email"];
 

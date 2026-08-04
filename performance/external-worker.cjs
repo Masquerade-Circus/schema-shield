@@ -134,9 +134,9 @@ function calibrate(
   return Math.max(16, Math.min(maxIterations, estimated));
 }
 
-function runBenchmark(engine, cases, intersection, deadlineEpochMs, options) {
+function runBenchmark(engine, cases, caseIds, deadlineEpochMs, options) {
   const selected = cases
-    .filter((item) => intersection.has(item.id))
+    .filter((item) => caseIds.has(item.id))
     .slice(0, options.caseLimit);
   const { validators, compileNanoseconds } = compileGroups(
     engine,
@@ -207,8 +207,8 @@ function main() {
     return;
   }
   if (args.mode === "benchmark") {
-    const intersectionFile = JSON.parse(
-      fs.readFileSync(args.intersection, "utf8")
+    const caseIdsFile = JSON.parse(
+      fs.readFileSync(args["case-ids"], "utf8")
     );
     const options = {
       caseLimit: positiveInteger(args["case-limit"], Number.MAX_SAFE_INTEGER),
@@ -222,7 +222,7 @@ function main() {
         runBenchmark(
           engine,
           manifest.cases,
-          new Set(intersectionFile.caseIds),
+          new Set(caseIdsFile.caseIds),
           deadlineEpochMs,
           options
         )

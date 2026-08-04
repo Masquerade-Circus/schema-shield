@@ -114,3 +114,7 @@ benchmark
 docs/
 performance 
 benchmarks/
+/.tmp/
+/tmp/
+/docs/plans/
+/docs/issues/

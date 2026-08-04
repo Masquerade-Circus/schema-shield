@@ -8,6 +8,14 @@ export interface AddSchemaOptions {
     uri?: string;
     aliases?: readonly string[];
 }
+export interface CompileOptions {
+    validateSchema?: boolean;
+}
+export interface ValidationResult {
+    data: any;
+    error: ValidationError | null | true;
+    valid: boolean;
+}
 export interface ValidateSubschemaFunction {
     (schema: CompiledSchema | boolean, data: any, evaluated?: {
         property?: string;
@@ -36,15 +44,12 @@ export interface CompiledSchema {
     [key: string]: any;
 }
 export interface Validator {
-    (data: any): {
-        data: any;
-        error: ValidationError | null | true;
-        valid: boolean;
-    };
+    (data: any): ValidationResult;
     compiledSchema: CompiledSchema;
 }
 export declare class SchemaShield {
     #private;
+    private static builtinMetaValidators;
     private types;
     private formats;
     private keywords;
@@ -64,6 +69,7 @@ export declare class SchemaShield {
     private compilingSchemaChildren;
     private registeredSchemas;
     private registeredSchemaIds;
+    private customMetaValidators;
     constructor({ immutable, failFast, maxDepth, useDefaults }?: {
         immutable?: boolean;
         failFast?: boolean;
@@ -79,6 +85,12 @@ export declare class SchemaShield {
     addKeyword(name: string, validator: KeywordFunction, overwrite?: boolean): void;
     getKeyword(keyword: string): KeywordFunction | false;
     addSchema(schema: JSONSchema, options?: AddSchemaOptions): void;
+    addMetaSchema(schema: JSONSchema, options?: AddSchemaOptions): void;
+    private registerSchema;
+    private claimedBuiltinMetaSchema;
+    private builtinMetaSchemaForIdentity;
+    private schemasEqual;
+    private assertKnownRequiredVocabularies;
     private schemaRegistrationError;
     private absoluteResourceUri;
     private resourceIdentityFromReference;
@@ -107,7 +119,12 @@ export declare class SchemaShield {
     private resolveReferenceSource;
     private builtinReferences;
     private analyzeSchema;
-    compile(schema: any): Validator;
+    validateSchema(schema: any): ValidationResult;
+    private validateSchemaWithMetaSchema;
+    private getMetaSchemaValidator;
+    private invalidSchemaError;
+    private unknownMetaschemaError;
+    compile(schema: any, options?: CompileOptions): Validator;
     private prepareSchema;
     private createGuardedValidator;
     private isPlainObject;

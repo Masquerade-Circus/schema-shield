@@ -3,8 +3,8 @@ import { after, before, describe, it } from "mocha";
 import { SchemaShield } from "../lib";
 import { ValidationError } from "../lib/utils";
 import expect from "expect";
-import schemasafe from "@exodus/schemasafe";
 import fs from "fs";
+import path from "path";
 
 describe("SchemaShield instance", () => {
   it("Should create a SchemaShield instance and validate", () => {
@@ -383,7 +383,7 @@ describe("ValidationError", () => {
   });
 });
 
-describe("Vs schemasafe", () => {
+describe("SchemaShield benchmark", () => {
   const BENCHMARK_WARMUP_COUNT = 500;
   const BENCHMARK_SAMPLES = 3;
   const BENCHMARK_CALIBRATION_PROBE_ITERATIONS = 200;
@@ -433,19 +433,9 @@ describe("Vs schemasafe", () => {
   }
 
   const jsonTestsToSkip = {
-    "maxLength validation": {
-      "two supplementary Unicode code points is long enough":
-        "No one supports this"
-    },
-    "minLength validation": {
-      "one supplementary Unicode code point is not long enough":
-        "No one supports this"
-    },
-
     "items and subitems": "Not implemented",
 
     "$id inside an unknown keyword is not a real identifier": "Not implemented",
-    "validate definition against metaschema": "Not implemented",
     "remote ref, containing refs itself": "Not supported",
     "Location-independent identifier with base URI change in subschema":
       "Not supported",
@@ -476,14 +466,19 @@ describe("Vs schemasafe", () => {
   }
 
   interface BenchmarkResult {
+    id: string;
     file: string;
     group: string;
     test: string;
     iterations: number;
-    schemaShieldSeconds: number;
-    schemaSafeSeconds: number;
-    ratio: number;
-    winner: "SchemaShield" | "SchemaSafe";
+    seconds: number;
+    nanosecondsPerOperation: number;
+    operationsPerSecond: number;
+  }
+
+  interface BenchmarkBaseline {
+    version: number;
+    cases: Record<string, { nanosecondsPerOperation: number }>;
   }
 
   function getSkipReason(groupDescription: string, testDescription: string) {
@@ -581,6 +576,113 @@ describe("Vs schemasafe", () => {
     return median(sampleTimes);
   }
 
+  function benchmarkCaseId(benchmarkCase: BenchmarkCase) {
+    return `${benchmarkCase.file} :: ${benchmarkCase.groupDescription} :: ${benchmarkCase.testDescription}`;
+  }
+
+  function resolveBenchmarkArtifact(value: string, variable: string) {
+    const artifactRoot = path.resolve("./tmp");
+    const artifactPath = path.resolve(value);
+    if (!artifactPath.startsWith(`${artifactRoot}${path.sep}`)) {
+      throw new Error(`${variable} must point to a file under ./tmp`);
+    }
+    return artifactPath;
+  }
+
+  function loadBaseline(): BenchmarkBaseline | null {
+    const value = process.env.SCHEMA_SHIELD_BENCHMARK_BASELINE;
+    if (typeof value !== "string" || value.length === 0) {
+      return null;
+    }
+
+    const baseline = JSON.parse(
+      fs.readFileSync(
+        resolveBenchmarkArtifact(value, "SCHEMA_SHIELD_BENCHMARK_BASELINE"),
+        "utf8"
+      )
+    );
+    if (
+      baseline?.version !== 1 ||
+      typeof baseline.cases !== "object" ||
+      baseline.cases === null ||
+      Array.isArray(baseline.cases)
+    ) {
+      throw new Error("Invalid SchemaShield benchmark baseline");
+    }
+
+    for (const entry of Object.values(baseline.cases) as any[]) {
+      if (
+        typeof entry?.nanosecondsPerOperation !== "number" ||
+        !Number.isFinite(entry.nanosecondsPerOperation) ||
+        entry.nanosecondsPerOperation <= 0
+      ) {
+        throw new Error("Invalid SchemaShield benchmark baseline case");
+      }
+    }
+    return baseline;
+  }
+
+  function writeBenchmarkSnapshot(results: BenchmarkResult[]) {
+    const value = process.env.SCHEMA_SHIELD_BENCHMARK_OUTPUT;
+    if (typeof value !== "string" || value.length === 0) {
+      return;
+    }
+
+    const cases = Object.fromEntries(
+      results.map((result) => [
+        result.id,
+        {
+          nanosecondsPerOperation: result.nanosecondsPerOperation,
+          operationsPerSecond: result.operationsPerSecond
+        }
+      ])
+    );
+    const outputPath = resolveBenchmarkArtifact(
+      value,
+      "SCHEMA_SHIELD_BENCHMARK_OUTPUT"
+    );
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    fs.writeFileSync(
+      outputPath,
+      `${JSON.stringify({ version: 1, cases }, null, 2)}\n`
+    );
+  }
+
+  it("creates missing directories for a local benchmark baseline", () => {
+    const previousOutput = process.env.SCHEMA_SHIELD_BENCHMARK_OUTPUT;
+    const output = `./tmp/benchmark-tests-${process.pid}/nested/baseline.json`;
+    try {
+      process.env.SCHEMA_SHIELD_BENCHMARK_OUTPUT = output;
+      writeBenchmarkSnapshot([
+        {
+          id: "fixture",
+          file: "fixture",
+          group: "fixture",
+          test: "fixture",
+          iterations: 1,
+          seconds: 0.000001,
+          nanosecondsPerOperation: 1000,
+          operationsPerSecond: 1000000
+        }
+      ]);
+      expect(JSON.parse(fs.readFileSync(output, "utf8"))).toEqual({
+        version: 1,
+        cases: {
+          fixture: {
+            nanosecondsPerOperation: 1000,
+            operationsPerSecond: 1000000
+          }
+        }
+      });
+    } finally {
+      if (typeof previousOutput === "string") {
+        process.env.SCHEMA_SHIELD_BENCHMARK_OUTPUT = previousOutput;
+      } else {
+        delete process.env.SCHEMA_SHIELD_BENCHMARK_OUTPUT;
+      }
+    }
+  });
+
   it("benchmarks draft6 plus optional format suites case-by-case", function () {
     this.timeout(0);
 
@@ -652,11 +754,9 @@ describe("Vs schemasafe", () => {
       group: string;
       test: string;
       expected: boolean;
-      schemaShield: boolean;
-      schemaSafe: boolean;
+      actual: boolean;
     }[] = [];
     const compileErrors: {
-      engine: "SchemaShield" | "SchemaSafe";
       file: string;
       group: string;
       test: string;
@@ -667,31 +767,11 @@ describe("Vs schemasafe", () => {
       const benchmarkCase = benchmarkCases[i];
 
       let schemaShieldValidate: ReturnType<SchemaShield["compile"]>;
-      let schemaSafeValidate: (data: any) => boolean;
 
       try {
         schemaShieldValidate = schemaShield.compile(benchmarkCase.schema);
       } catch (error: any) {
         compileErrors.push({
-          engine: "SchemaShield",
-          file: benchmarkCase.file,
-          group: benchmarkCase.groupDescription,
-          test: benchmarkCase.testDescription,
-          error: error?.message || String(error)
-        });
-        continue;
-      }
-
-      try {
-        schemaSafeValidate = schemasafe.validator(benchmarkCase.schema, {
-          allowUnusedKeywords: true,
-          includeErrors: false,
-          allowUnreachable: true,
-          $schemaDefault: "https://json-schema.org/draft-06/schema"
-        });
-      } catch (error: any) {
-        compileErrors.push({
-          engine: "SchemaSafe",
           file: benchmarkCase.file,
           group: benchmarkCase.groupDescription,
           test: benchmarkCase.testDescription,
@@ -701,34 +781,20 @@ describe("Vs schemasafe", () => {
       }
 
       const schemaShieldValid = schemaShieldValidate(benchmarkCase.data).valid;
-      const schemaSafeValid = schemaSafeValidate(benchmarkCase.data);
 
-      if (
-        schemaShieldValid !== benchmarkCase.valid ||
-        schemaSafeValid !== benchmarkCase.valid
-      ) {
+      if (schemaShieldValid !== benchmarkCase.valid) {
         mismatches.push({
           file: benchmarkCase.file,
           group: benchmarkCase.groupDescription,
           test: benchmarkCase.testDescription,
           expected: benchmarkCase.valid,
-          schemaShield: schemaShieldValid,
-          schemaSafe: schemaSafeValid
+          actual: schemaShieldValid
         });
       }
 
-      const schemaShieldIterations = calibrateIterations(
+      const benchmarkIterations = calibrateIterations(
         schemaShieldValidate,
         benchmarkCase.data
-      );
-      const schemaSafeIterations = calibrateIterations(
-        schemaSafeValidate,
-        benchmarkCase.data
-      );
-
-      const benchmarkIterations = Math.max(
-        schemaShieldIterations,
-        schemaSafeIterations
       );
 
       const warmupIterations = Math.min(
@@ -741,124 +807,63 @@ describe("Vs schemasafe", () => {
         benchmarkCase.data,
         warmupIterations
       );
-      runBenchmarkLoop(
-        schemaSafeValidate,
+      const seconds = measureMedianSeconds(
+        schemaShieldValidate,
         benchmarkCase.data,
-        warmupIterations
+        benchmarkIterations
       );
-
-      let schemaShieldSeconds: number;
-      let schemaSafeSeconds: number;
-
-      // Alternate order to reduce execution-order bias.
-      if (i % 2 === 0) {
-        schemaShieldSeconds = measureMedianSeconds(
-          schemaShieldValidate,
-          benchmarkCase.data,
-          benchmarkIterations
-        );
-        schemaSafeSeconds = measureMedianSeconds(
-          schemaSafeValidate,
-          benchmarkCase.data,
-          benchmarkIterations
-        );
-      } else {
-        schemaSafeSeconds = measureMedianSeconds(
-          schemaSafeValidate,
-          benchmarkCase.data,
-          benchmarkIterations
-        );
-        schemaShieldSeconds = measureMedianSeconds(
-          schemaShieldValidate,
-          benchmarkCase.data,
-          benchmarkIterations
-        );
-      }
-
-      const ratio =
-        schemaSafeSeconds === 0
-          ? Number.POSITIVE_INFINITY
-          : schemaShieldSeconds / schemaSafeSeconds;
+      const nanosecondsPerOperation =
+        (seconds * 1e9) / benchmarkIterations;
 
       results.push({
+        id: benchmarkCaseId(benchmarkCase),
         file: benchmarkCase.file,
         group: benchmarkCase.groupDescription,
         test: benchmarkCase.testDescription,
         iterations: benchmarkIterations,
-        schemaShieldSeconds,
-        schemaSafeSeconds,
-        ratio,
-        winner:
-          schemaShieldSeconds < schemaSafeSeconds
-            ? "SchemaShield"
-            : "SchemaSafe"
+        seconds,
+        nanosecondsPerOperation,
+        operationsPerSecond: 1e9 / nanosecondsPerOperation
       });
     }
 
     expect(results.length).toBeGreaterThan(0);
+    expect(compileErrors).toEqual([]);
+    expect(mismatches).toEqual([]);
 
-    const TOP_SLOWER_LIMIT = 20;
-
-    const slowerResults = results.filter(
-      (result) => result.schemaShieldSeconds > result.schemaSafeSeconds
-    );
-
-    const slowerSchemaShieldByRatio = [...slowerResults]
-      .sort((a, b) => b.ratio - a.ratio)
-      .slice(0, TOP_SLOWER_LIMIT)
-      .map((result) => ({
-        file: result.file,
-        group: result.group,
-        test: result.test,
-        iterations: result.iterations,
-        schemaShieldSeconds: Number(result.schemaShieldSeconds.toFixed(6)),
-        schemaSafeSeconds: Number(result.schemaSafeSeconds.toFixed(6)),
-        deltaSeconds: Number(
-          (result.schemaShieldSeconds - result.schemaSafeSeconds).toFixed(6)
-        ),
-        ratio: Number(result.ratio.toFixed(4))
-      }));
-
-    const slowerSchemaShieldByDelta = [...slowerResults]
+    const slowestCases = [...results]
       .sort(
-        (a, b) =>
-          b.schemaShieldSeconds -
-          b.schemaSafeSeconds -
-          (a.schemaShieldSeconds - a.schemaSafeSeconds)
+        (a, b) => b.nanosecondsPerOperation - a.nanosecondsPerOperation
       )
-      .slice(0, TOP_SLOWER_LIMIT)
+      .slice(0, 20)
       .map((result) => ({
         file: result.file,
         group: result.group,
         test: result.test,
         iterations: result.iterations,
-        schemaShieldSeconds: Number(result.schemaShieldSeconds.toFixed(6)),
-        schemaSafeSeconds: Number(result.schemaSafeSeconds.toFixed(6)),
-        deltaSeconds: Number(
-          (result.schemaShieldSeconds - result.schemaSafeSeconds).toFixed(6)
+        nanosecondsPerOperation: Number(
+          result.nanosecondsPerOperation.toFixed(2)
         ),
-        ratio: Number(result.ratio.toFixed(4))
+        operationsPerSecond: Number(result.operationsPerSecond.toFixed(0))
       }));
 
     const fileTotals = Object.entries(
-      slowerResults.reduce(
+      results.reduce(
         (
           acc: Record<
             string,
-            { count: number; totalDelta: number; ratioSum: number }
+            { count: number; totalNanosecondsPerOperation: number }
           >,
           result
         ) => {
           const current = acc[result.file] || {
             count: 0,
-            totalDelta: 0,
-            ratioSum: 0
+            totalNanosecondsPerOperation: 0
           };
 
           current.count++;
-          current.totalDelta +=
-            result.schemaShieldSeconds - result.schemaSafeSeconds;
-          current.ratioSum += result.ratio;
+          current.totalNanosecondsPerOperation +=
+            result.nanosecondsPerOperation;
 
           acc[result.file] = current;
           return acc;
@@ -869,32 +874,35 @@ describe("Vs schemasafe", () => {
       .map(([file, totals]) => ({
         file,
         count: totals.count,
-        avgRatio: Number((totals.ratioSum / totals.count).toFixed(2)),
-        totalDelta: Number(totals.totalDelta.toFixed(4))
+        averageNanosecondsPerOperation: Number(
+          (totals.totalNanosecondsPerOperation / totals.count).toFixed(2)
+        )
       }))
-      .sort((a, b) => b.totalDelta - a.totalDelta)
+      .sort(
+        (a, b) =>
+          b.averageNanosecondsPerOperation -
+          a.averageNanosecondsPerOperation
+      )
       .slice(0, 10);
 
     const groupTotals = Object.entries(
-      slowerResults.reduce(
+      results.reduce(
         (
           acc: Record<
             string,
-            { count: number; totalDelta: number; ratioSum: number }
+            { count: number; totalNanosecondsPerOperation: number }
           >,
           result
         ) => {
           const key = `${result.file} :: ${result.group}`;
           const current = acc[key] || {
             count: 0,
-            totalDelta: 0,
-            ratioSum: 0
+            totalNanosecondsPerOperation: 0
           };
 
           current.count++;
-          current.totalDelta +=
-            result.schemaShieldSeconds - result.schemaSafeSeconds;
-          current.ratioSum += result.ratio;
+          current.totalNanosecondsPerOperation +=
+            result.nanosecondsPerOperation;
 
           acc[key] = current;
           return acc;
@@ -905,11 +913,44 @@ describe("Vs schemasafe", () => {
       .map(([group, totals]) => ({
         group,
         count: totals.count,
-        avgRatio: Number((totals.ratioSum / totals.count).toFixed(2)),
-        totalDelta: Number(totals.totalDelta.toFixed(4))
+        averageNanosecondsPerOperation: Number(
+          (totals.totalNanosecondsPerOperation / totals.count).toFixed(2)
+        )
       }))
-      .sort((a, b) => b.totalDelta - a.totalDelta)
+      .sort(
+        (a, b) =>
+          b.averageNanosecondsPerOperation -
+          a.averageNanosecondsPerOperation
+      )
       .slice(0, 10);
+
+    const baseline = loadBaseline();
+    const baselineComparisons = baseline
+      ? results
+          .filter(
+            (result) =>
+              typeof baseline.cases[result.id]?.nanosecondsPerOperation ===
+              "number"
+          )
+          .map((result) => {
+            const baselineNanoseconds =
+              baseline.cases[result.id].nanosecondsPerOperation;
+            return {
+              file: result.file,
+              group: result.group,
+              test: result.test,
+              baselineNanoseconds: Number(baselineNanoseconds.toFixed(2)),
+              currentNanoseconds: Number(
+                result.nanosecondsPerOperation.toFixed(2)
+              ),
+              ratio: Number(
+                (result.nanosecondsPerOperation / baselineNanoseconds).toFixed(3)
+              )
+            };
+          })
+          .sort((a, b) => b.ratio - a.ratio)
+          .slice(0, 20)
+      : [];
 
     const iterationStats = {
       min: Math.min(...results.map((result) => result.iterations)),
@@ -932,7 +973,6 @@ describe("Vs schemasafe", () => {
     });
     console.log("Adaptive iteration stats:", iterationStats);
     console.log("Benchmark cases executed:", results.length);
-    console.log("Cases where SchemaShield is slower:", slowerResults.length);
     console.log("Skipped draft6/optional cases:", skippedCases.length);
     console.log("Compile/runtime errors:", compileErrors.length);
     console.log("Result mismatches:", mismatches.length);
@@ -945,20 +985,20 @@ describe("Vs schemasafe", () => {
       console.table(mismatches.slice(0, 30));
     }
 
-    console.log(
-      `Top ${TOP_SLOWER_LIMIT} where SchemaShield is slower vs SchemaSafe (by ratio):`
-    );
-    console.table(slowerSchemaShieldByRatio);
+    console.log("Top 20 slowest SchemaShield cases:");
+    console.table(slowestCases);
 
-    console.log(
-      `Top ${TOP_SLOWER_LIMIT} where SchemaShield is slower vs SchemaSafe (by delta):`
-    );
-    console.table(slowerSchemaShieldByDelta);
-
-    console.log("Top 10 files by total delta:");
+    console.log("Top 10 files by average cost:");
     console.table(fileTotals);
 
-    console.log("Top 10 groups by total delta:");
+    console.log("Top 10 groups by average cost:");
     console.table(groupTotals);
+
+    if (baseline) {
+      console.log("Top 20 changes against the SchemaShield baseline:");
+      console.table(baselineComparisons);
+    }
+
+    writeBenchmarkSnapshot(results);
   });
 });

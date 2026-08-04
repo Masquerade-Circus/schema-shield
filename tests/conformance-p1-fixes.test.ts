@@ -224,7 +224,7 @@ describe("dialect keyword activation and indexing", () => {
     }
 
     const shield = new SchemaShield();
-    shield.addSchema(
+    shield.addMetaSchema(
       {
         $schema: DRAFT_2020,
         $id: "https://example.com/meta/no-compatibility",
@@ -285,7 +285,7 @@ describe("modern resource vocabularies", () => {
       ]
     ]) {
       const shield = new SchemaShield();
-      shield.addSchema(
+      shield.addMetaSchema(
         {
           $schema: draft,
           $id: customMetaschema,
@@ -308,7 +308,7 @@ describe("modern resource vocabularies", () => {
 
   it("does not traverse subschemas under keywords from an inactive vocabulary", () => {
     const shield = new SchemaShield();
-    shield.addSchema(
+    shield.addMetaSchema(
       {
         $schema: DRAFT_2020,
         $id: "https://example.com/meta/core-only",
@@ -333,7 +333,7 @@ describe("modern resource vocabularies", () => {
 
   it("does not apply defaults or enable evaluated tracking for inactive vocabularies", () => {
     const shield = new SchemaShield({ useDefaults: true });
-    shield.addSchema(
+    shield.addMetaSchema(
       {
         $schema: DRAFT_2020,
         $id: "https://example.com/meta/core-only-runtime",
@@ -373,7 +373,7 @@ describe("modern resource vocabularies", () => {
     }
 
     const shield = new SchemaShield();
-    shield.addSchema(
+    shield.addMetaSchema(
       {
         $schema: DRAFT_2020,
         $id: "https://example.com/meta/definitions-compatibility",
@@ -408,26 +408,26 @@ describe("modern resource vocabularies", () => {
 
     for (const required of [false, true]) {
       const shield = new SchemaShield();
-      shield.addSchema(
-        {
-          $schema: DRAFT_2020,
-          $id: `https://example.com/meta/unknown-${required}`,
-          $vocabulary: {
-            "https://json-schema.org/draft/2020-12/vocab/core": true,
-            "https://example.com/vocab/unknown": required
-          }
-        },
-        { uri: `https://example.com/meta/unknown-${required}` }
-      );
+      const metaschema = {
+        $schema: DRAFT_2020,
+        $id: `https://example.com/meta/unknown-${required}`,
+        $vocabulary: {
+          "https://json-schema.org/draft/2020-12/vocab/core": true,
+          "https://example.com/vocab/unknown": required
+        }
+      };
 
       if (required) {
         const error = captureCompileError(() =>
-          shield.compile({
-            $schema: `https://example.com/meta/unknown-${required}`
+          shield.addMetaSchema(metaschema, {
+            uri: `https://example.com/meta/unknown-${required}`
           })
         );
         expect(error.code).toBe("UNKNOWN_REQUIRED_VOCABULARY");
       } else {
+        shield.addMetaSchema(metaschema, {
+          uri: `https://example.com/meta/unknown-${required}`
+        });
         expect(
           shield.compile({
             $schema: `https://example.com/meta/unknown-${required}`

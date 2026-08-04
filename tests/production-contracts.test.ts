@@ -112,13 +112,16 @@ describe("production architecture contracts", () => {
     expect(helperType).toBe("function");
   });
 
-  it("keeps getKeyword as a public four-argument function", () => {
-    const shield = new SchemaShield();
-    shield.addKeyword("publicKeyword", () => {});
-    const keyword = shield.getKeyword("publicKeyword");
+  it("publishes only the implemented root package entry point", () => {
+    const packageMetadata = JSON.parse(fs.readFileSync("package.json", "utf8"));
 
-    expect(typeof keyword).toBe("function");
-    expect((keyword as Function).length).toBeLessThanOrEqual(4);
+    expect(packageMetadata.exports).toEqual({
+      ".": {
+        types: "./dist/index.d.ts",
+        import: "./dist/index.mjs",
+        require: "./dist/index.js"
+      }
+    });
   });
 
   it("contains no codegen or global interpreter structures", () => {

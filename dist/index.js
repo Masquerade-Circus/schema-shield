@@ -2,6 +2,10 @@ var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+var __commonJS = (cb, mod) => function __require() {
+  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+};
 var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
@@ -15,6 +19,1591 @@ var __copyProps = (to, from, except, desc) => {
   return to;
 };
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+var __publicField = (obj, key, value) => {
+  __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
+  return value;
+};
+var __accessCheck = (obj, member, msg) => {
+  if (!member.has(obj))
+    throw TypeError("Cannot " + msg);
+};
+var __privateAdd = (obj, member, value) => {
+  if (member.has(obj))
+    throw TypeError("Cannot add the same private member more than once");
+  member instanceof WeakSet ? member.add(obj) : member.set(obj, value);
+};
+var __privateMethod = (obj, member, method) => {
+  __accessCheck(obj, member, "access private method");
+  return method;
+};
+
+// lib/official-meta-schemas.json
+var require_official_meta_schemas = __commonJS({
+  "lib/official-meta-schemas.json"(exports, module2) {
+    module2.exports = {
+      draft4: {
+        id: "http://json-schema.org/draft-04/schema#",
+        $schema: "http://json-schema.org/draft-04/schema#",
+        description: "Core schema meta-schema",
+        definitions: {
+          schemaArray: {
+            type: "array",
+            minItems: 1,
+            items: {
+              $ref: "#"
+            }
+          },
+          positiveInteger: {
+            type: "integer",
+            minimum: 0
+          },
+          positiveIntegerDefault0: {
+            allOf: [
+              {
+                $ref: "#/definitions/positiveInteger"
+              },
+              {
+                default: 0
+              }
+            ]
+          },
+          simpleTypes: {
+            enum: [
+              "array",
+              "boolean",
+              "integer",
+              "null",
+              "number",
+              "object",
+              "string"
+            ]
+          },
+          stringArray: {
+            type: "array",
+            items: {
+              type: "string"
+            },
+            minItems: 1,
+            uniqueItems: true
+          }
+        },
+        type: "object",
+        properties: {
+          id: {
+            type: "string"
+          },
+          $schema: {
+            type: "string"
+          },
+          title: {
+            type: "string"
+          },
+          description: {
+            type: "string"
+          },
+          default: {},
+          multipleOf: {
+            type: "number",
+            minimum: 0,
+            exclusiveMinimum: true
+          },
+          maximum: {
+            type: "number"
+          },
+          exclusiveMaximum: {
+            type: "boolean",
+            default: false
+          },
+          minimum: {
+            type: "number"
+          },
+          exclusiveMinimum: {
+            type: "boolean",
+            default: false
+          },
+          maxLength: {
+            $ref: "#/definitions/positiveInteger"
+          },
+          minLength: {
+            $ref: "#/definitions/positiveIntegerDefault0"
+          },
+          pattern: {
+            type: "string",
+            format: "regex"
+          },
+          additionalItems: {
+            anyOf: [
+              {
+                type: "boolean"
+              },
+              {
+                $ref: "#"
+              }
+            ],
+            default: {}
+          },
+          items: {
+            anyOf: [
+              {
+                $ref: "#"
+              },
+              {
+                $ref: "#/definitions/schemaArray"
+              }
+            ],
+            default: {}
+          },
+          maxItems: {
+            $ref: "#/definitions/positiveInteger"
+          },
+          minItems: {
+            $ref: "#/definitions/positiveIntegerDefault0"
+          },
+          uniqueItems: {
+            type: "boolean",
+            default: false
+          },
+          maxProperties: {
+            $ref: "#/definitions/positiveInteger"
+          },
+          minProperties: {
+            $ref: "#/definitions/positiveIntegerDefault0"
+          },
+          required: {
+            $ref: "#/definitions/stringArray"
+          },
+          additionalProperties: {
+            anyOf: [
+              {
+                type: "boolean"
+              },
+              {
+                $ref: "#"
+              }
+            ],
+            default: {}
+          },
+          definitions: {
+            type: "object",
+            additionalProperties: {
+              $ref: "#"
+            },
+            default: {}
+          },
+          properties: {
+            type: "object",
+            additionalProperties: {
+              $ref: "#"
+            },
+            default: {}
+          },
+          patternProperties: {
+            type: "object",
+            additionalProperties: {
+              $ref: "#"
+            },
+            default: {}
+          },
+          dependencies: {
+            type: "object",
+            additionalProperties: {
+              anyOf: [
+                {
+                  $ref: "#"
+                },
+                {
+                  $ref: "#/definitions/stringArray"
+                }
+              ]
+            }
+          },
+          enum: {
+            type: "array",
+            minItems: 1,
+            uniqueItems: true
+          },
+          type: {
+            anyOf: [
+              {
+                $ref: "#/definitions/simpleTypes"
+              },
+              {
+                type: "array",
+                items: {
+                  $ref: "#/definitions/simpleTypes"
+                },
+                minItems: 1,
+                uniqueItems: true
+              }
+            ]
+          },
+          format: {
+            type: "string"
+          },
+          allOf: {
+            $ref: "#/definitions/schemaArray"
+          },
+          anyOf: {
+            $ref: "#/definitions/schemaArray"
+          },
+          oneOf: {
+            $ref: "#/definitions/schemaArray"
+          },
+          not: {
+            $ref: "#"
+          }
+        },
+        dependencies: {
+          exclusiveMaximum: [
+            "maximum"
+          ],
+          exclusiveMinimum: [
+            "minimum"
+          ]
+        },
+        default: {}
+      },
+      draft6: {
+        $schema: "http://json-schema.org/draft-06/schema#",
+        $id: "http://json-schema.org/draft-06/schema#",
+        title: "Core schema meta-schema",
+        definitions: {
+          schemaArray: {
+            type: "array",
+            minItems: 1,
+            items: {
+              $ref: "#"
+            }
+          },
+          nonNegativeInteger: {
+            type: "integer",
+            minimum: 0
+          },
+          nonNegativeIntegerDefault0: {
+            allOf: [
+              {
+                $ref: "#/definitions/nonNegativeInteger"
+              },
+              {
+                default: 0
+              }
+            ]
+          },
+          simpleTypes: {
+            enum: [
+              "array",
+              "boolean",
+              "integer",
+              "null",
+              "number",
+              "object",
+              "string"
+            ]
+          },
+          stringArray: {
+            type: "array",
+            items: {
+              type: "string"
+            },
+            uniqueItems: true,
+            default: []
+          }
+        },
+        type: [
+          "object",
+          "boolean"
+        ],
+        properties: {
+          $id: {
+            type: "string",
+            format: "uri-reference"
+          },
+          $schema: {
+            type: "string",
+            format: "uri"
+          },
+          $ref: {
+            type: "string",
+            format: "uri-reference"
+          },
+          title: {
+            type: "string"
+          },
+          description: {
+            type: "string"
+          },
+          default: {},
+          examples: {
+            type: "array",
+            items: {}
+          },
+          multipleOf: {
+            type: "number",
+            exclusiveMinimum: 0
+          },
+          maximum: {
+            type: "number"
+          },
+          exclusiveMaximum: {
+            type: "number"
+          },
+          minimum: {
+            type: "number"
+          },
+          exclusiveMinimum: {
+            type: "number"
+          },
+          maxLength: {
+            $ref: "#/definitions/nonNegativeInteger"
+          },
+          minLength: {
+            $ref: "#/definitions/nonNegativeIntegerDefault0"
+          },
+          pattern: {
+            type: "string",
+            format: "regex"
+          },
+          additionalItems: {
+            $ref: "#"
+          },
+          items: {
+            anyOf: [
+              {
+                $ref: "#"
+              },
+              {
+                $ref: "#/definitions/schemaArray"
+              }
+            ],
+            default: {}
+          },
+          maxItems: {
+            $ref: "#/definitions/nonNegativeInteger"
+          },
+          minItems: {
+            $ref: "#/definitions/nonNegativeIntegerDefault0"
+          },
+          uniqueItems: {
+            type: "boolean",
+            default: false
+          },
+          contains: {
+            $ref: "#"
+          },
+          maxProperties: {
+            $ref: "#/definitions/nonNegativeInteger"
+          },
+          minProperties: {
+            $ref: "#/definitions/nonNegativeIntegerDefault0"
+          },
+          required: {
+            $ref: "#/definitions/stringArray"
+          },
+          additionalProperties: {
+            $ref: "#"
+          },
+          definitions: {
+            type: "object",
+            additionalProperties: {
+              $ref: "#"
+            },
+            default: {}
+          },
+          properties: {
+            type: "object",
+            additionalProperties: {
+              $ref: "#"
+            },
+            default: {}
+          },
+          patternProperties: {
+            type: "object",
+            additionalProperties: {
+              $ref: "#"
+            },
+            propertyNames: {
+              format: "regex"
+            },
+            default: {}
+          },
+          dependencies: {
+            type: "object",
+            additionalProperties: {
+              anyOf: [
+                {
+                  $ref: "#"
+                },
+                {
+                  $ref: "#/definitions/stringArray"
+                }
+              ]
+            }
+          },
+          propertyNames: {
+            $ref: "#"
+          },
+          const: {},
+          enum: {
+            type: "array",
+            minItems: 1,
+            uniqueItems: true
+          },
+          type: {
+            anyOf: [
+              {
+                $ref: "#/definitions/simpleTypes"
+              },
+              {
+                type: "array",
+                items: {
+                  $ref: "#/definitions/simpleTypes"
+                },
+                minItems: 1,
+                uniqueItems: true
+              }
+            ]
+          },
+          format: {
+            type: "string"
+          },
+          allOf: {
+            $ref: "#/definitions/schemaArray"
+          },
+          anyOf: {
+            $ref: "#/definitions/schemaArray"
+          },
+          oneOf: {
+            $ref: "#/definitions/schemaArray"
+          },
+          not: {
+            $ref: "#"
+          }
+        },
+        default: {}
+      },
+      draft7: {
+        $schema: "http://json-schema.org/draft-07/schema#",
+        $id: "http://json-schema.org/draft-07/schema#",
+        title: "Core schema meta-schema",
+        definitions: {
+          schemaArray: {
+            type: "array",
+            minItems: 1,
+            items: {
+              $ref: "#"
+            }
+          },
+          nonNegativeInteger: {
+            type: "integer",
+            minimum: 0
+          },
+          nonNegativeIntegerDefault0: {
+            allOf: [
+              {
+                $ref: "#/definitions/nonNegativeInteger"
+              },
+              {
+                default: 0
+              }
+            ]
+          },
+          simpleTypes: {
+            enum: [
+              "array",
+              "boolean",
+              "integer",
+              "null",
+              "number",
+              "object",
+              "string"
+            ]
+          },
+          stringArray: {
+            type: "array",
+            items: {
+              type: "string"
+            },
+            uniqueItems: true,
+            default: []
+          }
+        },
+        type: [
+          "object",
+          "boolean"
+        ],
+        properties: {
+          $id: {
+            type: "string",
+            format: "uri-reference"
+          },
+          $schema: {
+            type: "string",
+            format: "uri"
+          },
+          $ref: {
+            type: "string",
+            format: "uri-reference"
+          },
+          $comment: {
+            type: "string"
+          },
+          title: {
+            type: "string"
+          },
+          description: {
+            type: "string"
+          },
+          default: true,
+          readOnly: {
+            type: "boolean",
+            default: false
+          },
+          writeOnly: {
+            type: "boolean",
+            default: false
+          },
+          examples: {
+            type: "array",
+            items: true
+          },
+          multipleOf: {
+            type: "number",
+            exclusiveMinimum: 0
+          },
+          maximum: {
+            type: "number"
+          },
+          exclusiveMaximum: {
+            type: "number"
+          },
+          minimum: {
+            type: "number"
+          },
+          exclusiveMinimum: {
+            type: "number"
+          },
+          maxLength: {
+            $ref: "#/definitions/nonNegativeInteger"
+          },
+          minLength: {
+            $ref: "#/definitions/nonNegativeIntegerDefault0"
+          },
+          pattern: {
+            type: "string",
+            format: "regex"
+          },
+          additionalItems: {
+            $ref: "#"
+          },
+          items: {
+            anyOf: [
+              {
+                $ref: "#"
+              },
+              {
+                $ref: "#/definitions/schemaArray"
+              }
+            ],
+            default: true
+          },
+          maxItems: {
+            $ref: "#/definitions/nonNegativeInteger"
+          },
+          minItems: {
+            $ref: "#/definitions/nonNegativeIntegerDefault0"
+          },
+          uniqueItems: {
+            type: "boolean",
+            default: false
+          },
+          contains: {
+            $ref: "#"
+          },
+          maxProperties: {
+            $ref: "#/definitions/nonNegativeInteger"
+          },
+          minProperties: {
+            $ref: "#/definitions/nonNegativeIntegerDefault0"
+          },
+          required: {
+            $ref: "#/definitions/stringArray"
+          },
+          additionalProperties: {
+            $ref: "#"
+          },
+          definitions: {
+            type: "object",
+            additionalProperties: {
+              $ref: "#"
+            },
+            default: {}
+          },
+          properties: {
+            type: "object",
+            additionalProperties: {
+              $ref: "#"
+            },
+            default: {}
+          },
+          patternProperties: {
+            type: "object",
+            additionalProperties: {
+              $ref: "#"
+            },
+            propertyNames: {
+              format: "regex"
+            },
+            default: {}
+          },
+          dependencies: {
+            type: "object",
+            additionalProperties: {
+              anyOf: [
+                {
+                  $ref: "#"
+                },
+                {
+                  $ref: "#/definitions/stringArray"
+                }
+              ]
+            }
+          },
+          propertyNames: {
+            $ref: "#"
+          },
+          const: true,
+          enum: {
+            type: "array",
+            items: true,
+            minItems: 1,
+            uniqueItems: true
+          },
+          type: {
+            anyOf: [
+              {
+                $ref: "#/definitions/simpleTypes"
+              },
+              {
+                type: "array",
+                items: {
+                  $ref: "#/definitions/simpleTypes"
+                },
+                minItems: 1,
+                uniqueItems: true
+              }
+            ]
+          },
+          format: {
+            type: "string"
+          },
+          contentMediaType: {
+            type: "string"
+          },
+          contentEncoding: {
+            type: "string"
+          },
+          if: {
+            $ref: "#"
+          },
+          then: {
+            $ref: "#"
+          },
+          else: {
+            $ref: "#"
+          },
+          allOf: {
+            $ref: "#/definitions/schemaArray"
+          },
+          anyOf: {
+            $ref: "#/definitions/schemaArray"
+          },
+          oneOf: {
+            $ref: "#/definitions/schemaArray"
+          },
+          not: {
+            $ref: "#"
+          }
+        },
+        default: true
+      },
+      draft2019: {
+        $schema: "https://json-schema.org/draft/2019-09/schema",
+        $id: "https://json-schema.org/draft/2019-09/schema",
+        $vocabulary: {
+          "https://json-schema.org/draft/2019-09/vocab/core": true,
+          "https://json-schema.org/draft/2019-09/vocab/applicator": true,
+          "https://json-schema.org/draft/2019-09/vocab/validation": true,
+          "https://json-schema.org/draft/2019-09/vocab/meta-data": true,
+          "https://json-schema.org/draft/2019-09/vocab/format": false,
+          "https://json-schema.org/draft/2019-09/vocab/content": true
+        },
+        $recursiveAnchor: true,
+        title: "Core and Validation specifications meta-schema",
+        allOf: [
+          {
+            $ref: "meta/core"
+          },
+          {
+            $ref: "meta/applicator"
+          },
+          {
+            $ref: "meta/validation"
+          },
+          {
+            $ref: "meta/meta-data"
+          },
+          {
+            $ref: "meta/format"
+          },
+          {
+            $ref: "meta/content"
+          }
+        ],
+        type: [
+          "object",
+          "boolean"
+        ],
+        properties: {
+          definitions: {
+            $comment: "While no longer an official keyword as it is replaced by $defs, this keyword is retained in the meta-schema to prevent incompatible extensions as it remains in common use.",
+            type: "object",
+            additionalProperties: {
+              $recursiveRef: "#"
+            },
+            default: {}
+          },
+          dependencies: {
+            $comment: '"dependencies" is no longer a keyword, but schema authors should avoid redefining it to facilitate a smooth transition to "dependentSchemas" and "dependentRequired"',
+            type: "object",
+            additionalProperties: {
+              anyOf: [
+                {
+                  $recursiveRef: "#"
+                },
+                {
+                  $ref: "meta/validation#/$defs/stringArray"
+                }
+              ]
+            }
+          }
+        }
+      },
+      draft2019Core: {
+        $schema: "https://json-schema.org/draft/2019-09/schema",
+        $id: "https://json-schema.org/draft/2019-09/meta/core",
+        $vocabulary: {
+          "https://json-schema.org/draft/2019-09/vocab/core": true
+        },
+        $recursiveAnchor: true,
+        title: "Core vocabulary meta-schema",
+        type: [
+          "object",
+          "boolean"
+        ],
+        properties: {
+          $id: {
+            type: "string",
+            format: "uri-reference",
+            $comment: "Non-empty fragments not allowed.",
+            pattern: "^[^#]*#?$"
+          },
+          $schema: {
+            type: "string",
+            format: "uri"
+          },
+          $anchor: {
+            type: "string",
+            pattern: "^[A-Za-z][-A-Za-z0-9.:_]*$"
+          },
+          $ref: {
+            type: "string",
+            format: "uri-reference"
+          },
+          $recursiveRef: {
+            type: "string",
+            format: "uri-reference"
+          },
+          $recursiveAnchor: {
+            type: "boolean",
+            default: false
+          },
+          $vocabulary: {
+            type: "object",
+            propertyNames: {
+              type: "string",
+              format: "uri"
+            },
+            additionalProperties: {
+              type: "boolean"
+            }
+          },
+          $comment: {
+            type: "string"
+          },
+          $defs: {
+            type: "object",
+            additionalProperties: {
+              $recursiveRef: "#"
+            },
+            default: {}
+          }
+        }
+      },
+      draft2019Applicator: {
+        $schema: "https://json-schema.org/draft/2019-09/schema",
+        $id: "https://json-schema.org/draft/2019-09/meta/applicator",
+        $vocabulary: {
+          "https://json-schema.org/draft/2019-09/vocab/applicator": true
+        },
+        $recursiveAnchor: true,
+        title: "Applicator vocabulary meta-schema",
+        type: [
+          "object",
+          "boolean"
+        ],
+        properties: {
+          additionalItems: {
+            $recursiveRef: "#"
+          },
+          unevaluatedItems: {
+            $recursiveRef: "#"
+          },
+          items: {
+            anyOf: [
+              {
+                $recursiveRef: "#"
+              },
+              {
+                $ref: "#/$defs/schemaArray"
+              }
+            ]
+          },
+          contains: {
+            $recursiveRef: "#"
+          },
+          additionalProperties: {
+            $recursiveRef: "#"
+          },
+          unevaluatedProperties: {
+            $recursiveRef: "#"
+          },
+          properties: {
+            type: "object",
+            additionalProperties: {
+              $recursiveRef: "#"
+            },
+            default: {}
+          },
+          patternProperties: {
+            type: "object",
+            additionalProperties: {
+              $recursiveRef: "#"
+            },
+            propertyNames: {
+              format: "regex"
+            },
+            default: {}
+          },
+          dependentSchemas: {
+            type: "object",
+            additionalProperties: {
+              $recursiveRef: "#"
+            }
+          },
+          propertyNames: {
+            $recursiveRef: "#"
+          },
+          if: {
+            $recursiveRef: "#"
+          },
+          then: {
+            $recursiveRef: "#"
+          },
+          else: {
+            $recursiveRef: "#"
+          },
+          allOf: {
+            $ref: "#/$defs/schemaArray"
+          },
+          anyOf: {
+            $ref: "#/$defs/schemaArray"
+          },
+          oneOf: {
+            $ref: "#/$defs/schemaArray"
+          },
+          not: {
+            $recursiveRef: "#"
+          }
+        },
+        $defs: {
+          schemaArray: {
+            type: "array",
+            minItems: 1,
+            items: {
+              $recursiveRef: "#"
+            }
+          }
+        }
+      },
+      draft2019Validation: {
+        $schema: "https://json-schema.org/draft/2019-09/schema",
+        $id: "https://json-schema.org/draft/2019-09/meta/validation",
+        $vocabulary: {
+          "https://json-schema.org/draft/2019-09/vocab/validation": true
+        },
+        $recursiveAnchor: true,
+        title: "Validation vocabulary meta-schema",
+        type: [
+          "object",
+          "boolean"
+        ],
+        properties: {
+          multipleOf: {
+            type: "number",
+            exclusiveMinimum: 0
+          },
+          maximum: {
+            type: "number"
+          },
+          exclusiveMaximum: {
+            type: "number"
+          },
+          minimum: {
+            type: "number"
+          },
+          exclusiveMinimum: {
+            type: "number"
+          },
+          maxLength: {
+            $ref: "#/$defs/nonNegativeInteger"
+          },
+          minLength: {
+            $ref: "#/$defs/nonNegativeIntegerDefault0"
+          },
+          pattern: {
+            type: "string",
+            format: "regex"
+          },
+          maxItems: {
+            $ref: "#/$defs/nonNegativeInteger"
+          },
+          minItems: {
+            $ref: "#/$defs/nonNegativeIntegerDefault0"
+          },
+          uniqueItems: {
+            type: "boolean",
+            default: false
+          },
+          maxContains: {
+            $ref: "#/$defs/nonNegativeInteger"
+          },
+          minContains: {
+            $ref: "#/$defs/nonNegativeInteger",
+            default: 1
+          },
+          maxProperties: {
+            $ref: "#/$defs/nonNegativeInteger"
+          },
+          minProperties: {
+            $ref: "#/$defs/nonNegativeIntegerDefault0"
+          },
+          required: {
+            $ref: "#/$defs/stringArray"
+          },
+          dependentRequired: {
+            type: "object",
+            additionalProperties: {
+              $ref: "#/$defs/stringArray"
+            }
+          },
+          const: true,
+          enum: {
+            type: "array",
+            items: true
+          },
+          type: {
+            anyOf: [
+              {
+                $ref: "#/$defs/simpleTypes"
+              },
+              {
+                type: "array",
+                items: {
+                  $ref: "#/$defs/simpleTypes"
+                },
+                minItems: 1,
+                uniqueItems: true
+              }
+            ]
+          }
+        },
+        $defs: {
+          nonNegativeInteger: {
+            type: "integer",
+            minimum: 0
+          },
+          nonNegativeIntegerDefault0: {
+            $ref: "#/$defs/nonNegativeInteger",
+            default: 0
+          },
+          simpleTypes: {
+            enum: [
+              "array",
+              "boolean",
+              "integer",
+              "null",
+              "number",
+              "object",
+              "string"
+            ]
+          },
+          stringArray: {
+            type: "array",
+            items: {
+              type: "string"
+            },
+            uniqueItems: true,
+            default: []
+          }
+        }
+      },
+      draft2019Metadata: {
+        $schema: "https://json-schema.org/draft/2019-09/schema",
+        $id: "https://json-schema.org/draft/2019-09/meta/meta-data",
+        $vocabulary: {
+          "https://json-schema.org/draft/2019-09/vocab/meta-data": true
+        },
+        $recursiveAnchor: true,
+        title: "Meta-data vocabulary meta-schema",
+        type: [
+          "object",
+          "boolean"
+        ],
+        properties: {
+          title: {
+            type: "string"
+          },
+          description: {
+            type: "string"
+          },
+          default: true,
+          deprecated: {
+            type: "boolean",
+            default: false
+          },
+          readOnly: {
+            type: "boolean",
+            default: false
+          },
+          writeOnly: {
+            type: "boolean",
+            default: false
+          },
+          examples: {
+            type: "array",
+            items: true
+          }
+        }
+      },
+      draft2019Format: {
+        $schema: "https://json-schema.org/draft/2019-09/schema",
+        $id: "https://json-schema.org/draft/2019-09/meta/format",
+        $vocabulary: {
+          "https://json-schema.org/draft/2019-09/vocab/format": true
+        },
+        $recursiveAnchor: true,
+        title: "Format vocabulary meta-schema",
+        type: [
+          "object",
+          "boolean"
+        ],
+        properties: {
+          format: {
+            type: "string"
+          }
+        }
+      },
+      draft2019Content: {
+        $schema: "https://json-schema.org/draft/2019-09/schema",
+        $id: "https://json-schema.org/draft/2019-09/meta/content",
+        $vocabulary: {
+          "https://json-schema.org/draft/2019-09/vocab/content": true
+        },
+        $recursiveAnchor: true,
+        title: "Content vocabulary meta-schema",
+        type: [
+          "object",
+          "boolean"
+        ],
+        properties: {
+          contentMediaType: {
+            type: "string"
+          },
+          contentEncoding: {
+            type: "string"
+          },
+          contentSchema: {
+            $recursiveRef: "#"
+          }
+        }
+      },
+      draft2020: {
+        $schema: "https://json-schema.org/draft/2020-12/schema",
+        $id: "https://json-schema.org/draft/2020-12/schema",
+        $vocabulary: {
+          "https://json-schema.org/draft/2020-12/vocab/core": true,
+          "https://json-schema.org/draft/2020-12/vocab/applicator": true,
+          "https://json-schema.org/draft/2020-12/vocab/unevaluated": true,
+          "https://json-schema.org/draft/2020-12/vocab/validation": true,
+          "https://json-schema.org/draft/2020-12/vocab/meta-data": true,
+          "https://json-schema.org/draft/2020-12/vocab/format-annotation": true,
+          "https://json-schema.org/draft/2020-12/vocab/content": true
+        },
+        $dynamicAnchor: "meta",
+        title: "Core and Validation specifications meta-schema",
+        allOf: [
+          {
+            $ref: "meta/core"
+          },
+          {
+            $ref: "meta/applicator"
+          },
+          {
+            $ref: "meta/unevaluated"
+          },
+          {
+            $ref: "meta/validation"
+          },
+          {
+            $ref: "meta/meta-data"
+          },
+          {
+            $ref: "meta/format-annotation"
+          },
+          {
+            $ref: "meta/content"
+          }
+        ],
+        type: [
+          "object",
+          "boolean"
+        ],
+        $comment: "This meta-schema also defines keywords that have appeared in previous drafts in order to prevent incompatible extensions as they remain in common use.",
+        properties: {
+          definitions: {
+            $comment: '"definitions" has been replaced by "$defs".',
+            type: "object",
+            additionalProperties: {
+              $dynamicRef: "#meta"
+            },
+            deprecated: true,
+            default: {}
+          },
+          dependencies: {
+            $comment: '"dependencies" has been split and replaced by "dependentSchemas" and "dependentRequired" in order to serve their differing semantics.',
+            type: "object",
+            additionalProperties: {
+              anyOf: [
+                {
+                  $dynamicRef: "#meta"
+                },
+                {
+                  $ref: "meta/validation#/$defs/stringArray"
+                }
+              ]
+            },
+            deprecated: true,
+            default: {}
+          },
+          $recursiveAnchor: {
+            $comment: '"$recursiveAnchor" has been replaced by "$dynamicAnchor".',
+            $ref: "meta/core#/$defs/anchorString",
+            deprecated: true
+          },
+          $recursiveRef: {
+            $comment: '"$recursiveRef" has been replaced by "$dynamicRef".',
+            $ref: "meta/core#/$defs/uriReferenceString",
+            deprecated: true
+          }
+        }
+      },
+      draft2020Core: {
+        $schema: "https://json-schema.org/draft/2020-12/schema",
+        $id: "https://json-schema.org/draft/2020-12/meta/core",
+        $vocabulary: {
+          "https://json-schema.org/draft/2020-12/vocab/core": true
+        },
+        $dynamicAnchor: "meta",
+        title: "Core vocabulary meta-schema",
+        type: [
+          "object",
+          "boolean"
+        ],
+        properties: {
+          $id: {
+            $ref: "#/$defs/uriReferenceString",
+            $comment: "Non-empty fragments not allowed.",
+            pattern: "^[^#]*#?$"
+          },
+          $schema: {
+            $ref: "#/$defs/uriString"
+          },
+          $ref: {
+            $ref: "#/$defs/uriReferenceString"
+          },
+          $anchor: {
+            $ref: "#/$defs/anchorString"
+          },
+          $dynamicRef: {
+            $ref: "#/$defs/uriReferenceString"
+          },
+          $dynamicAnchor: {
+            $ref: "#/$defs/anchorString"
+          },
+          $vocabulary: {
+            type: "object",
+            propertyNames: {
+              $ref: "#/$defs/uriString"
+            },
+            additionalProperties: {
+              type: "boolean"
+            }
+          },
+          $comment: {
+            type: "string"
+          },
+          $defs: {
+            type: "object",
+            additionalProperties: {
+              $dynamicRef: "#meta"
+            }
+          }
+        },
+        $defs: {
+          anchorString: {
+            type: "string",
+            pattern: "^[A-Za-z_][-A-Za-z0-9._]*$"
+          },
+          uriString: {
+            type: "string",
+            format: "uri"
+          },
+          uriReferenceString: {
+            type: "string",
+            format: "uri-reference"
+          }
+        }
+      },
+      draft2020Applicator: {
+        $schema: "https://json-schema.org/draft/2020-12/schema",
+        $id: "https://json-schema.org/draft/2020-12/meta/applicator",
+        $vocabulary: {
+          "https://json-schema.org/draft/2020-12/vocab/applicator": true
+        },
+        $dynamicAnchor: "meta",
+        title: "Applicator vocabulary meta-schema",
+        type: [
+          "object",
+          "boolean"
+        ],
+        properties: {
+          prefixItems: {
+            $ref: "#/$defs/schemaArray"
+          },
+          items: {
+            $dynamicRef: "#meta"
+          },
+          contains: {
+            $dynamicRef: "#meta"
+          },
+          additionalProperties: {
+            $dynamicRef: "#meta"
+          },
+          properties: {
+            type: "object",
+            additionalProperties: {
+              $dynamicRef: "#meta"
+            },
+            default: {}
+          },
+          patternProperties: {
+            type: "object",
+            additionalProperties: {
+              $dynamicRef: "#meta"
+            },
+            propertyNames: {
+              format: "regex"
+            },
+            default: {}
+          },
+          dependentSchemas: {
+            type: "object",
+            additionalProperties: {
+              $dynamicRef: "#meta"
+            },
+            default: {}
+          },
+          propertyNames: {
+            $dynamicRef: "#meta"
+          },
+          if: {
+            $dynamicRef: "#meta"
+          },
+          then: {
+            $dynamicRef: "#meta"
+          },
+          else: {
+            $dynamicRef: "#meta"
+          },
+          allOf: {
+            $ref: "#/$defs/schemaArray"
+          },
+          anyOf: {
+            $ref: "#/$defs/schemaArray"
+          },
+          oneOf: {
+            $ref: "#/$defs/schemaArray"
+          },
+          not: {
+            $dynamicRef: "#meta"
+          }
+        },
+        $defs: {
+          schemaArray: {
+            type: "array",
+            minItems: 1,
+            items: {
+              $dynamicRef: "#meta"
+            }
+          }
+        }
+      },
+      draft2020Unevaluated: {
+        $schema: "https://json-schema.org/draft/2020-12/schema",
+        $id: "https://json-schema.org/draft/2020-12/meta/unevaluated",
+        $vocabulary: {
+          "https://json-schema.org/draft/2020-12/vocab/unevaluated": true
+        },
+        $dynamicAnchor: "meta",
+        title: "Unevaluated applicator vocabulary meta-schema",
+        type: [
+          "object",
+          "boolean"
+        ],
+        properties: {
+          unevaluatedItems: {
+            $dynamicRef: "#meta"
+          },
+          unevaluatedProperties: {
+            $dynamicRef: "#meta"
+          }
+        }
+      },
+      draft2020Validation: {
+        $schema: "https://json-schema.org/draft/2020-12/schema",
+        $id: "https://json-schema.org/draft/2020-12/meta/validation",
+        $vocabulary: {
+          "https://json-schema.org/draft/2020-12/vocab/validation": true
+        },
+        $dynamicAnchor: "meta",
+        title: "Validation vocabulary meta-schema",
+        type: [
+          "object",
+          "boolean"
+        ],
+        properties: {
+          type: {
+            anyOf: [
+              {
+                $ref: "#/$defs/simpleTypes"
+              },
+              {
+                type: "array",
+                items: {
+                  $ref: "#/$defs/simpleTypes"
+                },
+                minItems: 1,
+                uniqueItems: true
+              }
+            ]
+          },
+          const: true,
+          enum: {
+            type: "array",
+            items: true
+          },
+          multipleOf: {
+            type: "number",
+            exclusiveMinimum: 0
+          },
+          maximum: {
+            type: "number"
+          },
+          exclusiveMaximum: {
+            type: "number"
+          },
+          minimum: {
+            type: "number"
+          },
+          exclusiveMinimum: {
+            type: "number"
+          },
+          maxLength: {
+            $ref: "#/$defs/nonNegativeInteger"
+          },
+          minLength: {
+            $ref: "#/$defs/nonNegativeIntegerDefault0"
+          },
+          pattern: {
+            type: "string",
+            format: "regex"
+          },
+          maxItems: {
+            $ref: "#/$defs/nonNegativeInteger"
+          },
+          minItems: {
+            $ref: "#/$defs/nonNegativeIntegerDefault0"
+          },
+          uniqueItems: {
+            type: "boolean",
+            default: false
+          },
+          maxContains: {
+            $ref: "#/$defs/nonNegativeInteger"
+          },
+          minContains: {
+            $ref: "#/$defs/nonNegativeInteger",
+            default: 1
+          },
+          maxProperties: {
+            $ref: "#/$defs/nonNegativeInteger"
+          },
+          minProperties: {
+            $ref: "#/$defs/nonNegativeIntegerDefault0"
+          },
+          required: {
+            $ref: "#/$defs/stringArray"
+          },
+          dependentRequired: {
+            type: "object",
+            additionalProperties: {
+              $ref: "#/$defs/stringArray"
+            }
+          }
+        },
+        $defs: {
+          nonNegativeInteger: {
+            type: "integer",
+            minimum: 0
+          },
+          nonNegativeIntegerDefault0: {
+            $ref: "#/$defs/nonNegativeInteger",
+            default: 0
+          },
+          simpleTypes: {
+            enum: [
+              "array",
+              "boolean",
+              "integer",
+              "null",
+              "number",
+              "object",
+              "string"
+            ]
+          },
+          stringArray: {
+            type: "array",
+            items: {
+              type: "string"
+            },
+            uniqueItems: true,
+            default: []
+          }
+        }
+      },
+      draft2020Metadata: {
+        $schema: "https://json-schema.org/draft/2020-12/schema",
+        $id: "https://json-schema.org/draft/2020-12/meta/meta-data",
+        $vocabulary: {
+          "https://json-schema.org/draft/2020-12/vocab/meta-data": true
+        },
+        $dynamicAnchor: "meta",
+        title: "Meta-data vocabulary meta-schema",
+        type: [
+          "object",
+          "boolean"
+        ],
+        properties: {
+          title: {
+            type: "string"
+          },
+          description: {
+            type: "string"
+          },
+          default: true,
+          deprecated: {
+            type: "boolean",
+            default: false
+          },
+          readOnly: {
+            type: "boolean",
+            default: false
+          },
+          writeOnly: {
+            type: "boolean",
+            default: false
+          },
+          examples: {
+            type: "array",
+            items: true
+          }
+        }
+      },
+      draft2020Format: {
+        $schema: "https://json-schema.org/draft/2020-12/schema",
+        $id: "https://json-schema.org/draft/2020-12/meta/format-annotation",
+        $vocabulary: {
+          "https://json-schema.org/draft/2020-12/vocab/format-annotation": true
+        },
+        $dynamicAnchor: "meta",
+        title: "Format vocabulary meta-schema for annotation results",
+        type: [
+          "object",
+          "boolean"
+        ],
+        properties: {
+          format: {
+            type: "string"
+          }
+        }
+      },
+      draft2020Content: {
+        $schema: "https://json-schema.org/draft/2020-12/schema",
+        $id: "https://json-schema.org/draft/2020-12/meta/content",
+        $vocabulary: {
+          "https://json-schema.org/draft/2020-12/vocab/content": true
+        },
+        $dynamicAnchor: "meta",
+        title: "Content vocabulary meta-schema",
+        type: [
+          "object",
+          "boolean"
+        ],
+        properties: {
+          contentEncoding: {
+            type: "string"
+          },
+          contentMediaType: {
+            type: "string"
+          },
+          contentSchema: {
+            $dynamicRef: "#meta"
+          }
+        }
+      }
+    };
+  }
+});
 
 // lib/index.ts
 var lib_exports = {};
@@ -1608,6 +3197,30 @@ var ArrayKeywords = {
 };
 
 // lib/utils/deep-freeze.ts
+function deepFreeze(obj, freezeClassInstances = false, seen = /* @__PURE__ */ new WeakSet()) {
+  if (obj === null || typeof obj !== "object" || seen.has(obj) || Object.isFrozen(obj)) {
+    return obj;
+  }
+  seen.add(obj);
+  if (Array.isArray(obj)) {
+    for (let i = 0, l = obj.length; i < l; i++) {
+      deepFreeze(obj[i], freezeClassInstances, seen);
+    }
+  } else {
+    const props = Reflect.ownKeys(obj);
+    for (let i = 0, l = props.length; i < l; i++) {
+      deepFreeze(obj[props[i]], freezeClassInstances, seen);
+    }
+    if (freezeClassInstances) {
+      const proto = Reflect.getPrototypeOf(obj);
+      if (proto && proto !== Object.prototype) {
+        deepFreeze(proto, freezeClassInstances, seen);
+      }
+    }
+  }
+  Object.freeze(obj);
+  return obj;
+}
 function deepCloneUnfreeze(obj) {
   return structuredClone(obj);
 }
@@ -2775,9 +4388,124 @@ var keywords = {
   ...OtherKeywords
 };
 
+// lib/meta-schemas.ts
+var {
+  draft4,
+  draft6,
+  draft7,
+  draft2019,
+  draft2019Core,
+  draft2019Applicator,
+  draft2019Validation,
+  draft2019Metadata,
+  draft2019Format,
+  draft2019Content,
+  draft2020,
+  draft2020Core,
+  draft2020Applicator,
+  draft2020Unevaluated,
+  draft2020Validation,
+  draft2020Metadata,
+  draft2020Format,
+  draft2020Content
+} = require_official_meta_schemas();
+var resources = [
+  {
+    dialect: "draft4",
+    uri: "http://json-schema.org/draft-04/schema#",
+    schema: draft4
+  },
+  {
+    dialect: "draft6",
+    uri: "http://json-schema.org/draft-06/schema#",
+    schema: draft6
+  },
+  {
+    dialect: "draft7",
+    uri: "http://json-schema.org/draft-07/schema#",
+    schema: draft7
+  },
+  { dialect: "2019-09", uri: draft2019.$id, schema: draft2019 },
+  { dialect: "2019-09", uri: draft2019Core.$id, schema: draft2019Core },
+  {
+    dialect: "2019-09",
+    uri: draft2019Applicator.$id,
+    schema: draft2019Applicator
+  },
+  {
+    dialect: "2019-09",
+    uri: draft2019Validation.$id,
+    schema: draft2019Validation
+  },
+  { dialect: "2019-09", uri: draft2019Metadata.$id, schema: draft2019Metadata },
+  { dialect: "2019-09", uri: draft2019Format.$id, schema: draft2019Format },
+  { dialect: "2019-09", uri: draft2019Content.$id, schema: draft2019Content },
+  { dialect: "2020-12", uri: draft2020.$id, schema: draft2020 },
+  { dialect: "2020-12", uri: draft2020Core.$id, schema: draft2020Core },
+  {
+    dialect: "2020-12",
+    uri: draft2020Applicator.$id,
+    schema: draft2020Applicator
+  },
+  {
+    dialect: "2020-12",
+    uri: draft2020Unevaluated.$id,
+    schema: draft2020Unevaluated
+  },
+  {
+    dialect: "2020-12",
+    uri: draft2020Validation.$id,
+    schema: draft2020Validation
+  },
+  { dialect: "2020-12", uri: draft2020Metadata.$id, schema: draft2020Metadata },
+  { dialect: "2020-12", uri: draft2020Format.$id, schema: draft2020Format },
+  { dialect: "2020-12", uri: draft2020Content.$id, schema: draft2020Content }
+];
+for (const resource of resources) {
+  deepFreeze(resource.schema);
+  Object.freeze(resource);
+}
+var BUILTIN_META_SCHEMAS = Object.freeze(resources);
+var BUILTIN_META_SCHEMA_BY_URI = new Map(resources.map((resource) => [resource.uri, resource]));
+var BUILTIN_DIALECT_BY_URI = new Map(
+  resources.filter(
+    (resource) => resource.uri.endsWith("/schema") || resource.uri.endsWith("/schema#")
+  ).map((resource) => [resource.uri, resource.dialect])
+);
+
 // lib/index.ts
 var MAX_COMPILE_DEPTH = 128;
 var LOCAL_SCHEMA_BASE = "schema-shield://local/root";
+var VOCABULARY_CATEGORIES = /* @__PURE__ */ new Map([
+  ["https://json-schema.org/draft/2019-09/vocab/core", "core"],
+  ["https://json-schema.org/draft/2019-09/vocab/applicator", "applicator"],
+  ["https://json-schema.org/draft/2019-09/vocab/validation", "validation"],
+  ["https://json-schema.org/draft/2019-09/vocab/meta-data", "metadata"],
+  ["https://json-schema.org/draft/2019-09/vocab/format", "format"],
+  ["https://json-schema.org/draft/2019-09/vocab/content", "content"],
+  ["https://json-schema.org/draft/2020-12/vocab/core", "core"],
+  ["https://json-schema.org/draft/2020-12/vocab/applicator", "applicator"],
+  ["https://json-schema.org/draft/2020-12/vocab/validation", "validation"],
+  ["https://json-schema.org/draft/2020-12/vocab/unevaluated", "unevaluated"],
+  ["https://json-schema.org/draft/2020-12/vocab/meta-data", "metadata"],
+  ["https://json-schema.org/draft/2020-12/vocab/format-annotation", "format"],
+  ["https://json-schema.org/draft/2020-12/vocab/format-assertion", "format"],
+  ["https://json-schema.org/draft/2020-12/vocab/content", "content"]
+]);
+var BUILTIN_SCHEMA_REGISTRATIONS = Object.freeze(
+  BUILTIN_META_SCHEMAS.map((resource) => {
+    const hashIndex = resource.uri.indexOf("#");
+    const resourceUri = hashIndex === -1 ? resource.uri : resource.uri.slice(0, hashIndex);
+    return Object.freeze({
+      schema: resource.schema,
+      identities: Object.freeze(Array.from(/* @__PURE__ */ new Set([resource.uri, resourceUri]))),
+      nestedIdentities: Object.freeze([]),
+      baseUri: resourceUri,
+      rootIdBesideRef: true,
+      metaSchema: true
+    });
+  })
+);
 var FAIL_FAST_TYPE_VALIDATORS = {
   object: (data) => data !== null && typeof data === "object" && !Array.isArray(data) ? void 0 : true,
   array: (data) => Array.isArray(data) ? void 0 : true,
@@ -2794,32 +4522,38 @@ function createBuiltinTypeValidator(_type, defineError, fallback) {
     }
   };
 }
-var SchemaShield = class {
-  types = {};
-  formats = {};
-  keywords = {};
-  immutable = false;
-  useDefaults = false;
-  rootSchema = null;
-  failFast = true;
-  maxDepth;
-  validationContexts = [];
-  compileCache = /* @__PURE__ */ new WeakMap();
-  compilingRequiresContext = false;
-  compilingEvaluatedTracking = false;
-  compilingValidateSubschema;
-  compilingMutableSchemas = /* @__PURE__ */ new WeakSet();
-  compilingDialects = /* @__PURE__ */ new WeakMap();
-  compilingEnvironments = /* @__PURE__ */ new WeakMap();
-  compilingSchemaChildren = /* @__PURE__ */ new WeakMap();
-  registeredSchemas = [];
-  registeredSchemaIds = /* @__PURE__ */ new Map();
+var _defaultSavepoint, defaultSavepoint_fn, _rollbackDefaultSavepoint, rollbackDefaultSavepoint_fn, _captureDefaultSavepoint, captureDefaultSavepoint_fn, _restoreDefaults, restoreDefaults_fn;
+var _SchemaShield = class {
   constructor({
     immutable = false,
     failFast = true,
     maxDepth = 128,
     useDefaults = false
   } = {}) {
+    __privateAdd(this, _defaultSavepoint);
+    __privateAdd(this, _rollbackDefaultSavepoint);
+    __privateAdd(this, _captureDefaultSavepoint);
+    __privateAdd(this, _restoreDefaults);
+    __publicField(this, "types", {});
+    __publicField(this, "formats", {});
+    __publicField(this, "keywords", {});
+    __publicField(this, "immutable", false);
+    __publicField(this, "useDefaults", false);
+    __publicField(this, "rootSchema", null);
+    __publicField(this, "failFast", true);
+    __publicField(this, "maxDepth");
+    __publicField(this, "validationContexts", []);
+    __publicField(this, "compileCache", /* @__PURE__ */ new WeakMap());
+    __publicField(this, "compilingRequiresContext", false);
+    __publicField(this, "compilingEvaluatedTracking", false);
+    __publicField(this, "compilingValidateSubschema");
+    __publicField(this, "compilingMutableSchemas", /* @__PURE__ */ new WeakSet());
+    __publicField(this, "compilingDialects", /* @__PURE__ */ new WeakMap());
+    __publicField(this, "compilingEnvironments", /* @__PURE__ */ new WeakMap());
+    __publicField(this, "compilingSchemaChildren", /* @__PURE__ */ new WeakMap());
+    __publicField(this, "registeredSchemas", []);
+    __publicField(this, "registeredSchemaIds", /* @__PURE__ */ new Map());
+    __publicField(this, "customMetaValidators", /* @__PURE__ */ new Map());
     if (!Number.isInteger(maxDepth) || maxDepth < 1 || maxDepth > 256) {
       const error = new ValidationError("maxDepth must be an integer from 1 to 256");
       error.code = "INVALID_MAX_DEPTH";
@@ -2868,38 +4602,6 @@ var SchemaShield = class {
       writable: true
     });
   }
-  #defaultSavepoint() {
-    const context = this.validationContexts[this.validationContexts.length - 1];
-    return context ? context.defaults.length : 0;
-  }
-  #rollbackDefaultSavepoint(savepoint) {
-    const context = this.validationContexts[this.validationContexts.length - 1];
-    if (context) {
-      this.rollbackDefaults(context, savepoint);
-    }
-  }
-  #captureDefaultSavepoint(savepoint) {
-    const context = this.validationContexts[this.validationContexts.length - 1];
-    if (!context || context.defaults.length === savepoint) {
-      return [];
-    }
-    const mutations = [];
-    for (let index = savepoint; index < context.defaults.length; index++) {
-      const entry = context.defaults[index];
-      mutations.push({
-        ...entry,
-        value: entry.target[entry.key]
-      });
-    }
-    this.rollbackDefaults(context, savepoint);
-    return mutations;
-  }
-  #restoreDefaults(mutations) {
-    for (let index = 0; index < mutations.length; index++) {
-      const mutation = mutations[index];
-      this.setDefault(mutation.target, mutation.key, mutation.value);
-    }
-  }
   addType(name, validator, overwrite = false) {
     if (this.types[name] && !overwrite) {
       throw new ValidationError(`Type "${name}" already exists`);
@@ -2931,6 +4633,44 @@ var SchemaShield = class {
     return this.keywords[keyword];
   }
   addSchema(schema, options = {}) {
+    this.registerSchema(schema, options, false);
+  }
+  addMetaSchema(schema, options = {}) {
+    const validation = this.validateSchema(schema);
+    if (!validation.valid) {
+      throw this.invalidSchemaError(validation.error);
+    }
+    if (schema === true || schema === false) {
+      throw this.schemaRegistrationError(
+        "A metaschema must be an object",
+        "INVALID_SCHEMA",
+        "schema"
+      );
+    }
+    if (typeof schema.$schema !== "string") {
+      throw this.schemaRegistrationError(
+        "A custom metaschema must declare $schema",
+        "INVALID_SCHEMA",
+        "$schema"
+      );
+    }
+    this.assertKnownRequiredVocabularies(schema);
+    const verifier = new _SchemaShield({ failFast: false });
+    verifier.registeredSchemas = [...this.registeredSchemas];
+    verifier.registeredSchemaIds = new Map(this.registeredSchemaIds);
+    const registrationCount = verifier.registeredSchemas.length;
+    verifier.registerSchema(schema, options, true);
+    if (verifier.registeredSchemas.length === registrationCount) {
+      return;
+    }
+    const candidate = verifier.registeredSchemas[registrationCount];
+    verifier.compile(
+      { $ref: candidate.baseUri },
+      { validateSchema: false }
+    );
+    this.registerSchema(schema, options, true);
+  }
+  registerSchema(schema, options, metaSchema) {
     if (!this.isJsonSchema(schema)) {
       throw this.schemaRegistrationError(
         "Invalid schema",
@@ -2943,6 +4683,17 @@ var SchemaShield = class {
         "addSchema options must be an object",
         "INVALID_ADD_SCHEMA_OPTIONS",
         "addSchema"
+      );
+    }
+    const builtin = this.claimedBuiltinMetaSchema(schema, options);
+    if (builtin !== null) {
+      if (this.schemasEqual(schema, builtin.schema)) {
+        return;
+      }
+      throw this.schemaRegistrationError(
+        `Builtin schema identity cannot be replaced: ${builtin.uri}`,
+        "BUILTIN_SCHEMA_ID_COLLISION",
+        "$id"
       );
     }
     let retrievalUri = null;
@@ -3026,16 +4777,93 @@ var SchemaShield = class {
         }
       }
     }
+    for (const identity of [...identities, ...nestedIdentities]) {
+      const builtinIdentity = this.builtinMetaSchemaForIdentity(identity);
+      if (builtinIdentity !== null) {
+        throw this.schemaRegistrationError(
+          `Builtin schema identity cannot be replaced: ${builtinIdentity.uri}`,
+          "BUILTIN_SCHEMA_ID_COLLISION",
+          "$id"
+        );
+      }
+    }
     const registration = Object.freeze({
       schema: snapshot,
       identities: Object.freeze(Array.from(identities)),
       nestedIdentities: Object.freeze(Array.from(nestedIdentities)),
       baseUri,
-      rootIdBesideRef: rootIdIsActive
+      rootIdBesideRef: rootIdIsActive,
+      metaSchema
     });
     this.registeredSchemas.push(registration);
     for (const identity of identities) {
       this.registeredSchemaIds.set(identity, registration);
+    }
+  }
+  claimedBuiltinMetaSchema(schema, options) {
+    const identities = [options.uri];
+    if (Array.isArray(options.aliases)) {
+      identities.push(...options.aliases);
+    }
+    if (schema !== true && schema !== false) {
+      identities.push(schema.$id, schema.id);
+    }
+    for (const identity of identities) {
+      const resource = this.builtinMetaSchemaForIdentity(identity);
+      if (resource !== null) {
+        return resource;
+      }
+    }
+    return null;
+  }
+  builtinMetaSchemaForIdentity(identity) {
+    if (typeof identity !== "string") {
+      return null;
+    }
+    let normalized;
+    try {
+      normalized = new URL(identity).href;
+    } catch {
+      return null;
+    }
+    const normalizedResource = this.resourceUri(normalized);
+    for (const resource of BUILTIN_META_SCHEMAS) {
+      if (normalized === resource.uri || normalizedResource === this.resourceUri(resource.uri)) {
+        return resource;
+      }
+    }
+    return null;
+  }
+  schemasEqual(left, right) {
+    if (left === right) {
+      return true;
+    }
+    if (left === null || right === null || typeof left !== "object" || typeof right !== "object" || Array.isArray(left) !== Array.isArray(right)) {
+      return false;
+    }
+    const leftKeys = Object.keys(left);
+    const rightKeys = Object.keys(right);
+    if (leftKeys.length !== rightKeys.length) {
+      return false;
+    }
+    for (const key of leftKeys) {
+      if (!hasOwn(right, key) || !this.schemasEqual(left[key], right[key])) {
+        return false;
+      }
+    }
+    return true;
+  }
+  assertKnownRequiredVocabularies(schema) {
+    if (!this.isJsonObject(schema.$vocabulary)) {
+      return;
+    }
+    for (const [uri, required] of Object.entries(schema.$vocabulary)) {
+      if (required === true && this.vocabularyCategory(uri) === null) {
+        const error = new ValidationError(`Unknown required vocabulary: ${uri}`);
+        error.code = "UNKNOWN_REQUIRED_VOCABULARY";
+        error.keyword = "$vocabulary";
+        throw error;
+      }
     }
   }
   schemaRegistrationError(message, code, keyword) {
@@ -3366,54 +5194,23 @@ var SchemaShield = class {
     if (typeof schema.$schema !== "string") {
       return inherited;
     }
-    if (schema.$schema.includes("draft-04/")) {
-      return "draft4";
+    try {
+      return BUILTIN_DIALECT_BY_URI.get(new URL(schema.$schema).href) || inherited;
+    } catch {
+      return inherited;
     }
-    if (schema.$schema.includes("draft/2019-09/")) {
-      return "2019-09";
-    }
-    if (schema.$schema.includes("draft/2020-12/")) {
-      return "2020-12";
-    }
-    if (schema.$schema.includes("draft-06/")) {
-      return "draft6";
-    }
-    if (schema.$schema.includes("draft-07/")) {
-      return "draft7";
-    }
-    return inherited;
   }
   defaultEnvironment(dialect) {
     return {
       dialect,
+      metaschemaUri: null,
       vocabularies: null,
       dependenciesCompatibility: !this.isModernDialect(dialect),
       definitionsCompatibility: !this.isModernDialect(dialect)
     };
   }
   vocabularyCategory(uri) {
-    if (uri.endsWith("/vocab/core")) {
-      return "core";
-    }
-    if (uri.endsWith("/vocab/applicator")) {
-      return "applicator";
-    }
-    if (uri.endsWith("/vocab/validation")) {
-      return "validation";
-    }
-    if (uri.endsWith("/vocab/unevaluated")) {
-      return "unevaluated";
-    }
-    if (uri.endsWith("/vocab/format") || uri.endsWith("/vocab/format-annotation") || uri.endsWith("/vocab/format-assertion")) {
-      return "format";
-    }
-    if (uri.endsWith("/vocab/content")) {
-      return "content";
-    }
-    if (uri.endsWith("/vocab/meta-data")) {
-      return "metadata";
-    }
-    return null;
+    return VOCABULARY_CATEGORIES.get(uri) || null;
   }
   metaschemaDefinesKeyword(schema, keyword) {
     if (schema === true || schema === false) {
@@ -3445,31 +5242,31 @@ var SchemaShield = class {
     return false;
   }
   schemaEnvironment(schema, inherited) {
-    if (typeof schema.$schema !== "string") {
+    if (!hasOwn(schema, "$schema")) {
       return inherited;
     }
-    const dialect = this.effectiveDialect(schema, inherited.dialect);
-    if (dialect !== inherited.dialect || this.isModernDialect(dialect)) {
-      if (schema.$schema.includes("draft-04/") || schema.$schema.includes("draft/2019-09/") || schema.$schema.includes("draft/2020-12/") || schema.$schema.includes("draft-06/") || schema.$schema.includes("draft-07/")) {
-        return {
-          ...this.defaultEnvironment(dialect),
-          dependenciesCompatibility: true,
-          definitionsCompatibility: !this.isModernDialect(dialect)
-        };
-      }
+    if (typeof schema.$schema !== "string") {
+      throw this.unknownMetaschemaError(String(schema.$schema));
     }
     let metaschemaUri;
     try {
       metaschemaUri = new URL(schema.$schema).href;
     } catch {
-      return inherited;
+      throw this.unknownMetaschemaError(schema.$schema);
     }
-    const registration = this.registeredSchemaIds.get(
-      this.resourceUri(metaschemaUri)
-    );
+    const builtinDialect = BUILTIN_DIALECT_BY_URI.get(metaschemaUri);
+    if (builtinDialect) {
+      return {
+        ...this.defaultEnvironment(builtinDialect),
+        metaschemaUri,
+        dependenciesCompatibility: true,
+        definitionsCompatibility: !this.isModernDialect(builtinDialect)
+      };
+    }
+    const registration = this.registeredSchemaIds.get(metaschemaUri);
     const metaschema = registration?.schema;
-    if (!metaschema || metaschema === true) {
-      return inherited;
+    if (!registration?.metaSchema || !metaschema || metaschema === true) {
+      throw this.unknownMetaschemaError(metaschemaUri);
     }
     const metaschemaDialect = this.effectiveDialect(
       metaschema,
@@ -3479,6 +5276,7 @@ var SchemaShield = class {
     if (!this.isJsonObject(declared)) {
       return {
         ...this.defaultEnvironment(metaschemaDialect),
+        metaschemaUri,
         dependenciesCompatibility: this.metaschemaDefinesKeyword(
           metaschema,
           "dependencies"
@@ -3507,6 +5305,7 @@ var SchemaShield = class {
     }
     return {
       dialect: metaschemaDialect,
+      metaschemaUri,
       vocabularies,
       dependenciesCompatibility: this.metaschemaDefinesKeyword(
         metaschema,
@@ -3635,7 +5434,11 @@ var SchemaShield = class {
       }
       aliases.set(uri, node);
     };
-    for (const registration of this.registeredSchemas) {
+    const registrations = [
+      ...BUILTIN_SCHEMA_REGISTRATIONS,
+      ...this.registeredSchemas
+    ];
+    for (const registration of registrations) {
       for (const identity of registration.identities) {
         register(identity, registration.schema);
       }
@@ -3643,7 +5446,7 @@ var SchemaShield = class {
     register(LOCAL_SCHEMA_BASE, schema);
     const registrationsByRoot = /* @__PURE__ */ new WeakMap();
     const registrationsByNestedIdentity = /* @__PURE__ */ new Map();
-    for (const registration of this.registeredSchemas) {
+    for (const registration of registrations) {
       if (registration.schema !== true && registration.schema !== false) {
         registrationsByRoot.set(registration.schema, registration);
       }
@@ -4045,8 +5848,111 @@ var SchemaShield = class {
       reachableSchemas
     };
   }
-  compile(schema) {
-    const prepared = this.prepareSchema(schema);
+  validateSchema(schema) {
+    if (!this.isJsonSchema(schema)) {
+      const error = this.schemaRegistrationError(
+        "Invalid schema",
+        "INVALID_SCHEMA",
+        "schema"
+      );
+      return { data: schema, error, valid: false };
+    }
+    if (schema === true || schema === false) {
+      return { data: schema, error: null, valid: true };
+    }
+    if (!hasOwn(schema, "$schema")) {
+      if (!this.isSchemaLike(schema)) {
+        const error = this.schemaRegistrationError(
+          "Invalid schema",
+          "INVALID_SCHEMA",
+          "schema"
+        );
+        return { data: schema, error, valid: false };
+      }
+      return { data: schema, error: null, valid: true };
+    }
+    if (typeof schema.$schema !== "string") {
+      throw this.unknownMetaschemaError(String(schema.$schema));
+    }
+    let metaschemaUri;
+    try {
+      metaschemaUri = new URL(schema.$schema).href;
+    } catch {
+      throw this.unknownMetaschemaError(schema.$schema);
+    }
+    return this.validateSchemaWithMetaSchema(schema, metaschemaUri);
+  }
+  validateSchemaWithMetaSchema(schema, metaschemaUri) {
+    const validator = this.getMetaSchemaValidator(metaschemaUri);
+    if (!validator) {
+      throw this.unknownMetaschemaError(metaschemaUri);
+    }
+    return validator(schema);
+  }
+  getMetaSchemaValidator(uri) {
+    const builtin = BUILTIN_META_SCHEMA_BY_URI.get(uri);
+    if (builtin) {
+      const cached2 = _SchemaShield.builtinMetaValidators.get(uri);
+      if (cached2) {
+        return cached2;
+      }
+      const owner = new _SchemaShield({ failFast: false });
+      const validator2 = owner.compile(
+        { $ref: builtin.uri },
+        { validateSchema: false }
+      );
+      _SchemaShield.builtinMetaValidators.set(uri, validator2);
+      return validator2;
+    }
+    const registration = this.registeredSchemaIds.get(uri);
+    if (!registration?.metaSchema) {
+      return null;
+    }
+    const cached = this.customMetaValidators.get(uri);
+    if (cached) {
+      return cached;
+    }
+    const validator = this.compile(
+      { $ref: uri },
+      { validateSchema: false }
+    );
+    this.customMetaValidators.set(uri, validator);
+    return validator;
+  }
+  invalidSchemaError(error) {
+    if (error instanceof ValidationError) {
+      error.code = "INVALID_SCHEMA";
+      return error;
+    }
+    return this.schemaRegistrationError(
+      "Invalid schema",
+      "INVALID_SCHEMA",
+      "schema"
+    );
+  }
+  unknownMetaschemaError(uri) {
+    const error = new ValidationError(`Unknown metaschema: ${uri}`);
+    error.code = "UNKNOWN_METASCHEMA";
+    error.keyword = "$schema";
+    return error;
+  }
+  compile(schema, options = {}) {
+    if (!this.isJsonObject(options)) {
+      throw this.schemaRegistrationError(
+        "compile options must be an object",
+        "INVALID_COMPILE_OPTIONS",
+        "compile"
+      );
+    }
+    const validateSchema = hasOwn(options, "validateSchema") ? options.validateSchema : true;
+    if (validateSchema !== true && validateSchema !== false) {
+      throw this.schemaRegistrationError(
+        "validateSchema must be a boolean",
+        "INVALID_COMPILE_OPTIONS",
+        "validateSchema"
+      );
+    }
+    const prepared = this.prepareSchema(schema, validateSchema);
     const compiledSchema = prepared.compiledSchema;
     if (!prepared.requiresDepthGuard && !prepared.requiresMutationJournal && !prepared.requiresEvaluatedTracking) {
       const directValidate = compiledSchema.$validate;
@@ -4063,17 +5969,40 @@ var SchemaShield = class {
     }
     return this.createGuardedValidator(compiledSchema, prepared.depthGuardState);
   }
-  prepareSchema(schema) {
+  prepareSchema(schema, validateSchema) {
     this.compilingSchemaChildren = /* @__PURE__ */ new WeakMap();
     const referenceRegistry = this.buildReferenceRegistry(schema);
     const analysis = this.analyzeSchema(schema, referenceRegistry);
+    if (validateSchema) {
+      if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
+        const validation = this.validateSchema(schema);
+        if (!validation.valid) {
+          throw this.invalidSchemaError(validation.error);
+        }
+      } else {
+        const validatedResources = /* @__PURE__ */ new WeakSet();
+        for (const position of referenceRegistry.positions) {
+          if (position.source !== position.resourceRoot || validatedResources.has(position.resourceRoot)) {
+            continue;
+          }
+          validatedResources.add(position.resourceRoot);
+          const validation = position.environment.metaschemaUri ? this.validateSchemaWithMetaSchema(
+            position.resourceRoot,
+            position.environment.metaschemaUri
+          ) : this.validateSchema(position.resourceRoot);
+          if (!validation.valid) {
+            throw this.invalidSchemaError(validation.error);
+          }
+        }
+      }
+    }
     const reachableSchemas = analysis.reachableSchemas;
     this.compileCache = /* @__PURE__ */ new WeakMap();
     this.compilingRequiresContext = analysis.requiresDepthGuard || analysis.requiresMutationJournal || analysis.requiresDynamicScope || analysis.requiresEvaluatedTracking;
     this.compilingValidateSubschema = this.compilingRequiresContext ? this.validateSubschema.bind(this) : void 0;
     if (this.compilingValidateSubschema) {
-      this.compilingValidateSubschema.savepoint = () => this.#defaultSavepoint();
-      this.compilingValidateSubschema.rollback = (savepoint) => this.#rollbackDefaultSavepoint(savepoint);
+      this.compilingValidateSubschema.savepoint = () => __privateMethod(this, _defaultSavepoint, defaultSavepoint_fn).call(this);
+      this.compilingValidateSubschema.rollback = (savepoint) => __privateMethod(this, _rollbackDefaultSavepoint, rollbackDefaultSavepoint_fn).call(this, savepoint);
       this.compilingValidateSubschema.tracksEvaluated = analysis.requiresEvaluatedTracking;
     }
     this.compilingMutableSchemas = analysis.mutableSchemas;
@@ -4992,10 +6921,10 @@ var SchemaShield = class {
     }
     prepareCombinatorEntries(compiledSchema);
     const transactions = compiledSchema._canApplyDefaults === true ? {
-      savepoint: () => this.#defaultSavepoint(),
-      rollback: (savepoint) => this.#rollbackDefaultSavepoint(savepoint),
-      capture: (savepoint) => this.#captureDefaultSavepoint(savepoint),
-      restore: (mutations) => this.#restoreDefaults(mutations)
+      savepoint: () => __privateMethod(this, _defaultSavepoint, defaultSavepoint_fn).call(this),
+      rollback: (savepoint) => __privateMethod(this, _rollbackDefaultSavepoint, rollbackDefaultSavepoint_fn).call(this, savepoint),
+      capture: (savepoint) => __privateMethod(this, _captureDefaultSavepoint, captureDefaultSavepoint_fn).call(this, savepoint),
+      restore: (mutations) => __privateMethod(this, _restoreDefaults, restoreDefaults_fn).call(this, mutations)
     } : void 0;
     for (let index = 0; index < pendingCombinators.length; index++) {
       const pending = pendingCombinators[index];
@@ -5070,18 +6999,18 @@ var SchemaShield = class {
     return;
   }
   installEvaluationResourceScopes(registry) {
-    const resources = /* @__PURE__ */ new Map();
+    const resources2 = /* @__PURE__ */ new Map();
     for (const position of registry.positions) {
       if (!this.compileCache.has(position.source)) {
         continue;
       }
-      if (!resources.has(position.resourceRoot)) {
+      if (!resources2.has(position.resourceRoot)) {
         const rootPosition = registry.positionsByNode.get(position.resourceRoot);
         const compiledRoot = this.compileCache.get(position.resourceRoot);
         if (!compiledRoot) {
           continue;
         }
-        resources.set(position.resourceRoot, {
+        resources2.set(position.resourceRoot, {
           compiledRoot,
           dynamicAnchors: /* @__PURE__ */ new Map(),
           recursiveAnchor: rootPosition?.dialect === "2019-09" && position.resourceRoot.$recursiveAnchor === true
@@ -5090,7 +7019,7 @@ var SchemaShield = class {
     }
     for (const position of registry.positions) {
       const compiled = this.compileCache.get(position.source);
-      const resource = resources.get(position.resourceRoot);
+      const resource = resources2.get(position.resourceRoot);
       if (!compiled || !resource) {
         continue;
       }
@@ -5106,13 +7035,13 @@ var SchemaShield = class {
       }
     }
     const resourcesByRoot = /* @__PURE__ */ new WeakMap();
-    for (const [root, resource] of resources) {
+    for (const [root, resource] of resources2) {
       resourcesByRoot.set(root, resource);
     }
     const wrapped = /* @__PURE__ */ new WeakSet();
     for (const position of registry.positions) {
       const compiled = this.compileCache.get(position.source);
-      const resource = resources.get(position.resourceRoot);
+      const resource = resources2.get(position.resourceRoot);
       if (!compiled || !resource || wrapped.has(compiled)) {
         continue;
       }
@@ -5158,7 +7087,7 @@ var SchemaShield = class {
     }
     return target.$validate;
   }
-  linkReferences(registry, resources) {
+  linkReferences(registry, resources2) {
     for (let index = 0; index < registry.positions.length; index++) {
       const position = registry.positions[index];
       if (typeof position.source.$ref !== "string" || this.getKeyword("$ref") !== keywords.$ref) {
@@ -5188,7 +7117,7 @@ var SchemaShield = class {
         writable: false
       });
     }
-    if (!resources) {
+    if (!resources2) {
       return;
     }
     for (let index = 0; index < registry.positions.length; index++) {
@@ -5302,3 +7231,41 @@ var SchemaShield = class {
     }
   }
 };
+var SchemaShield = _SchemaShield;
+_defaultSavepoint = new WeakSet();
+defaultSavepoint_fn = function() {
+  const context = this.validationContexts[this.validationContexts.length - 1];
+  return context ? context.defaults.length : 0;
+};
+_rollbackDefaultSavepoint = new WeakSet();
+rollbackDefaultSavepoint_fn = function(savepoint) {
+  const context = this.validationContexts[this.validationContexts.length - 1];
+  if (context) {
+    this.rollbackDefaults(context, savepoint);
+  }
+};
+_captureDefaultSavepoint = new WeakSet();
+captureDefaultSavepoint_fn = function(savepoint) {
+  const context = this.validationContexts[this.validationContexts.length - 1];
+  if (!context || context.defaults.length === savepoint) {
+    return [];
+  }
+  const mutations = [];
+  for (let index = savepoint; index < context.defaults.length; index++) {
+    const entry = context.defaults[index];
+    mutations.push({
+      ...entry,
+      value: entry.target[entry.key]
+    });
+  }
+  this.rollbackDefaults(context, savepoint);
+  return mutations;
+};
+_restoreDefaults = new WeakSet();
+restoreDefaults_fn = function(mutations) {
+  for (let index = 0; index < mutations.length; index++) {
+    const mutation = mutations[index];
+    this.setDefault(mutation.target, mutation.key, mutation.value);
+  }
+};
+__publicField(SchemaShield, "builtinMetaValidators", /* @__PURE__ */ new Map());

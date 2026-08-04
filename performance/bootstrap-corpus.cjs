@@ -10,9 +10,7 @@ function parseArguments(argv) {
   const allowed = new Set([
     "--source",
     "--destination",
-    "--baseline",
-    "--ajv",
-    "--schemasafe"
+    "--baseline"
   ]);
   const values = {};
   for (let index = 0; index < argv.length; index += 2) {
@@ -23,7 +21,7 @@ function parseArguments(argv) {
     }
     values[key.slice(2)] = value;
   }
-  for (const key of ["source", "destination", "baseline", "ajv", "schemasafe"]) {
+  for (const key of ["source", "destination", "baseline"]) {
     if (typeof values[key] !== "string" || !path.isAbsolute(values[key])) {
       throw new Error(`${key} must be an absolute path`);
     }
@@ -74,42 +72,6 @@ function createProductionEngine(bundlePath) {
     },
     execute(validate, data) {
       return validate(cloneJson(data)).valid;
-    }
-  };
-}
-
-function createAjvEngine(modulePath) {
-  const Ajv = require(modulePath);
-  const version = require(path.join(modulePath, "package.json")).version;
-  return {
-    name: "ajv",
-    version,
-    compile(schema) {
-      const ajv = new Ajv({ schemaId: "auto", unknownFormats: "ignore" });
-      return ajv.compile(cloneJson(schema));
-    },
-    execute(validate, data) {
-      return Boolean(validate(cloneJson(data)));
-    }
-  };
-}
-
-function createSchemasafeEngine(modulePath) {
-  const schemasafe = require(modulePath);
-  const version = require(path.join(modulePath, "package.json")).version;
-  return {
-    name: "@exodus/schemasafe",
-    version,
-    compile(schema) {
-      return schemasafe.validator(cloneJson(schema), {
-        includeErrors: false,
-        allErrors: false,
-        requireSchema: false,
-        mode: "default"
-      });
-    },
-    execute(validate, data) {
-      return Boolean(validate(cloneJson(data)));
     }
   };
 }
@@ -180,11 +142,8 @@ function main() {
   }
 
   const production = createProductionEngine(args.baseline);
-  const ajv = createAjvEngine(args.ajv);
-  const schemasafe = createSchemasafeEngine(args.schemasafe);
-  const productionResults = new Map();
   const allowlist = [];
-  const intersection = [];
+  const throughputCases = [];
 
   for (const item of cases) {
     if (item.excluded) {
@@ -195,7 +154,6 @@ function main() {
       item.schema,
       item.data
     );
-    productionResults.set(item.id, productionResult);
     if (
       productionResult.error !== null ||
       productionResult.observed !== item.expected
@@ -209,18 +167,11 @@ function main() {
       });
     }
 
-    if (productionResult.error !== null) {
-      continue;
-    }
-    const ajvResult = evaluateCase(ajv, item.schema, item.data);
-    const schemasafeResult = evaluateCase(schemasafe, item.schema, item.data);
     if (
-      ajvResult.error === null &&
-      schemasafeResult.error === null &&
-      ajvResult.observed === item.expected &&
-      schemasafeResult.observed === item.expected
+      productionResult.error === null &&
+      productionResult.observed === item.expected
     ) {
-      intersection.push(item.id);
+      throughputCases.push(item.id);
     }
   }
 
@@ -233,17 +184,13 @@ function main() {
   const manifestPath = path.join(args.destination, "manifest.json");
   const sourceFilesPath = path.join(args.destination, "source-files.json");
   const allowlistPath = path.join(args.destination, "production-allowlist.json");
-  const intersectionPath = path.join(args.destination, "throughput-intersection.json");
+  const throughputPath = path.join(args.destination, "throughput-cases.json");
   writeJson(sourceFilesPath, sourceFiles);
   writeJson(manifestPath, manifest);
   writeJson(allowlistPath, allowlist);
-  writeJson(intersectionPath, {
-    engines: [
-      { name: production.name, version: production.version },
-      { name: ajv.name, version: ajv.version },
-      { name: schemasafe.name, version: schemasafe.version }
-    ],
-    caseIds: intersection
+  writeJson(throughputPath, {
+    source: { name: production.name, version: production.version },
+    caseIds: throughputCases
   });
 
   const report = {
@@ -251,10 +198,10 @@ function main() {
     caseCount: cases.length,
     excludedCount: cases.filter((item) => item.excluded).length,
     productionAllowlistCount: allowlist.length,
-    throughputIntersectionCount: intersection.length,
+    throughputCaseCount: throughputCases.length,
     manifestSha256: sha256(fs.readFileSync(manifestPath)),
     allowlistSha256: sha256(fs.readFileSync(allowlistPath)),
-    intersectionSha256: sha256(fs.readFileSync(intersectionPath))
+    throughputSha256: sha256(fs.readFileSync(throughputPath))
   };
   writeJson(path.join(args.destination, "bootstrap-report.json"), report);
   console.log(JSON.stringify(report, null, 2));
