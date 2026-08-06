@@ -1,5 +1,12 @@
 
 
+### [1.4.1](https://github.com/Masquerade-Circus/schema-shield/compare/1.4.0...1.4.1) (2026-08-06)
+
+
+### Documentation
+
+* rewrite adoption guide and extract API reference ([d437dcb](https://github.com/Masquerade-Circus/schema-shield/commit/d437dcb6c8aae767eadab1fd634b8ef9acb96d1c))
+
 ## [1.4.0](https://github.com/Masquerade-Circus/schema-shield/compare/1.3.0...1.4.0) (2026-08-04)
 
 
