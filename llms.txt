@@ -1,299 +1,235 @@
-# SchemaShield - JSON Schema Validator
+# SchemaShield
 
-## Overview
+SchemaShield is a synchronous JSON Schema interpreter for Node.js, Bun, and compatible serverless or edge runtimes. It supports draft-04, draft-06, draft-07, 2019-09, and 2020-12 through one API.
 
-SchemaShield is a secure interpreter for JSON Schema draft-04, draft-06, draft-07, 2019-09, and 2020-12. It provides predictable local validation for strict environments and complex domain logic.
+Near-zero validator overhead at cold start, with no runtime source-code generation.
 
-## Key Differentiators
+README.md is the canonical adoption guide. REFERENCE.md contains exhaustive API and compatibility contracts.
 
-- **Zero Code Generation**: Fully CSP-compliant, no eval() or new Function()
-- **Stack-Safe**: Flat loop architecture minimizes stack usage, no stack overflow on deeply nested data
-- **Runtime Object Validation**: Native support for validating class instances, Dates, and custom objects alongside serialized JSON
-- **Built-in Error Trees**: Advanced error reporting with getCause(), getTree(), getPath() methods
-- **Zero Dependencies**: No external runtime dependencies
-- **Official Metaschemas**: 19 built-in resources with compile-time metavalidation
+## Verified properties
 
-## Benchmarks
+- No runtime source-code generation. The library does not call `eval()` or `new Function()`.
+- No implicit network, file, or DNS access during compilation or validation.
+- Zero runtime dependencies.
+- Nineteen built-in official metaschema resources.
+- Compile-time metavalidation of every reachable resource by default.
+- Synchronous validators reusable within one process or isolate.
+- JSON data and live JavaScript object validation.
+- Custom types, formats, keywords, metaschemas, and local schema resources.
+- Configurable recursive validation depth.
+- String-length keywords count Unicode code points.
+- High sustained validation throughput and near-zero validator overhead at cold start.
 
-- **Self-baselined**: Measures the draft-06 corpus against prior SchemaShield runs
-- **Runtime-specific**: Stores local baselines under `./tmp` to avoid fake cross-machine precision
-- **Zero Compilation Overhead**: Ideal for serverless/edge cold starts
+Measured execution uses reusable validators for sustained throughput. Cold execution creates a fresh context, performs validator construction, configuration, registrations and setup when required, and runs the first validation. It excludes runtime process startup and module import, so the cold-start claim covers validator overhead only. Every measured case must produce its expected result before timing is accepted. Measure application-specific schemas on the target runtime for capacity planning.
 
-## Supported Features
-
-- **JSON Schema Drafts**: draft-04, draft-06, draft-07, 2019-09, 2020-12
-- **Keywords**: allOf, anyOf, oneOf, $ref, $id, required, properties, additionalProperties, enum, const, uniqueItems, pattern, patternProperties, minLength, maxLength, minimum, maximum, type, format, and more
-- **Custom Extensions**:
-  - addType(name, validatorFn): custom type validators
-  - addFormat(name, validatorFn): custom format validators
-  - addKeyword(name, validatorFn): custom keyword validators
-  - addMetaSchema(schema, options): custom dialect registration
-
-## Metaschema Validation
-
-`compile()` validates every reachable schema resource against its declared
-metaschema by default. `validateSchema(schema)` validates the schema document
-passed to that call. Exact `$schema` identities select built-in or custom dialects.
-
-Use `compile(schema, { validateSchema: false })` for a complete schema graph that
-has already been validated in the application pipeline. Schema resources resolve
-from the built-in catalog and the instance's local registry.
-
-Official metaschemas are active in every instance; `addMetaSchema()` is only for
-custom dialects. The constructor option `format: true` validates registered
-formats in every dialect. `format: false` disables optional validation. With the
-option omitted, schemas without `$schema` and custom `format-assertion` dialects
-validate formats. Official dialects and custom dialects without assertion treat
-formats as annotations. A custom assertion dialect rejects `format: false` and
-unknown formats during compilation.
-
-## Use Cases
-
-- **Secure Environments**: Strict CSP policies where eval() is banned
-- **Serverless/Edge**: Cloudflare Workers, Vercel Edge Functions, Deno Deploy, Bun
-- **Complex Domain Validation**: Unifying DTO validation with business rules
-- **Debugging Priority**: Clean stack traces, no black-box generated code
-
-## Installation
+## Install
 
 ```bash
 npm install schema-shield
-# or
-bun add schema-shield
 ```
 
-## Basic Usage
+```javascript
+import { SchemaShield } from "schema-shield";
+```
+
+Node.js package entry points require Node.js 18 or later. CommonJS and TypeScript declarations are included. There is no default export.
+
+## Basic use
+
+```javascript
+const validateUser = new SchemaShield().compile({
+  type: "object",
+  properties: {
+    name: { type: "string", minLength: 1 },
+    email: { type: "string", format: "email" }
+  },
+  required: ["name", "email"],
+  additionalProperties: false
+});
+
+validateUser({ name: "John", email: "john@example.com" });
+// { data: { name: "John", email: "john@example.com" }, error: null, valid: true }
+
+validateUser({ email: "invalid" });
+// { data: { email: "invalid" }, error: true, valid: false }
+```
+
+The result shape is always `{ data, error, valid }`.
+
+## Error modes
+
+`failFast` defaults to `true`. Normal data failures return `error: true` in this mode. Set `failFast: false` before accessing `ValidationError` methods.
+
+```javascript
+const validate = new SchemaShield({ failFast: false }).compile({
+  type: "object",
+  properties: {
+    age: { type: "integer", minimum: 18 }
+  },
+  required: ["age"]
+});
+
+const result = validate({ age: 16 });
+
+if (!result.valid && result.error !== true) {
+  result.error.getPath();
+  result.error.getCause();
+  result.error.getTree();
+}
+```
+
+Both modes stop at the first failing path. `getTree()` returns the causal chain for that failure. It does not collect independent failures across the input.
+
+## Configuration
+
+```typescript
+new SchemaShield({
+  immutable?: boolean;
+  failFast?: boolean;
+  format?: boolean;
+  maxDepth?: number;
+  useDefaults?: boolean | "empty";
+})
+```
+
+- `immutable: true` validates a `structuredClone` of the root value.
+- `failFast: false` enables detailed causal errors.
+- `format: true` validates every registered format across dialects.
+- `format: false` disables optional format assertions.
+- `maxDepth` defaults to `128` and accepts integers from `1` through `256`.
+- `useDefaults: true` fills absent or `undefined` properties.
+- `useDefaults: "empty"` also replaces `null` and `""`.
+
+Defaults mutate the validated value. Invalid inserted defaults can remain after failure. Immutable mode inherits `structuredClone` behavior. Class instances lose their prototype, and unsupported values such as functions, promises, weak collections, and symbols make cloning throw.
+
+## Compile once per process or isolate
+
+Compile at module scope or during startup, then reuse the validator across requests in that process or isolate.
+
+```javascript
+const validateRequest = new SchemaShield().compile(requestSchema);
+
+app.post("/users", (request, response) => {
+  const result = validateRequest(request.body);
+
+  if (!result.valid) {
+    return response.status(400).json({ error: "Invalid request" });
+  }
+
+  return response.status(201).json(result.data);
+});
+```
+
+Do not claim that one compiled function is automatically shared across worker threads, processes, or isolates.
+
+## Compatible Worker pattern
+
+This Cloudflare Workers pattern applies to a runtime that supports the package's JavaScript requirements. It is an integration recipe, rather than a general platform certification.
 
 ```javascript
 import { SchemaShield } from "schema-shield";
 
-const validator = new SchemaShield().compile({
+const validateRequest = new SchemaShield({ failFast: false }).compile({
   type: "object",
   properties: {
-    name: { type: "string" },
+    name: { type: "string", minLength: 1 },
     email: { type: "string", format: "email" }
   },
-  required: ["name"]
+  required: ["name", "email"],
+  additionalProperties: false
 });
 
-validator({ name: "John", email: "john@example.com" });
-// { valid: true, data: { name: "John", email: "john@example.com" } }
+export default {
+  async fetch(request) {
+    let data;
 
-validator({ email: "invalid" });
-// { valid: false, error: ValidationError }
+    try {
+      data = await request.json();
+    } catch {
+      return Response.json({ error: "Invalid JSON" }, { status: 400 });
+    }
+
+    const result = validateRequest(data);
+
+    if (!result.valid) {
+      return Response.json(
+        { error: result.error.getPath() },
+        { status: 400 }
+      );
+    }
+
+    return Response.json(result.data);
+  }
+};
 ```
 
-### Serverless / Edge Deployment
+Parse request streams before validation.
 
-SchemaShield is ideal for serverless and edge environments due to zero compilation overhead:
+## Drafts and format policy
+
+Declare `$schema` when behavior depends on an official dialect. `compile()` metavalidates the complete reachable graph by default. Use `{ validateSchema: false }` only when the application already validated that complete graph.
+
+- With `format: true`, registered formats validate in every dialect.
+- With `format: false`, optional format assertions are disabled.
+- With the option omitted, schemas without `$schema` validate formats.
+- Official dialects treat formats as annotations when the option is omitted.
+- A custom dialect requiring `format-assertion` validates known formats and rejects unknown formats.
+
+## Local resources and references
+
+HTTP and HTTPS URIs identify local resources. They never trigger retrieval.
 
 ```javascript
-// Compile at module level - runs once at cold start
-const validateRequest = new SchemaShield().compile({
-  type: "object",
-  properties: {
-    name: { type: "string" },
-    email: { type: "string", format: "email" }
-  },
-  required: ["name", "email"]
+const shield = new SchemaShield();
+
+shield.addSchema(addressSchema, {
+  uri: "https://schemas.example/address"
 });
 
-// Vercel Edge / Cloudflare Worker handler
-export default function handler(request) {
-  const result = validateRequest(request.body);
-  
-  if (!result.valid) {
-    return new Response(JSON.stringify({ error: result.error.message }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" }
+const validate = shield.compile({
+  type: "object",
+  properties: {
+    address: { $ref: "https://schemas.example/address" }
+  }
+});
+```
+
+Register every reachable resource before compilation. Registration stores a snapshot, rejects duplicate identities, and affects future compilations.
+
+## Extensions
+
+```javascript
+const shield = new SchemaShield({ failFast: false });
+
+shield.addType("safe-integer", Number.isSafeInteger);
+
+shield.addFormat("ticket-id", (value) =>
+  /^TKT-[0-9]{6}$/.test(value)
+);
+
+shield.addKeyword("divisibleBy", (schema, data, defineError) => {
+  if (typeof data === "number" && data % schema.divisibleBy !== 0) {
+    return defineError("Value is not divisible", {
+      code: "NOT_DIVISIBLE",
+      data
     });
   }
-  
-  return new Response(JSON.stringify(result.data), { status: 200 });
-}
-```
-
-### Sharing Compiled Validators
-
-Compiled validators are safe to share across requests:
-
-```javascript
-// Compile once at startup
-const validateUser = new SchemaShield().compile(userSchema);
-
-// Reuse across requests - no mutable state
-app.get("/user/:id", (req) => {
-  const result = validateUser(req.body);
-  // ...
 });
 ```
 
-## Interpreter Architecture
+Existing active extension names require `overwrite: true`. Custom functions are synchronous and belong to the application's trust boundary.
 
-Unlike JIT compilers that generate code at runtime, SchemaShield uses a flat-loop interpreter:
+## Integration limits
 
-1. **Compilation**: Schema is compiled into a tree of validator functions at compile-time
-2. **Reference Resolution**: $ref links are resolved once during compilation
-3. **Validation**: Data flows through the validator tree in a flat loop (no recursion)
+- Recursive validation uses `maxDepth`, with default `128` and range `1` through `256`.
+- Compilation has a separate fixed graph-depth limit of `128`.
+- The root schema `{}` is currently rejected. Use `true` for an always-valid root.
+- Data-validation failures return results. Compilation, clone, custom-code, and programming failures can throw.
+- The current fail-fast unknown-type compilation edge can throw the literal `true`.
+- Schema URI schemes never enable network access.
+- Resources are local, additive, snapshot-based, and per instance.
 
-### Performance Characteristics
+## Canonical documentation
 
-| Schema Type | Performance | Notes |
-|-------------|-------------|-------|
-| Simple (type, properties) | Very fast | ~same as JIT |
-| allOf/anyOf/oneOf | ~70% JIT | Sequential branch evaluation |
-| Deep nesting | Stack-safe | Constant memory, no recursion |
-| Many $refs | Fast | Resolved at compile-time |
-
-### Performance Optimization Tips
-
-```javascript
-// Best: Flat structure
-const fastSchema = {
-  type: "object",
-  properties: {
-    name: { type: "string" },
-    email: { type: "string", format: "email" }
-  }
-};
-
-// Slower: Deeply nested allOf/anyOf
-const slowSchema = {
-  allOf: [
-    { allOf: [{ allOf: [...] }]}
-  ]
-};
-
-// Better: Flatten your schema
-const betterSchema = {
-  type: "object",
-  properties: { /* ... */ }
-};
-```
-
-## API Reference
-
-### Constructor Options
-
-```javascript
-new SchemaShield({
-  immutable?: boolean,
-  failFast?: boolean,
-  format?: boolean,
-  maxDepth?: number,
-  useDefaults?: boolean | "empty"
-})
-```
-
-- **immutable**: Set to true to prevent modifications to input data during validation
-- **failFast**: Set to false to receive detailed error objects (default: true)
-- **format**: Set to true to validate registered formats in every dialect or false to disable optional assertions. Omit it to follow the selected dialect.
-- **maxDepth**: Runtime validation depth from 1 through 256 (default: 128)
-- **useDefaults**: Apply schema defaults with true or include null and empty strings with "empty"
-
-### Methods
-
-- `compile(schema, options?)`: Metavalidates and compiles a JSON Schema
-- `validateSchema(schema)`: Validates a schema against its selected metaschema
-- `addMetaSchema(schema, options?)`: Registers a custom dialect selector
-- `addType(name, validatorFn, overwrite?)`: Adds a custom type validator
-- `addFormat(name, validatorFn, overwrite?)`: Adds a custom format validator
-- `addKeyword(name, validatorFn, overwrite?)`: Adds a custom keyword validator
-- `getType(name)`: Retrieves a custom type validator
-- `getFormat(name)`: Retrieves a custom format validator
-- `getKeyword(name)`: Retrieves a custom keyword validator
-
-### Validation Result
-
-```typescript
-{
-  valid: boolean,
-  data?: any,      // validated data (with defaults applied)
-  error?: ValidationError | true  // error details or true in failFast mode
-}
-```
-
-### ValidationError Methods
-
-- `getPath()` — Returns { schemaPath, instancePath } as JSON Pointers
-- `getTree()` — Returns full error chain as nested object
-- `getCause()` — Returns the root cause of the error
-
-## Runtime Profile
-
-- CSP-compliant interpreted execution
-- Flat-loop validation
-- Native class-instance validation
-- Zero runtime dependencies
-- Built-in formats
-
-## Limitations
-
-- **No Remote $ref**: Security by design — schemas must be bundled locally
-- **Unicode Length**: minLength/maxLength use UTF-16 code units, not Unicode codepoints
-- **Draft-07 Scope**: Limited dynamic $id scope resolution in nested sub-schemas
-
-## Security Philosophy
-
-SchemaShield follows a Zero Trust and Hermetic Architecture approach:
-- No network access at runtime
-- Deterministic validation (no external dependencies)
-- Treat schemas as code dependencies, not dynamic assets
-
-### CSP-Compliant Validation
-
-SchemaShield works in strict CSP environments because it uses no code generation:
-
-```javascript
-// No eval(), no new Function() - CSP-safe
-const validator = new SchemaShield().compile({
-  type: "object",
-  properties: {
-    name: { type: "string" }
-  }
-});
-
-// This works in strict CSP policies
-const result = validator({ name: "John" });
-```
-
-### Preventing Prototype Pollution
-
-SchemaShield prevents prototype pollution by design:
-
-```javascript
-const schema = {
-  type: "object",
-  properties: {
-    name: { type: "string" }
-  },
-  additionalProperties: false
-};
-
-const validator = new SchemaShield().compile(schema);
-
-// Malicious input {"__proto__": {"evil": "value"}} will fail
-validator({ "__proto__": { "evil": "value" } });
-// { valid: false, error: ValidationError }
-```
-
-### Immutable Mode
-
-Protect input data from accidental modification:
-
-```javascript
-const shield = new SchemaShield({ immutable: true });
-const validator = shield.compile({
-  type: "object",
-  properties: {
-    name: { type: "string" }
-  }
-});
-
-const input = { name: "John" };
-const result = validator(input);
-
-// Input remains unchanged
-console.log(input);
-// { name: "John" }
-```
+- Adoption and examples: [README.md](README.md)
+- Exhaustive API and compatibility reference: [REFERENCE.md](REFERENCE.md)

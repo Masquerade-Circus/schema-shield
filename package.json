@@ -27,6 +27,7 @@
     "meta-schemas",
     "scripts",
     "package-lock.json",
+    "REFERENCE.md",
     "LICENSE",
     "tsconfig.json"
   ],
